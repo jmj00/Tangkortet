@@ -310,7 +310,7 @@ def _season() -> str:
 </section>
 <section class="card q" data-group="q3.risici">
   <h3>Risici, der skifter med årstiden</h3>
-  <p>Hvilke af disse bør appen nævne i “Før du går”? Sæt flueben ved dem, der er vigtige
+  <p>Hvilke af disse bør appen nævne i “Råd og regler”? Sæt flueben ved dem, der er vigtige
     for en sanker.</p>
   <div class="opts">{_checks("q3.risici", SEASON_RISKS)}</div>
   {_text("q3.risici.kommentar", "Andre ting, der skifter med årstiden?")}
@@ -327,7 +327,7 @@ def _followup2() -> str:
   kainsyre i søl; arsen i butblæret sargassotang; Ulva fenestrata (Almindelig søsalat) i
   stedet for Ulva lactuca; fem nye arter (kortene ligger nederst); risikofaktorerne sorteret
   efter din vægtning; trafiklysets regler justeret, og din regel om å-udløb inden for 200 m
-  tilføjet; Fødevarestyrelsens råd og regler i "Før du går"; og en velkomstbesked. Vinden:
+  tilføjet; Fødevarestyrelsens råd og regler i "Råd og regler"; og en velkomstbesked. Vinden:
   kun pålandsvind tæller nu, og opskyllet tang regnes som frisk i ca. 1 døgn efter blæsten.</p>
 
 <section class="card q" data-group="q2.sargassum">

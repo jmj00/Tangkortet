@@ -8,7 +8,7 @@
 // the main interface.
 //
 // What does not get an entry: the map itself (pin, camera), the phone sheet's
-// height, and the Arter / Risiko / Før du går tabs. The tabs are views of the
+// height, and the Arter / Risiko / Råd og regler tabs. The tabs are views of the
 // same place, each always one tap away; a tab in the history would make Back
 // flip between them instead of leaving, which is not what a map app's Back
 // does.

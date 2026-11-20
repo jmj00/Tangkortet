@@ -48,7 +48,7 @@ about quality, and about a few summer risks the brief does not cover.
 ## Possible use in the app (after the expert)
 
 - Season months per species. The field exists (`season_months`), but no answers yet.
-- Summer advice in "Før du går":
+- Summer advice in "Råd og regler":
   - stay away from cyanobacteria blooms;
   - cover wounds in warm water;
   - never collect rotting drift.
