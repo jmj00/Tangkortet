@@ -20,7 +20,9 @@ stored here; it is computed from the observations at publish time.
 Other fields: ``gbif_extra_keys`` (more GBIF keys whose records count for this
 species, e.g. an outdated name), ``invasive``, ``lookalikes`` (scientific names
 the expert says it is easily confused with) and ``warnings`` (Danish advice
-shown prominently in the app). ``danish_name`` may be empty when the national
+shown prominently in the app), ``toxins`` (natural toxins a warning names,
+e.g. ``"kainsyre"`` for søl, so the app need not read the warning text).
+``danish_name`` may be empty when the national
 checklist has no Danish name; the app then shows the scientific name.
 
 ``status`` is ``"published"`` or ``"hidden"`` (kept to document an exclusion).
@@ -50,6 +52,7 @@ class Species(TypedDict):
     invasive: bool
     lookalikes: list[str]
     warnings: list[str]
+    toxins: list[str]
     notes: str
 
 
@@ -77,6 +80,7 @@ TARGET_SPECIES: list[Species] = [
                 "mængder dagligt."
             ),
         ],
+        "toxins": [],
         "notes": "",
     },
     {
@@ -102,6 +106,7 @@ TARGET_SPECIES: list[Species] = [
                 "mængder dagligt."
             ),
         ],
+        "toxins": [],
         "notes": "",
     },
     {
@@ -121,6 +126,7 @@ TARGET_SPECIES: list[Species] = [
         "invasive": False,
         "lookalikes": [],
         "warnings": [],
+        "toxins": [],
         "notes": "",
     },
     {
@@ -140,6 +146,7 @@ TARGET_SPECIES: list[Species] = [
         "invasive": False,
         "lookalikes": [],
         "warnings": [],
+        "toxins": [],
         "notes": "",
     },
     {
@@ -159,6 +166,7 @@ TARGET_SPECIES: list[Species] = [
         "invasive": False,
         "lookalikes": [],
         "warnings": [],
+        "toxins": [],
         "notes": "",
     },
     {
@@ -184,6 +192,7 @@ TARGET_SPECIES: list[Species] = [
                 " store mængder dagligt."
             ),
         ],
+        "toxins": ["kainsyre"],
         "notes": "",
     },
     {
@@ -203,6 +212,7 @@ TARGET_SPECIES: list[Species] = [
         "invasive": False,
         "lookalikes": [],
         "warnings": [],
+        "toxins": [],
         "notes": "",
     },
     {
@@ -222,6 +232,7 @@ TARGET_SPECIES: list[Species] = [
         "invasive": False,
         "lookalikes": ["Ulva lacinulata", "Ulva compressa"],
         "warnings": [],
+        "toxins": [],
         "notes": (
             "Danish 'Ulva lactuca' records are U. fenestrata after the "
             "taxonomic revision (expert, round 2); records under both names are"
@@ -245,6 +256,7 @@ TARGET_SPECIES: list[Species] = [
         "invasive": False,
         "lookalikes": ["Ulva compressa"],
         "warnings": [],
+        "toxins": [],
         "notes": "",
     },
     {
@@ -264,6 +276,7 @@ TARGET_SPECIES: list[Species] = [
         "invasive": False,
         "lookalikes": [],
         "warnings": [],
+        "toxins": [],
         "notes": "",
     },
     {
@@ -283,6 +296,7 @@ TARGET_SPECIES: list[Species] = [
         "invasive": False,
         "lookalikes": [],
         "warnings": [],
+        "toxins": [],
         "notes": "",
     },
     {
@@ -302,6 +316,7 @@ TARGET_SPECIES: list[Species] = [
         "invasive": False,
         "lookalikes": [],
         "warnings": [],
+        "toxins": [],
         "notes": "Rare in Danish waters (31 DK records, mostly drift); expert decides.",
     },
     {
@@ -321,6 +336,7 @@ TARGET_SPECIES: list[Species] = [
         "invasive": False,
         "lookalikes": [],
         "warnings": [],
+        "toxins": [],
         "notes": (
             "Added by the expert (round 2): grows at the top of the littoral "
             "zone. Danish name from the national species checklist."
@@ -343,6 +359,7 @@ TARGET_SPECIES: list[Species] = [
         "invasive": False,
         "lookalikes": ["Ulva fenestrata"],
         "warnings": [],
+        "toxins": [],
         "notes": (
             "Added by the expert (round 2): documented in Danish waters, easily"
             " confused with U. fenestrata. No Danish name in the national "
@@ -366,6 +383,7 @@ TARGET_SPECIES: list[Species] = [
         "invasive": False,
         "lookalikes": ["Ulva intestinalis", "Ulva fenestrata"],
         "warnings": [],
+        "toxins": [],
         "notes": (
             "Added by the expert (round 2), who called it 'tarm-rørhinde'; the "
             "national checklist name is 'Flad rørhinde' (asked on the review "
@@ -389,6 +407,7 @@ TARGET_SPECIES: list[Species] = [
         "invasive": True,
         "lookalikes": [],
         "warnings": [],
+        "toxins": [],
         "notes": (
             "Invasive, now common (expert, round 2, who also called it "
             "'paryktang'). Danish name from arter.dk."
@@ -417,6 +436,7 @@ TARGET_SPECIES: list[Species] = [
                 "større mængder."
             ),
         ],
+        "toxins": [],
         "notes": (
             "Invasive, now common (expert, round 2): can hold very high "
             "inorganic arsenic. Related hijiki (S. fusiforme) is known for it."

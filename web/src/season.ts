@@ -217,10 +217,11 @@ export interface RiskFlag {
   inWarning: boolean;
 }
 
-// TODO(expert): kainic acid (and any substance only named in a warning) is
-// found by matching the warning text, because the expert's accumulation list
-// has no "kainsyre". It should become an explicit expert field; until then
-// the stems below also match compounds ("jodindhold", "uorganisk arsen").
+// A badge comes from the expert's accumulation list (jod/arsen/cadmium), the
+// species' `toxins` (natural toxins such as kainsyre, pipeline/species.py), or,
+// as a fallback for older payloads and anything only a warning names, the
+// warning text. The stems below also match compounds ("jodindhold",
+// "uorganisk arsen").
 // Negations are deliberately not parsed: a badge too many is the safe error,
 // one too few ("Spis ikke tangen rå: kainsyre.") is not.
 const RISKS: { key: RiskKey; label: string; stem: string }[] = [
@@ -272,11 +273,14 @@ export function listNote(
 export function riskFlags(
   accumulation: ExpertFields["accumulation"] | undefined,
   warnings: readonly string[] | undefined,
+  toxins?: readonly string[],
 ): RiskFlag[] {
   const text = (warnings ?? []).join(" ");
   return RISKS.flatMap(({ key, label, stem }) => {
     const inWarning = names(text, stem);
-    const listed = (accumulation ?? []).includes(key as "jod" | "arsen" | "cadmium");
+    const listed =
+      (accumulation ?? []).includes(key as "jod" | "arsen" | "cadmium") ||
+      (toxins ?? []).includes(key);
     return inWarning || listed ? [{ key, label, inWarning }] : [];
   });
 }

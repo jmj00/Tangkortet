@@ -143,6 +143,8 @@ describe("riskFlags", () => {
       "Søl indeholder giftstoffet kainsyre (op til ca. 560 µg pr. gram tørret søl i målte prøver).",
     ];
     expect(riskFlags(null, sol)).toEqual([{ key: "kainsyre", label: "Kainsyre", inWarning: true }]);
+    // the explicit field gives the badge without any warning text
+    expect(riskFlags(null, [], ["kainsyre"]).map((f) => f.key)).toEqual(["kainsyre"]);
     const kelp = ["Tangen kan indeholde store mængder jod."];
     expect(riskFlags(["jod"], kelp)).toEqual([{ key: "jod", label: "Jod", inWarning: true }]);
     expect(riskFlags(["jod"], [])[0].inWarning).toBe(false);
