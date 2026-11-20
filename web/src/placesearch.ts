@@ -60,17 +60,21 @@ export function searchWords(addresses: boolean): {
   placeholder: string;
   /** For a field too narrow for the whole placeholder (large text, small phone). */
   short: string;
+  /** For the narrowest (a small phone at 150 % text). */
+  tiny: string;
   label: string;
 } {
   return addresses
     ? {
         placeholder: "Søg by, strand eller adresse…",
         short: "Søg by eller adresse…",
+        tiny: "Søg sted…",
         label: "Søg by, strand eller adresse",
       }
     : {
         placeholder: "Søg by, postnummer eller strand…",
         short: "Søg by eller strand…",
+        tiny: "Søg sted…",
         label: "Søg by, postnummer eller strand",
       };
 }
@@ -220,8 +224,8 @@ export function initPlaceSearch(onPlace: (place: ChosenPlace) => void): void {
     const ctx = document.createElement("canvas").getContext("2d");
     if (!ctx || room <= 0) return;
     ctx.font = style.font || `${style.fontSize} ${style.fontFamily}`;
-    input.placeholder =
-      ctx.measureText(words.placeholder).width <= room ? words.placeholder : words.short;
+    const fits = [words.placeholder, words.short].find((w) => ctx.measureText(w).width <= room);
+    input.placeholder = fits ?? words.tiny;
   };
   input.placeholder = words.placeholder;
   input.setAttribute("aria-label", words.label);
