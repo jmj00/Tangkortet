@@ -6,12 +6,15 @@
 // tab, so the key follows the tab without knowing about it.
 //
 // A self-contained element inside the map container, placed from the shell's
-// --map-inset-* properties (map.css): on a phone a slim line at the bottom
-// left of the uncovered map, opposite the locate button; on desktop a compact
-// card at the bottom right, above the attribution. The line opens the full key.
+// --map-inset-* properties (map.css): at the bottom left of the uncovered map,
+// above the scale bar, in every layout -- opposite the locate button on a
+// phone, away from the button column (top right) beside the sidebar. The line
+// opens the full key. Camera moves that must show the risk ring keep clear of
+// an open key (legendInsets).
 // Adapted from Svampekortet 624fb8b (web/src/maplegend.ts, web/src/map.css).
 
 import type maplibregl from "maplibre-gl";
+import type { Padding } from "./camera";
 import type { GroupKey } from "./risk";
 import type { Attachment } from "./types";
 
@@ -126,7 +129,8 @@ export class MapLegend {
 
     // Open on a desktop, where there is room; a line on a phone or a short
     // landscape screen.
-    const roomy = window.matchMedia?.("(min-width: 720px) and (min-height: 520.02px)").matches;
+    // (open by default only where it leaves the map room: a tall desktop)
+    const roomy = window.matchMedia?.("(min-width: 720px) and (min-height: 800px)").matches;
     this.open = readStoredOpen() ?? roomy ?? false;
     this.toggle.addEventListener("click", () => {
       this.setOpen(!this.open);
@@ -144,6 +148,22 @@ export class MapLegend {
     this.root.append(this.panel, this.toggle);
     this.applyOpen();
     map.getContainer().append(this.root);
+  }
+
+  /** The key's box in map-container pixels while it is open and shown,
+   * else null. */
+  openBox(): { left: number; top: number; right: number; bottom: number } | null {
+    if (this.root.hidden || !this.open) return null;
+    const box = this.root.getBoundingClientRect();
+    if (box.width === 0) return null;
+    const map = this.root.parentElement?.getBoundingClientRect();
+    if (!map) return null;
+    return {
+      left: box.left - map.left,
+      top: box.top - map.top,
+      right: box.right - map.left,
+      bottom: box.bottom - map.top,
+    };
   }
 
   update(patch: Partial<LegendState>): void {
@@ -267,4 +287,32 @@ export function legendFor(map: maplibregl.Map): MapLegend {
     legends.set(map, legend);
   }
   return legend;
+}
+
+/**
+ * `pad` (camera.ts mapInsets) widened so a frame keeps clear of the open key
+ * at the bottom left: either from the left or from the bottom, whichever
+ * leaves the larger square for the frame (a ring fits a square). Unchanged
+ * while the key is closed or hidden.
+ */
+export function legendInsets(map: maplibregl.Map, pad: Padding): Padding {
+  const box = legends.get(map)?.openBox();
+  if (!box) return pad;
+  const { clientWidth: w, clientHeight: h } = map.getContainer();
+  return clearOfBox(pad, box, w, h);
+}
+
+/** Pure: the two ways round a box in the bottom-left corner; the one that
+ * leaves the larger square wins. */
+export function clearOfBox(
+  pad: Padding,
+  box: { right: number; top: number },
+  w: number,
+  h: number,
+  gap = 8,
+): Padding {
+  const fromLeft = { ...pad, left: Math.max(pad.left, Math.ceil(box.right + gap)) };
+  const fromBottom = { ...pad, bottom: Math.max(pad.bottom, Math.ceil(h - box.top + gap)) };
+  const side = (p: Padding): number => Math.min(w - p.left - p.right, h - p.top - p.bottom);
+  return side(fromLeft) >= side(fromBottom) ? fromLeft : fromBottom;
 }

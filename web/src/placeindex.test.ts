@@ -11,6 +11,8 @@ import {
   parseAddressQuery,
   isPlaceName,
   nearestPlace,
+  coastPlaceName,
+  isGenericCoastName,
   type RawPlaces,
 } from "./placeindex";
 import raw from "./data/places.json";
@@ -266,5 +268,74 @@ describe("nearestPlace", () => {
     const p = nearestPlace(real, [10.219, 56.151]);
     expect(p).not.toBeNull();
     expect(p?.distanceM).toBeLessThan(2000);
+  });
+});
+
+describe("bathing-site names as place names", () => {
+  it("drops names that only describe where the site is", () => {
+    for (const name of [
+      "100 m nord for Gl. Løgten Strandkro",
+      "Syd for Humlebæk Havn",
+      "Nord for Thorsminde",
+      "Øst for Havn",
+      "Vest for Bønnerup Havn (Strømrende)",
+      "Ud for Tværvej",
+      "Bag ved Havn, Sejerø",
+      "Mellem Marenmølle Bæk og Lystbådehavnen",
+      "Overfor Kirken",
+      "Ved Lunden",
+    ])
+      expect(coastPlaceName(name), name).toBeNull();
+  });
+
+  it("keeps the name before a description", () => {
+    expect(coastPlaceName("Falsled, syd for havnen")).toBe("Falsled");
+    expect(coastPlaceName("Nordby ud for Campingplads")).toBe("Nordby");
+    expect(coastPlaceName("Blåvand Strand ved Høfde 1")).toBe("Blåvand Strand");
+    expect(coastPlaceName("Tversted Strand, 500 m øst for Nedkørsel")).toBe("Tversted Strand");
+    expect(coastPlaceName("Skagen Syd, v/Damstedvej")).toBe("Skagen Syd");
+    expect(coastPlaceName("Amager Strandpark, Øresund")).toBe("Amager Strandpark, Øresund");
+    expect(coastPlaceName("Bellevue Strand")).toBe("Bellevue Strand");
+  });
+
+  it("knows a generic beach name", () => {
+    for (const name of ["Sydstranden", "Stranden", "Søbad Nord", "Badebro", "Offentlig Strand"])
+      expect(isGenericCoastName(name), name).toBe(true);
+    for (const name of ["Bellevue Strand", "Amager Strandpark", "Kerteminde"])
+      expect(isGenericCoastName(name), name).toBe(false);
+  });
+});
+
+describe("nearestPlace between beaches and towns", () => {
+  const index = buildPlaceIndex({
+    postal: [],
+    towns: [
+      ["Kystby", 10.0, 56.0, 1.0, -1, 0],
+      ["Kystby Øst", 10.03, 56.0, 0.3, -1, 1],
+    ],
+    coast: [
+      ["Sydstranden", 10.0, 55.993, -1],
+      ["Fin Strandpark", 10.04, 55.995, -1],
+    ],
+  });
+
+  it("names a generic beach with its town", () => {
+    // 330 m from Sydstranden, inside Kystby
+    expect(nearestPlace(index, [10.0, 55.996])).toMatchObject({
+      name: "Sydstranden",
+      kind: "coast",
+      town: "Kystby",
+    });
+  });
+
+  it("prefers a beach within 800 m over a part of a town", () => {
+    // ~600 m from Fin Strandpark, ~250 m from the edge of Kystby Øst
+    const p = nearestPlace(index, [10.035, 56.0]);
+    expect(p).toMatchObject({ name: "Fin Strandpark", kind: "coast" });
+    expect(p?.town).toBeUndefined();
+  });
+
+  it("keeps the town proper the point lies in over a beach 400-800 m away", () => {
+    expect(nearestPlace(index, [10.0, 56.0])?.name).toBe("Kystby");
   });
 });

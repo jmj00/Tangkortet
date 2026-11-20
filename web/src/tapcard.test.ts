@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { findLines } from "./findcard";
 import { basemapPaint } from "./map";
-import { legendSummary } from "./maplegend";
+import { clearOfBox, legendSummary } from "./maplegend";
 import {
   coordsText,
+  findsNearText,
   findsText,
   placeText,
   splitText,
@@ -33,7 +34,7 @@ describe("the pin's card", () => {
     expect(verdictText("red")).toMatch(/^Rød/);
   });
 
-  it("counts species near the pin with the attached/washed-up split", () => {
+  it("counts species near the pin, split so the parts add up", () => {
     const doc = (rows: ObservationRow[]): SpeciesDoc => ({ observations: rows }) as SpeciesDoc;
     const pin: [number, number] = [10.2, 56.15];
     const docs = [
@@ -42,15 +43,31 @@ describe("the pin's card", () => {
         [10.21, 56.15, 2021, 1, null, 0],
         [10.2, 56.16, 2021, 0, 2.5, 0],
       ]),
+      doc([[10.21, 56.15, 2021, 1, null, 0]]),
+      doc([[10.2, 56.15, null, 2, null, 0]]),
       doc([[12.5, 55.7, 2019, 0, null, 0]]), // far away
     ];
     const summary = summarizeFinds(docs, pin);
-    expect(summary).toEqual({ species: 2, attached: 2, drift: 1 });
-    expect(findsText(summary)).toBe("2 arter i nærheden");
-    expect(splitText(summary)).toBe("Inden for 10 km: 2 fastsiddende, 1 opskyllet");
-    expect(findsText({ species: 1, attached: 1, drift: 0 })).toBe("1 art i nærheden");
-    expect(findsText({ species: 0, attached: 0, drift: 0 })).toBe("Ingen fund i nærheden");
+    expect(summary).toEqual({ species: 4, attached: 2, drift: 1, unknown: 1 });
+    expect(summary.attached + summary.drift + summary.unknown).toBe(summary.species);
+    expect(findsText(summary)).toBe("4 arter");
+    expect(findsNearText(summary)).toBe(" i nærheden");
+    expect(splitText(summary)).toBe("Inden for 10 km: 2 fastsiddende, 1 kun opskyllet, 1 ukendt");
+    // a zero part is left out
+    expect(splitText({ species: 3, attached: 3, drift: 0, unknown: 0 })).toBe(
+      "Inden for 10 km: 3 fastsiddende",
+    );
+    expect(findsText({ species: 1, attached: 1, drift: 0, unknown: 0 })).toBe("1 art");
+    expect(findsText({ species: 0, attached: 0, drift: 0, unknown: 0 })).toBe("Ingen fund");
+    expect(splitText({ species: 0, attached: 0, drift: 0, unknown: 0 })).toBe("Inden for 10 km");
     expect(findsText("loading")).toBe("Finder arter…");
+    expect(findsNearText("loading")).toBe("");
+  });
+
+  it("names a generic beach with its town", () => {
+    expect(
+      placeText({ name: "Sydstranden", kind: "coast", distanceM: 260, town: "Kerteminde" }),
+    ).toBe("Ved Sydstranden, Kerteminde");
   });
 });
 
@@ -76,6 +93,22 @@ describe("the map key", () => {
         risk: { radiusM: 2000, groups: [] },
       }),
     ).toBe("fund af Søl og mulige kilder inden for 2 km");
+  });
+});
+
+describe("keeping a frame clear of the open key", () => {
+  const pad = { top: 0, right: 64, bottom: 0, left: 0 };
+  it("goes round it from the side that leaves the larger square", () => {
+    // a wide, short map: room to the right of the key
+    expect(clearOfBox(pad, { right: 250, top: 330 }, 950, 650)).toMatchObject({
+      left: 258,
+      bottom: 0,
+    });
+    // a narrow, tall map: room above it
+    expect(clearOfBox(pad, { right: 250, top: 600 }, 400, 800)).toMatchObject({
+      left: 0,
+      bottom: 208,
+    });
   });
 });
 

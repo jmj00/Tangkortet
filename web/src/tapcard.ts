@@ -24,9 +24,11 @@ export type VerdictState = Level | "pending";
 export interface FindsSummary {
   /** Species with at least one find within NEAR_PIN_M. */
   species: number;
-  /** Of those, species with an attached find / a washed-up find. */
+  /** The same species by their best evidence, so the three add up: found
+   * attached; else only washed up; else only finds of unknown kind. */
   attached: number;
   drift: number;
+  unknown: number;
 }
 
 /** How the pin was set: a search result and "my location" bring a name of
@@ -51,11 +53,13 @@ export function coordsText([lon, lat]: [number, number]): string {
 /** Within this the pin is "ved" a place; further off it is "x km fra". */
 export const AT_PLACE_M = 500;
 
-/** "Ved Aarhus", "1,2 km fra Ebeltoft"; null without a place. */
+/** "Ved Aarhus", "1,2 km fra Ebeltoft", "Ved Sydstranden, Kerteminde";
+ * null without a place. */
 export function placeText(place: NearestPlace | null): string | null {
   if (!place) return null;
-  if (place.distanceM < AT_PLACE_M) return `Ved ${place.name}`;
-  return `${formatDistance(place.distanceM)} fra ${place.name}`;
+  const name = place.town ? `${place.name}, ${place.town}` : place.name;
+  if (place.distanceM < AT_PLACE_M) return `Ved ${name}`;
+  return `${formatDistance(place.distanceM)} fra ${name}`;
 }
 
 /** The traffic light in a few words. Green always says it is no guarantee. */
@@ -66,33 +70,46 @@ export function verdictText(state: VerdictState): string {
 }
 
 export function summarizeFinds(docs: readonly SpeciesDoc[], pin: [number, number]): FindsSummary {
-  const summary: FindsSummary = { species: 0, attached: 0, drift: 0 };
+  const summary: FindsSummary = { species: 0, attached: 0, drift: 0, unknown: 0 };
   for (const doc of docs) {
     const near = findsNear(doc, pin);
     if (near.total === 0) continue;
     summary.species++;
     if (near.attached) summary.attached++;
-    if (near.drift) summary.drift++;
+    else if (near.drift) summary.drift++;
+    else summary.unknown++;
   }
   return summary;
 }
 
 const KM = `${NEAR_PIN_M / 1000} km`;
 
-/** "11 arter i nærheden": short enough for a phone's header. */
+/** The count alone ("11 arter", "Ingen fund"): the phone shows just this, on
+ * one line; the words after it (findsNearText) are read out there and shown
+ * in the sidebar. Loading and error say it all themselves. */
 export function findsText(finds: FindsSummary | "loading" | "error"): string {
   if (finds === "loading") return "Finder arter…";
   if (finds === "error") return "Arterne kunne ikke hentes";
-  if (finds.species === 0) return "Ingen fund i nærheden";
-  return `${finds.species} ${finds.species === 1 ? "art" : "arter"} i nærheden`;
+  if (finds.species === 0) return "Ingen fund";
+  return `${finds.species} ${finds.species === 1 ? "art" : "arter"}`;
 }
 
-/** How near, and the species with an attached / a washed-up find; the
- * sidebar shows it under the count. */
+/** What follows the count: " i nærheden" (empty while loading / on error). */
+export function findsNearText(finds: FindsSummary | "loading" | "error"): string {
+  return typeof finds === "object" ? " i nærheden" : "";
+}
+
+/** How near, and the species by their best evidence (adding up to the count,
+ * a zero part left out); the sidebar shows it under the count, the phone
+ * reads it out. */
 export function splitText(finds: FindsSummary): string {
   const where = `Inden for ${KM}`;
-  if (finds.species === 0) return where;
-  return `${where}: ${finds.attached} fastsiddende, ${finds.drift} opskyllet`;
+  const parts = [
+    finds.attached ? `${finds.attached} fastsiddende` : "",
+    finds.drift ? `${finds.drift} kun opskyllet` : "",
+    finds.unknown ? `${finds.unknown} ukendt` : "",
+  ].filter(Boolean);
+  return parts.length ? `${where}: ${parts.join(", ")}` : where;
 }
 
 const same = (a: [number, number] | null, b: [number, number]): boolean =>
@@ -130,6 +147,7 @@ export class TapCard {
   private readonly riskLabel: HTMLSpanElement;
   private readonly findsButton: HTMLButtonElement;
   private readonly findsLabel: HTMLSpanElement;
+  private readonly findsNear: HTMLSpanElement;
   private readonly findsSplit: HTMLSpanElement;
   private readonly live: HTMLParagraphElement;
 
@@ -143,6 +161,8 @@ export class TapCard {
     root.removeAttribute("aria-live");
 
     this.where = el("p", "tapcard__where");
+    // a focus target after a search pick (placesearch.ts)
+    this.where.tabIndex = -1;
     this.placeEl = el("span", "tapcard__place");
     this.coordsEl = el("span", "tapcard__coords");
     this.where.append(this.placeEl, this.coordsEl);
@@ -160,10 +180,13 @@ export class TapCard {
 
     this.findsButton = el("button", "tapcard__chip tapcard__finds");
     this.findsButton.type = "button";
-    this.findsLabel = el("span", "tapcard__label");
+    this.findsLabel = el("span", "tapcard__count");
+    this.findsNear = el("span", "tapcard__near");
     this.findsSplit = el("span", "tapcard__split");
+    const count = el("span", "tapcard__label");
+    count.append(this.findsLabel, this.findsNear);
     const findsText = el("span", "tapcard__text");
-    findsText.append(this.findsLabel, this.findsSplit);
+    findsText.append(count, this.findsSplit);
     this.findsButton.append(
       findsText,
       el("span", "sr-only", " – se arter"),
@@ -191,6 +214,9 @@ export class TapCard {
     this.focusText = null;
     this.announcedLevel = null;
     this.placeAnnounced = false;
+    // nothing said about the last pin may be read out after this one
+    window.clearTimeout(this.announceTimer);
+    this.queued = [];
     this.render();
     if (source.kind === "search") {
       this.announcePlace();
@@ -243,6 +269,12 @@ export class TapCard {
     this.announce(text);
   }
 
+  /** The pin's place as the card shows it ("Ved Aarhus", a search label,
+   * coordinates); null without a pin. */
+  placeLabel(): string | null {
+    return this.pin ? this.placeLine() : null;
+  }
+
   private placeLine(): string {
     if (this.source.kind === "search") return this.source.label;
     const near = placeText(this.place);
@@ -291,6 +323,7 @@ export class TapCard {
     this.riskButton.setAttribute("aria-busy", String(this.verdict === "pending"));
 
     this.findsLabel.textContent = findsText(this.finds);
+    this.findsNear.textContent = findsNearText(this.finds);
     this.findsSplit.textContent = typeof this.finds === "object" ? splitText(this.finds) : "";
     this.findsButton.dataset.state = typeof this.finds === "object" ? "done" : this.finds;
   }

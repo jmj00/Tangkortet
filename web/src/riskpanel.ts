@@ -70,6 +70,8 @@ export class RiskPanel {
   private smallStreams: Pending<unknown | null> = "loading";
   private protectedAreas: Pending<LiveResult<ProtectedArea>> = "loading";
   private abort: AbortController | null = null;
+  /** The traffic light last reported through onVerdict, and for which pin. */
+  private reported: { pin: [number, number]; level: Level | "pending" } | null = null;
 
   constructor(
     private root: HTMLElement,
@@ -195,13 +197,24 @@ export class RiskPanel {
     return parseStreams(this.namedStreams, small);
   }
 
+  /** Report the traffic light when it changes (a new pin, or an answer that
+   * settles or changes it), not on every redraw. */
+  private emitVerdict(level: Level | "pending"): void {
+    const pin = this.pin;
+    if (!pin) return;
+    const last = this.reported;
+    if (last && last.pin === pin && last.level === level) return;
+    this.reported = { pin, level };
+    this.hooks.onVerdict?.(pin, level);
+  }
+
   private verdictCard(): HTMLElement {
     // The small-stream query is slow and only supplementary: don't wait for it.
     const settled = [this.items, this.rain, this.soil, this.namedStreams].every(
       (v) => v !== "loading",
     );
     if (!settled) {
-      if (this.pin) this.hooks.onVerdict?.(this.pin, "pending");
+      this.emitVerdict("pending");
       return h("section", { class: "verdict verdict--pending" }, h("p", {}, "Vurderer…"));
     }
     const soil = this.soil as LiveResult<SoilSite> | "error";
@@ -213,7 +226,7 @@ export class RiskPanel {
         soil !== "error" && soil.ok ? soil.items.filter((i) => i.level === "V2").length : null,
       streams: this.streams(),
     });
-    if (this.pin) this.hooks.onVerdict?.(this.pin, verdict.level);
+    this.emitVerdict(verdict.level);
     const text = LEVEL_TEXT[verdict.level];
     return h(
       "section",

@@ -38,7 +38,10 @@ web/public/data --sample`). Try `#pin=56.15100,10.21900&tab=risiko`.
 Without `VITE_DATAFORDELER_API_KEY` (see `.env.example`) the map uses
 OpenStreetMap and the search box finds towns, postal districts and coastal
 bathing sites only (`src/placesearch.ts`, list `src/data/places.json` from
-`py -m pipeline.places`); with the key it finds addresses too.
+`py -m pipeline.places`); with the key it finds addresses too. The same list
+names the pin's place in the sheet header (`src/tapcard.ts`, nearest town or
+bathing site): it is fetched on the first pin (or the first search, whichever
+comes first), and coordinates show until it arrives or when it cannot be had.
 
 ## Live sources (called from the browser)
 

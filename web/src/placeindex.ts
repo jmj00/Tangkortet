@@ -786,54 +786,103 @@ export interface NearestPlace {
   /** Metres from the point: to a bathing site's point, or to the edge of a
    * town's circle (0 inside it). */
   distanceM: number;
+  /** For a bathing site with a generic name ("Sydstranden"): the town it
+   * belongs to, said after it ("Sydstranden, Kerteminde"). */
+  town?: string;
 }
 
-/** A bathing site this close wins over a town: it names the very beach. */
+/** A bathing site this close wins over any town: it names the very beach. */
 export const COAST_PREFERRED_M = 400;
+/** A bathing site this close wins over a part of a town or a town the point
+ * lies outside ("Amager Strandpark" before "Sundbyøster"). */
+export const COAST_NEAR_M = 800;
 
-/** Bathing sites named by where they are ("100 m nord for ...", "Ved ...")
- * read badly after "Ved"; they are left out. */
-const DESCRIBED_SITE = /^(\d|ved\s)/i;
+/** A bathing site's name that is a description of where it is ("100 m nord
+ * for ...", "Syd for Humlebæk Havn", "Ud for Tværvej", "Ved Lunden"). */
+const DESCRIPTION =
+  /^(\d|(syd|nord|øst|vest|sydøst|sydvest|nordøst|nordvest|ud|over)\s+for\s|v\/|v\.\s?|(ved|nær|bag|mellem|overfor|udenfor)\s)/i;
+/** Where a description starts inside a name ("Nordby ud for Campingplads",
+ * "Blåvand Strand ved Høfde 1", "Tversted Strand, 500 m øst for ..."). */
+const DESCRIPTION_INSIDE =
+  /(,\s*|\s+)((syd|nord|øst|vest|sydøst|sydvest|nordøst|nordvest|ud|over)\s+for\s|v\/|v\.\s|(ved|nær|bag|mellem|overfor)\s|\d+\s*m\s)/i;
 
 /**
- * The named place nearest `[lon, lat]`: a coastal bathing site within
- * COAST_PREFERRED_M, else the nearest town, part of a town or bathing site
- * (towns measured to the edge of their area). Null when nothing lies within
- * `maxM` (open sea).
+ * The bathing site's name as a place name, or null when the whole name is a
+ * description. A description after it is dropped ("Falsled, syd for havnen"
+ * -> "Falsled", "Nordby ud for Campingplads" -> "Nordby").
+ */
+export function coastPlaceName(name: string): string | null {
+  const trimmed = name.trim();
+  if (DESCRIPTION.test(trimmed)) return null;
+  const at = trimmed.search(DESCRIPTION_INSIDE);
+  const head = (at > 0 ? trimmed.slice(0, at) : trimmed).replace(/[,\s-]+$/, "");
+  return head || null;
+}
+
+/** A name that says "a beach" but not which ("Sydstranden", "Søbad Nord"):
+ * it needs its town after it. */
+const GENERIC =
+  /^((nord|syd|øst|vest|sønder|nørre|vester|øster|lille|store|ny)\s?)?(strand(en)?|stranden|søbad(et)?|badebro(en)?|badestrand(en)?|havn(en)?|badested(et)?)(\s(nord|syd|øst|vest))?$|^(offentlig|stranden\s|strand\s)/i;
+
+export function isGenericCoastName(name: string): boolean {
+  return GENERIC.test(name.trim());
+}
+
+/**
+ * The named place nearest `[lon, lat]`, for the pin's card:
+ *   - a coastal bathing site within COAST_PREFERRED_M;
+ *   - else one within COAST_NEAR_M, unless the point lies inside a town
+ *     proper (not a part of a town);
+ *   - else the nearest town, part of a town or bathing site (towns measured
+ *     to the edge of their area).
+ * A bathing site with a generic name gets its town. Null when nothing lies
+ * within `maxM` (open sea).
  */
 export function nearestPlace(
   index: PlaceIndex,
   [lon, lat]: [number, number],
   maxM = 15_000,
 ): NearestPlace | null {
-  const dLat = maxM / 111_320;
-  const dLon = maxM / (111_320 * Math.cos((lat * Math.PI) / 180));
-  const near = (pLon: number, pLat: number, extraM = 0): boolean =>
-    Math.abs(pLat - lat) <= dLat + extraM / 111_320 &&
-    Math.abs(pLon - lon) <= dLon + extraM / 111_320 / Math.cos((lat * Math.PI) / 180);
+  const cosLat = Math.cos((lat * Math.PI) / 180);
+  const near = (pLon: number, pLat: number, reachM: number): boolean =>
+    Math.abs(pLat - lat) <= reachM / 111_320 && Math.abs(pLon - lon) <= reachM / 111_320 / cosLat;
 
   let coast: NearestPlace | null = null;
   for (const site of index.coast) {
-    if (DESCRIBED_SITE.test(site.name) || !near(site.lon, site.lat)) continue;
+    if (!near(site.lon, site.lat, maxM)) continue;
     const d = distanceM([lon, lat], [site.lon, site.lat]);
-    if (d <= maxM && (!coast || d < coast.distanceM))
-      coast = { name: site.name, kind: "coast", distanceM: d };
+    if (d > maxM || (coast && d >= coast.distanceM)) continue;
+    const name = coastPlaceName(site.name);
+    if (name) coast = { name, kind: "coast", distanceM: d };
   }
-  if (coast && coast.distanceM <= COAST_PREFERRED_M) return coast;
 
-  let best = coast;
+  let town: (NearestPlace & { type: Town["type"] }) | null = null;
   // inside several towns (a city and its parts): the one whose centre is nearest
-  let bestCentre = Infinity;
-  for (const town of index.towns) {
-    const radiusM = town.radiusKm * 1000;
-    if (!near(town.lon, town.lat, radiusM)) continue;
-    const centre = distanceM([lon, lat], [town.lon, town.lat]);
+  let townCentre = Infinity;
+  for (const t of index.towns) {
+    const radiusM = t.radiusKm * 1000;
+    if (!near(t.lon, t.lat, maxM + radiusM)) continue;
+    const centre = distanceM([lon, lat], [t.lon, t.lat]);
     const d = Math.max(0, centre - radiusM);
     if (d > maxM) continue;
-    if (!best || d < best.distanceM || (d === best.distanceM && centre < bestCentre)) {
-      best = { name: town.name, kind: "town", distanceM: d };
-      bestCentre = centre;
+    if (!town || d < town.distanceM || (d === town.distanceM && centre < townCentre)) {
+      town = { name: t.name, kind: "town", distanceM: d, type: t.type };
+      townCentre = centre;
     }
   }
-  return best;
+
+  const inTownProper = town !== null && town.distanceM === 0 && town.type === 0;
+  const coastWins =
+    coast !== null &&
+    (coast.distanceM <= COAST_PREFERRED_M ||
+      (coast.distanceM <= COAST_NEAR_M && !inTownProper) ||
+      !town ||
+      coast.distanceM < town.distanceM);
+  if (coast && coastWins) {
+    const context =
+      town && town.distanceM <= 3000 && isGenericCoastName(coast.name) ? town.name : undefined;
+    return context ? { ...coast, town: context } : coast;
+  }
+  if (!town) return null;
+  return { name: town.name, kind: "town", distanceM: town.distanceM };
 }

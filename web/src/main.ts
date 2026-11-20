@@ -22,6 +22,7 @@ import {
 } from "./layers";
 import { createLocateGate, locateErrorMessage, LOCATION_UNSUPPORTED_MESSAGE } from "./locate";
 import { createMap, DENMARK_BOUNDS, type MapBundle } from "./map";
+import { legendInsets } from "./maplegend";
 import { initNavigation, readNavState, type Navigation, type Snapshot } from "./nav";
 import { registerServiceWorker } from "./register-sw";
 import { RiskPanel } from "./riskpanel";
@@ -409,7 +410,8 @@ function frameRing(center: [number, number], lowerSheet = true): Promise<void> {
     fitCamera(map, ringBounds(center, riskRadiusM), {
       maxZoom: 15,
       margin: 16,
-      padding: mapInsets(map, { controls: true }),
+      // clear of the map key too, when it is open (maplegend.ts)
+      padding: legendInsets(map, mapInsets(map, { controls: true })),
     }),
   );
 }
@@ -457,13 +459,23 @@ function closeFindPopup(): void {
   if (hadFocus) void mapReady.then(({ map }) => map.getCanvas().focus({ preventScroll: true }));
 }
 
-// Escape closes the find card (a dialog or the search field has its own Escape).
+// Escape closes the find card (a dialog, the search field or any other text
+// field has its own Escape).
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || !findPopup || e.defaultPrevented) return;
   if (document.querySelector("dialog[open]")) return;
-  if (searchForm.contains(document.activeElement)) return;
+  const active = document.activeElement;
+  if (searchForm.contains(active)) return;
+  if (active instanceof HTMLElement && active.closest("input, textarea, select, [contenteditable]"))
+    return;
   closeFindPopup();
 });
+
+// The card's mark is in the colours of the theme it opened in: a switch
+// closes it (the dots it described are repainted, see map.ts).
+globalThis
+  .matchMedia?.("(prefers-color-scheme: dark)")
+  .addEventListener?.("change", () => closeFindPopup());
 
 mapReady
   .then(({ map, geolocate, maplibregl }) => {
@@ -511,6 +523,7 @@ mapReady
         findPopup = popup;
         return;
       }
+      // (ui/start's tap guard goes here: after a find, before the pin)
       locateGate.superseded(); // the user picked a spot; a late position must not undo it
       const { lng, lat } = e.lngLat;
       // A tap never moves the camera: the user is looking at that spot.
