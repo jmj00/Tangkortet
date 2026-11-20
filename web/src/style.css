@@ -434,3 +434,21 @@ button.primary {
   list-style: disc;
   font-size: 0.85rem;
 }
+
+/* Fingers need room: 44 px targets in the risk panel on a touch screen. */
+@media (pointer: coarse) {
+  .radius button {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  .group summary,
+  .verdict__rules summary {
+    min-height: 2.75rem;
+  }
+
+  /* padding, not flex: a flex summary loses its ▶ marker */
+  .verdict__rules summary {
+    padding-block: 0.6rem;
+  }
+}

@@ -677,8 +677,14 @@ function uniqueTexts(list: Candidate[]): Candidate[] {
   });
 }
 
-/** How long the place list may take before a search gives up on it. */
+/** How long a search waits for the place list before it says so ("Prøv igen"). */
 export const LOAD_TIMEOUT_MS = 10_000;
+
+/** How long the fetch itself may run before it counts as stalled. Longer than
+ * LOAD_TIMEOUT_MS: on a slow coastal connection (155 kB gzipped at ~5 kB/s)
+ * the fetch keeps going after a search has stopped waiting, and "Prøv igen"
+ * joins it rather than starting over. */
+export const STALL_MS = 45_000;
 
 /** Fetches the raw list; aborts when the signal does. */
 export type FetchPlaces = (signal: AbortSignal) => Promise<RawPlaces>;
@@ -692,15 +698,21 @@ const fetchPlaces: FetchPlaces = async (signal) => {
 export interface PlaceLoader {
   /** The list if it has arrived. */
   loaded(): PlaceIndex | null;
-  /** The list, fetched once. A fetch that fails, or takes longer than `ms`,
-   * is dropped (and aborted), so the next call fetches afresh; a late answer
-   * from a dropped fetch is ignored. */
+  /** The list, fetched once and shared by every caller. A caller stops
+   * waiting after `ms`, but the fetch goes on. A fetch that fails, or is still
+   * running after STALL_MS when a caller asks again, is dropped (and aborted),
+   * so that call fetches afresh; a late answer from a dropped fetch is ignored. */
   load(ms?: number): Promise<PlaceIndex>;
 }
 
 export function createPlaceLoader(fetchRaw: FetchPlaces = fetchPlaces): PlaceLoader {
   let loaded: PlaceIndex | null = null;
-  let current: { id: number; abort: AbortController; promise: Promise<PlaceIndex> } | null = null;
+  let current: {
+    id: number;
+    started: number;
+    abort: AbortController;
+    promise: Promise<PlaceIndex>;
+  } | null = null;
   let attempts = 0;
 
   const drop = (id: number): void => {
@@ -724,20 +736,19 @@ export function createPlaceLoader(fetchRaw: FetchPlaces = fetchPlaces): PlaceLoa
       },
     );
     promise.catch(() => {}); // a caller that timed out no longer listens
-    return { id, abort, promise };
+    return { id, started: Date.now(), abort, promise };
   }
 
   return {
     loaded: () => loaded,
     load(ms = LOAD_TIMEOUT_MS): Promise<PlaceIndex> {
       if (loaded) return Promise.resolve(loaded);
+      if (current && Date.now() - current.started >= STALL_MS) drop(current.id);
       current ??= start();
-      const { id, promise } = current;
+      const { promise } = current;
       return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          drop(id);
-          reject(new Error("place list timed out"));
-        }, ms);
+        // Only this caller gives up; the shared fetch goes on (see STALL_MS).
+        const timer = setTimeout(() => reject(new Error("place list timed out")), ms);
         promise.then(
           (index) => {
             clearTimeout(timer);

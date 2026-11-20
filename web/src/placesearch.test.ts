@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mergeHits, preferHits, withTimeout } from "./addresses";
 import { step } from "./addresscombo";
 import { missedText, searchMessage, searchWords, type SearchState } from "./placesearch";
-import { createPlaceLoader, LOAD_TIMEOUT_MS, type RawPlaces } from "./placeindex";
+import { createPlaceLoader, LOAD_TIMEOUT_MS, STALL_MS, type RawPlaces } from "./placeindex";
 
 const said = (
   state: SearchState | "chosen",
@@ -105,7 +105,40 @@ describe("createPlaceLoader", () => {
     coast: [],
   };
 
-  it("drops a stalled fetch after the timeout, and a retry fetches afresh", async () => {
+  it("keeps a slow fetch going after a search gives up, and a retry joins it", async () => {
+    vi.useFakeTimers();
+    let resolveFirst: (r: RawPlaces) => void = () => {};
+    const signals: AbortSignal[] = [];
+    const loader = createPlaceLoader((signal) => {
+      signals.push(signal);
+      return new Promise<RawPlaces>((res) => (resolveFirst = res));
+    });
+    const first = loader.load(LOAD_TIMEOUT_MS).catch((e: Error) => e.message);
+    vi.advanceTimersByTime(LOAD_TIMEOUT_MS);
+    expect(await first).toBe("place list timed out");
+    expect(signals[0].aborted).toBe(false);
+    // "Prøv igen" while the list is still arriving
+    const retry = loader.load(LOAD_TIMEOUT_MS);
+    vi.advanceTimersByTime(3000);
+    resolveFirst(raw);
+    expect((await retry).postal[0].postnr).toBe("8600");
+    expect(signals).toHaveLength(1);
+  });
+
+  it("one caller's timeout does not cut off another caller", async () => {
+    vi.useFakeTimers();
+    let resolveFirst: (r: RawPlaces) => void = () => {};
+    const loader = createPlaceLoader(() => new Promise<RawPlaces>((res) => (resolveFirst = res)));
+    const early = loader.load(LOAD_TIMEOUT_MS).catch((e: Error) => e.message); // focus
+    vi.advanceTimersByTime(9000);
+    const late = loader.load(LOAD_TIMEOUT_MS); // a search 9 s later
+    vi.advanceTimersByTime(1500);
+    expect(await early).toBe("place list timed out");
+    resolveFirst(raw);
+    expect((await late).postal[0].postnr).toBe("8600");
+  });
+
+  it("drops a stalled fetch, and a retry fetches afresh", async () => {
     vi.useFakeTimers();
     let resolveFirst: (r: RawPlaces) => void = () => {};
     const signals: AbortSignal[] = [];
@@ -117,12 +150,11 @@ describe("createPlaceLoader", () => {
         ? new Promise<RawPlaces>((res) => (resolveFirst = res)) // hangs
         : Promise.resolve(raw);
     });
-    const first = loader.load(LOAD_TIMEOUT_MS).catch((e: Error) => e.message);
-    vi.advanceTimersByTime(LOAD_TIMEOUT_MS);
-    expect(await first).toBe("place list timed out");
-    expect(signals[0].aborted).toBe(true);
-    // "Prøv igen"
+    void loader.load(LOAD_TIMEOUT_MS).catch(() => {});
+    vi.advanceTimersByTime(STALL_MS);
+    // "Prøv igen" after the fetch has stalled
     const index = await loader.load(LOAD_TIMEOUT_MS);
+    expect(signals[0].aborted).toBe(true);
     expect(calls).toBe(2);
     expect(index.postal[0].postnr).toBe("8600");
     // the stalled fetch answering late changes nothing

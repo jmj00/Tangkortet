@@ -139,7 +139,8 @@ export function initSheet(opts: SheetOptions): Sheet {
   let active = false;
   let current: Snap = "half";
   /** The stop the sheet should be at after a relayout: the one last shown.
-   * (A "half" shown as full on a two-stop screen stays full.) Before the
+   * (A "half" shown as full on a two-stop screen stays full; one folded to
+   * peek by a relayout stays "half", see layout().) Before the
    * first layout it is the opening stop. */
   let wanted: Snap = "half";
   let heights: SnapHeights = { peek: 0, half: 0, full: 0 };
@@ -235,7 +236,12 @@ export function initSheet(opts: SheetOptions): Sheet {
     // Nothing moved: leave the sheet alone (a re-snap would cut an animation
     // that is running and re-place it for nothing).
     if (!first && same) return;
-    snapTo(wanted, false, "peek"); // a short screen opens on the map, not the list
+    // A short screen (e.g. the keyboard is open) shows "half" as peek: it opens
+    // on the map, not the list. Remember the half, so the sheet comes back up
+    // when the screen grows again.
+    const keep = wanted;
+    snapTo(wanted, false, "peek");
+    if (twoStops()) wanted = keep;
     opts.onLayout?.();
     // Transitions only switch on after the first placement, so the sheet does
     // not animate in from its CSS fallback position on load.

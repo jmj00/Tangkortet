@@ -75,15 +75,25 @@ const sheet = initSheet({
  * because the sheet was dragged (the live edge is --map-inset-bottom, which
  * camera.ts mapInsets() reads). */
 let appliedPadding = { top: -1, bottom: -1 };
+/** The least height of map the padding leaves between the search and the sheet. */
+const MIN_MAP_PX = 120;
 function applyMapPadding(map: maplibregl.Map): void {
   const field = searchForm.querySelector("input");
   const searchShown = !searchForm.hidden && sheet.isActive() && field !== null;
   // The field and a status line that is really showing; never the whole
   // form, whose suggestion list opens in its flow and must not move the map.
-  const top = searchShown
-    ? Math.round(field.getBoundingClientRect().bottom + searchStatusHeight() + 8)
-    : 0;
   const bottom = sheet.halfHeight();
+  let top = 0;
+  if (searchShown) {
+    const fieldBottom = field.getBoundingClientRect().bottom + 8;
+    // A tall status line (offline + "Prøv igen" at large text on a small
+    // phone) may cover more of the map, but the padding always leaves a strip
+    // of map between the field and the sheet to aim flights at.
+    const roomForMap = appRoot.clientHeight - bottom - MIN_MAP_PX;
+    top = Math.round(
+      Math.max(fieldBottom, Math.min(fieldBottom + searchStatusHeight(), roomForMap)),
+    );
+  }
   appRoot.style.setProperty("--map-inset-top", `${top}px`);
   const unchanged =
     Math.abs(bottom - appliedPadding.bottom) < 40 && Math.abs(top - appliedPadding.top) < 40;
