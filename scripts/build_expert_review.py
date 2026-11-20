@@ -252,6 +252,71 @@ def _photos() -> str:
 {"".join(cards)}"""
 
 
+# Season (docs/literature-season.md): proposed windows from a first literature
+# pass, for the expert to confirm or correct. Keys q3.saeson.*.
+SEASON_PROPOSALS = [
+    (
+        "sukkertang",
+        "Sukkertang og fingertang",
+        "april til starten af juni",
+        "Sammensætningen i danske farvande følger især årstiden (Manns m.fl. 2017). Fra "
+        "sommeren begroes bladene af mosdyret Membranipora (mest norske/nordiske studier).",
+    ),
+    (
+        "soel",
+        "Søl",
+        "vinter til forår",
+        "Vokser om vinteren og foråret; mere protein vinter–forår, mere sukker sensommer–"
+        "efterår. Kun udenlandske studier (Norge, Arktis, Canada).",
+    ),
+    (
+        "soesalat",
+        "Søsalat (Ulva)",
+        "forår – ikke højsommer, og aldrig rådden drivtang",
+        "Mere protein om vinteren og lavere om sommeren (Skive og Roskilde Fjord). Om sommeren "
+        "får bladene huller og begroes (svensk dyrkningsstudie).",
+    ),
+]
+SEASON_VERDICT = [("enig", "Enig"), ("juster", "Justér (skriv hvordan)"), ("ved_ikke", "Ved ikke")]
+SEASON_RISKS = [
+    ("blaagroen", "Blågrønalger om sommeren (Østersøen, Øresund, Køge Bugt, Bornholm)"),
+    ("vibrio", "Vibrio-bakterier i varmt vand – dæk sår til"),
+    ("raadden", "Rådden drivtang om sommeren"),
+    ("begroning", "Begroning (fx mosdyr) på bladtang fra sommeren"),
+    ("overloeb", "Overløb ved kraftig regn – hele året, ikke kun om sommeren"),
+    ("jod", "Jod og metaller varierer med årstiden"),
+]
+
+
+def _season() -> str:
+    rows = "".join(
+        f"""<div class="risk">
+  <div class="risk-name">{_esc(name)}: <i>{_esc(window)}</i></div>
+  <div class="evidence">{_esc(why)}</div>
+  <div class="opts row">{_radio(f"q3.saeson.{key}", SEASON_VERDICT)}</div>
+  {_text(f"q3.saeson.{key}.kommentar", "Fx de måneder, du vil anbefale", 1)}
+</div>"""
+        for key, name, window, why in SEASON_PROPOSALS
+    )
+    return f"""<h2>Sæson – hvornår er tangen god, og hvad skal man passe på?</h2>
+<p class="intro"><b>Nyt:</b> Vi har lavet en kort gennemgang af litteraturen om sæson
+  (danske studier først; udenlandske er markeret). Den er kun et udgangspunkt – rettelser og
+  dine egne erfaringer vejer tungest. Intet herfra vises i appen, før du har svaret.</p>
+<section class="card q" data-group="q3.saeson">
+  <h3>Bedste tid at sanke</h3>
+  <p>Er disse forslag rigtige for danske kyster? Du kan også sætte måneder på hver art
+    længere nede under “Arter”.</p>
+  {rows}
+</section>
+<section class="card q" data-group="q3.risici">
+  <h3>Risici, der skifter med årstiden</h3>
+  <p>Hvilke af disse bør appen nævne i “Før du går”? Sæt flueben ved dem, der er vigtige
+    for en sanker.</p>
+  <div class="opts">{_checks("q3.risici", SEASON_RISKS)}</div>
+  {_text("q3.risici.kommentar", "Andre ting, der skifter med årstiden?")}
+</section>"""
+
+
 def _followup2() -> str:
     """Round 3 (2026-11-20): what we did with the expert's round-2 answers, and the
     questions they raised."""
@@ -666,6 +731,8 @@ def main() -> None:
   udgangspunkt. Er noget uklart, så skriv det i feltet nederst på siden.</p>
 
 {_photos()}
+
+{_season()}
 
 {followup}
 
