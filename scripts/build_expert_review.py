@@ -317,6 +317,40 @@ def _season() -> str:
 </section>"""
 
 
+EXTRA_WARNING_VERDICT = [
+    ("ja", "Ja, tilføj den"),
+    ("ret", "Ja, men ret teksten (skriv hvordan)"),
+    ("nej", "Nej"),
+]
+
+
+def _extra_warnings() -> str:
+    """Two warnings found while researching the season (q4.*): not in the app
+    until the expert says so."""
+    return f"""<h2>To mulige advarsler</h2>
+<p class="intro"><b>Nyt:</b> To ting, vi stødte på i litteraturen. Ingen af dem er i appen
+  endnu – skal de med?</p>
+<section class="card q" data-group="q4.kaellingehaar">
+  <h3>Kællingehår (Desmarestia)</h3>
+  <p>Almindelig og blød kællingehår indeholder svovlsyre i cellesaften (pH ca. 1–2). Syren
+    frigives, når tangen beskadiges, og ødelægger anden tang i samme pose. Den smager meget
+    surt, så man spiser næppe meget af den, og vi har ikke fundet beretninger om forgiftning.
+    Forslag: en kort advarsel i “Råd og regler”, fx “Undgå kællingehår – den indeholder
+    syre og ødelægger anden tang i posen.”</p>
+  <div class="opts">{_radio("q4.kaellingehaar", EXTRA_WARNING_VERDICT)}</div>
+  {_text("q4.kaellingehaar.kommentar", "Fx en bedre formulering, eller arter den forveksles med")}
+</section>
+<section class="card q" data-group="q4.blaagroen">
+  <h3>Søsalat og blågrønalger om sommeren</h3>
+  <p>Blågrønalger (cyanobakterier, fx Nodularia) er ikke tang, men kan om sommeren danne
+    skum og måtter, der driver ind sammen med grønalger. Nogle danner giftstoffer, der kan
+    skade leveren. Forslag: en sommernote på søsalat og rørhinde-arterne, fx “Saml ikke
+    grønalger, der ligger i eller ved en opblomstring af blågrønalger.”</p>
+  <div class="opts">{_radio("q4.blaagroen", EXTRA_WARNING_VERDICT)}</div>
+  {_text("q4.blaagroen.kommentar", "Fx en bedre formulering")}
+</section>"""
+
+
 def _followup2() -> str:
     """Round 3 (2026-11-20): what we did with the expert's round-2 answers, and the
     questions they raised."""
@@ -733,6 +767,8 @@ def main() -> None:
 {_photos()}
 
 {_season()}
+
+{_extra_warnings()}
 
 {followup}
 
