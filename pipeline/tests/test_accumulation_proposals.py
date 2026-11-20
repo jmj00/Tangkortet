@@ -10,7 +10,7 @@ PROPOSALS = json.loads(
     (REPO_ROOT / "data" / "expert" / "accumulation_proposals.json").read_text("utf-8")
 )
 FLAGS = {"jod", "arsen", "cadmium"}
-EVIDENCE = {"dansk", "udenlandsk", "usikker", "ingen"}
+EVIDENCE = {"dansk", "udenlandsk", "usikker", "ekspert", "ingen"}
 
 
 def test_one_proposal_per_registered_species():

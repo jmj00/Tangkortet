@@ -1,6 +1,6 @@
 {
   "status": "forslag",
-  "date": "2026-11-01",
+  "date": "2026-11-20",
   "note": "Literature-based PROPOSALS for each species' accumulation warning (pipeline/species.py `accumulation`), for the expert to confirm on the review page. Not used by the app until confirmed. Write-up: docs/literature-accumulation.md. Serving maths uses the Holdt et al. 2019 scenario: 5 g dried seaweed, adult upper intake level for iodine 600 µg/day.",
   "sources": {
     "holdt2019": {
@@ -26,44 +26,78 @@
       "doi": "10.1016/j.chemosphere.2017.07.076",
       "holdt": false,
       "kind": "Irske målinger, arsen-speciering"
+    },
+    "jorgensen2018": {
+      "citation": "Jørgensen K, Olesen PT (2018). Kainic acid in the seaweed Palmaria palmata (dulse). Food Additives & Contaminants Part B 11(3): 198–200.",
+      "doi": "10.1080/19393210.2018.1462258",
+      "holdt": false,
+      "kind": "Målinger (DTU Fødevareinstituttet), 20 prøver fra handlen"
     }
   },
   "species": {
     "saccharina-latissima": {
-      "flags": ["jod"],
+      "flags": [
+        "jod"
+      ],
       "evidence": "dansk",
       "text": "Meget højt jodindhold: i gennemsnit 2.300 mg/kg tørvægt (op til 4.800) i danske prøver. 5 g tørret sukkertang giver ca. 19 gange det øvre sikre daglige jodindtag for voksne. Blanchering i vand (mindst 45 °C i mindst 30 sekunder) sænker jodindholdet markant (fra ca. 4.600 til ned til 290 mg/kg). Cadmium, bly og kviksølv: lav risiko.",
-      "sources": ["holdt2019", "nielsen2020"]
+      "sources": [
+        "holdt2019",
+        "nielsen2020"
+      ]
     },
     "laminaria-digitata": {
-      "flags": ["jod", "arsen"],
+      "flags": [
+        "jod",
+        "arsen"
+      ],
       "evidence": "udenlandsk",
       "text": "Den mest jodrige art i litteraturen (op til ca. 6.200 mg/kg tørvægt). Indeholder også uorganisk arsen (2,2–87 mg/kg tørvægt i irske prøver), og andelen stiger fra stilken ud mod de gamle, henfaldende bladspidser, hvor over halvdelen af arsenet er uorganisk. Ingen danske målinger fundet.",
-      "sources": ["cherry2019", "ronan2017"]
+      "sources": [
+        "cherry2019",
+        "ronan2017"
+      ]
     },
     "alaria-esculenta": {
-      "flags": ["jod"],
+      "flags": [
+        "jod"
+      ],
       "evidence": "udenlandsk",
       "text": "Højt jodindhold (ca. 670 µg/g), som kogning sænker til ca. 165 µg/g. Ingen danske målinger fundet.",
-      "sources": ["cherry2019"]
+      "sources": [
+        "cherry2019"
+      ]
     },
     "fucus-serratus": {
-      "flags": ["jod"],
+      "flags": [
+        "jod"
+      ],
       "evidence": "dansk",
       "text": "Moderat-højt jodindhold: i gennemsnit 366 mg/kg tørvægt (op til 960). 5 g tørret savtang giver ca. 3 gange det øvre sikre daglige jodindtag for voksne. Højeste cadmium blandt de danske prøver (ca. 1,0 mg/kg tørvægt), men vurderet som lav risiko.",
-      "sources": ["holdt2019"]
+      "sources": [
+        "holdt2019"
+      ]
     },
     "fucus-vesiculosus": {
-      "flags": ["jod"],
+      "flags": [
+        "jod"
+      ],
       "evidence": "dansk",
       "text": "Moderat jodindhold: i gennemsnit 275 mg/kg tørvægt (op til 450). 5 g tørret blæretang giver ca. 2 gange det øvre sikre daglige jodindtag for voksne. Blyindholdet varierer meget (op til 9,6 mg/kg tørvægt i én prøve); bly er mest relevant for børn og gravide.",
-      "sources": ["holdt2019"]
+      "sources": [
+        "holdt2019"
+      ]
     },
     "ascophyllum-nodosum": {
-      "flags": ["jod"],
+      "flags": [
+        "jod"
+      ],
       "evidence": "usikker",
       "text": "Sparsomme data. Som brunalge er et betydeligt jodindhold sandsynligt, men vi har ikke fundet pålidelige tal pr. kg. Uorganisk arsen er lavt (under 1 % af det samlede arsen i irske prøver). Ingen danske målinger fundet.",
-      "sources": ["ronan2017", "cherry2019"]
+      "sources": [
+        "ronan2017",
+        "cherry2019"
+      ]
     },
     "chorda-filum": {
       "flags": null,
@@ -74,8 +108,11 @@
     "palmaria-palmata": {
       "flags": [],
       "evidence": "udenlandsk",
-      "text": "Lavt til moderat jodindhold (ca. 97 µg/g; ca. 66 efter kogning). 5 g tørret søl giver lidt under det øvre sikre daglige jodindtag. Uorganisk arsen beskrives som ubetydeligt. Ingen særlig advarsel foreslået.",
-      "sources": ["cherry2019"]
+      "text": "Lavt til moderat jodindhold (ca. 97 µg/g; ca. 66 efter kogning). Uorganisk arsen beskrives som ubetydeligt. Indeholder giftstoffet kainsyre (fra spor op til ca. 560 µg/g tørvægt i 20 prøver fra handlen) – eksperten anbefaler ikke at spise store mængder dagligt.",
+      "sources": [
+        "cherry2019",
+        "jorgensen2018"
+      ]
     },
     "chondrus-crispus": {
       "flags": null,
@@ -87,19 +124,65 @@
       "flags": [],
       "evidence": "udenlandsk",
       "text": "Lavt jodindhold (tal for nori: ca. 80 µg pr. 5 g) og meget lidt uorganisk arsen i nori. Tallene er for beslægtede arter (Porphyra/nori), ikke målt på navle-purpurhinde. Ingen særlig advarsel foreslået.",
-      "sources": ["cherry2019"]
-    },
-    "ulva-lactuca": {
-      "flags": [],
-      "evidence": "dansk",
-      "text": "Meget lavt jodindhold (ca. 19 mg/kg tørvægt i danske prøver) og lavt indhold af cadmium, bly og kviksølv. Ingen særlig advarsel foreslået.",
-      "sources": ["holdt2019"]
+      "sources": [
+        "cherry2019"
+      ]
     },
     "ulva-intestinalis": {
       "flags": [],
       "evidence": "udenlandsk",
       "text": "Lavt til moderat jodindhold (ca. 92 µg/g; ca. 79 efter kogning). Ingen særlig advarsel foreslået.",
-      "sources": ["cherry2019"]
+      "sources": [
+        "cherry2019"
+      ]
+    },
+    "ulva-fenestrata": {
+      "flags": [],
+      "evidence": "dansk",
+      "text": "Meget lavt jodindhold (ca. 19 mg/kg tørvægt i danske prøver (registreret som Ulva lactuca, nu Ulva fenestrata)) og lavt indhold af cadmium, bly og kviksølv. Ingen særlig advarsel foreslået.",
+      "sources": [
+        "holdt2019"
+      ]
+    },
+    "porphyra-purpurea": {
+      "flags": [],
+      "evidence": "udenlandsk",
+      "text": "Lavt jodindhold og meget lidt uorganisk arsen i nori (beslægtede arter). Ingen målinger for rød purpurhinde fundet. Ingen særlig advarsel foreslået.",
+      "sources": [
+        "cherry2019"
+      ]
+    },
+    "ulva-lacinulata": {
+      "flags": [],
+      "evidence": "usikker",
+      "text": "Ingen målinger for Ulva lacinulata fundet. Søsalat (Ulva) har i danske prøver meget lavt jodindhold og lavt indhold af cadmium, bly og kviksølv. Ingen særlig advarsel foreslået.",
+      "sources": [
+        "holdt2019"
+      ]
+    },
+    "ulva-compressa": {
+      "flags": [],
+      "evidence": "usikker",
+      "text": "Ingen målinger for flad rørhinde fundet. Søsalat (Ulva) har i danske prøver meget lavt jodindhold og lavt indhold af cadmium, bly og kviksølv. Ingen særlig advarsel foreslået.",
+      "sources": [
+        "holdt2019"
+      ]
+    },
+    "gracilaria-vermiculophylla": {
+      "flags": null,
+      "evidence": "ingen",
+      "text": "Vi har ikke fundet målinger af jod, arsen eller cadmium for brunlig gracilariatang. Invasiv art.",
+      "sources": []
+    },
+    "sargassum-muticum": {
+      "flags": [
+        "arsen"
+      ],
+      "evidence": "ekspert",
+      "text": "Eksperten oplyser, at arten kan indeholde meget store mængder uorganisk arsen, og fraråder den som fødevare. Den beslægtede hijiki (Sargassum fusiforme) er kendt for højt indhold af uorganisk arsen.",
+      "sources": [
+        "cherry2019"
+      ]
     }
   }
 }

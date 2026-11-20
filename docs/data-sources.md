@@ -37,6 +37,8 @@ and come in EPSG:25832 (MiljøGIS) unless noted.
 | Naturbeskyttelse: fredninger, reservater | Miljøportalen WFS `dai:fredede_omr`, `dai:natur_vildt_reservat` | 4,176 / 94 | Same |
 | Kraftig nedbør 24/48/72 h | DMI `metObs` `precip_past1h` (stations, hourly, up to the latest hour) | live | No key; **CORS `*`**, so the browser can fetch it directly (no daily rebuild needed). Svampekortet's `climateData` client also works for daily totals |
 | Live badevandsvarsler | badevand.dk (DHI) `/api/next/beaches` | n/a | **Not usable**: protected by reCAPTCHA. Link out instead. A data agreement with DHI is a user decision |
+| Model-based overflow risk per beach | ditbadevand.dk (Talefod A/S) | n/a | **Link only.** A private company's free service: a screening model of overflow risk (its own validation: AUC 0.61, "only slightly better than random"), no published data terms. Suggested by the expert; linked from the app, not used as data |
+| Advice for private foragers and collecting rules | Fødevarestyrelsen: [consumer advice](https://www.foedevarestyrelsen.dk/kost-og-foedevarer/alt-om-mad/god-koekkenhygiejne/saadan-goer-du/tang), [business rules](https://www.foedevarestyrelsen.dk/kost-og-foedevarer/start-og-drift-af-foedevarevirksomhed/specifikke-foedevarer-hygiejneregler/tang-og-mikroalger) | n/a | Paraphrased in the guide: pick in the water, not on the beach; avoid harbours, towns, streams and outlets; know the species; collecting to sell requires registration. Neither page names species |
 | Opblomstringer (alger, cyanobakterier) | none found | n/a | Link out + checklist item |
 | Landbrug og dræn, vandløb | Miljøportalen `dai:bes_vandloeb`; MiljøGIS coastal catchments (`…kystvand_opland_afg`) | n/a | Available, not yet sized. Phase 3 decides whether "a stream mouth nearby" is worth showing |
 | Strøm og vandudskiftning | none | n/a | Checklist text only (brief §2) |
@@ -65,10 +67,11 @@ Third-party data keeps its own licence and is not restricted further.
 | arter.dk (via GBIF) | Danish names, part of the finds | observation data CC BY 4.0, credit "Datagrundlag: Arter – Miljøstyrelsen, Statens Naturhistoriske Museum" | as above |
 | Miljøstyrelsen, MiljøGIS water-plan layers (`vp4basis2026`, `vp3_2endelig2025`) | overflows, treatment plants, industry, aquaculture, harbours, dumping sites, bathing water, coastal-water status | INSPIRE records for klappladser and badevand: **CC BY 4.0** (geodata-info.dk); the other layers come from the same publisher, **confirm before launch** | derived risk cells for the dev area (`web/public/data/risk/`) |
 | Danmarks Miljøportal (Natura 2000, fredninger) | live query at the pin | free use under <https://miljoeportal.dk/dataansvar/vilkaar-for-brug/>; **record the attribution line before launch** | nothing stored |
+| MiljøGIS `vp3_2e2025_vandloeb_samlet` (named watercourses) + Miljøportalen `dai:bes_vandloeb` (protected watercourses) | live stream query at the pin (200 m, the expert's stream-mouth rule) | same publishers as above | nothing stored |
 | DKJord via Vejdirektoratet's ArcGIS mirror | live V1/V2 query at the pin | terms not stated on the service; **ask before launch** | nothing stored |
 | DMI metObs | live rain and wind | open data, credit "Data fra DMI" | nothing stored |
 | OpenStreetMap | basemap | ODbL, credit "© OpenStreetMap-bidragydere" | nothing stored |
-| Literature (Holdt et al. and others) | accumulation proposals | cited by DOI; only short facts and numbers are reproduced | `docs/literature-accumulation.md` |
+| Literature (Holdt et al. and others) | accumulation proposals; kainic acid in søl (Jørgensen & Olesen 2018, doi:10.1080/19393210.2018.1462258) | cited by DOI; only short facts and numbers are reproduced | `docs/literature-accumulation.md` |
 | badevand.dk (DHI) | — | reCAPTCHA-protected, **not used**; the app only links to it | nothing stored |
 
 Raw source dumps are never committed: `build/` is git-ignored, and the repo

@@ -54,7 +54,8 @@ def test_species_doc_packs_observations_and_datasets(tmp_path):
     ]
     assert [d["title"] for d in doc["datasets"]] == ["NHMD", "iNat"]
     assert doc["attachment_counts"] == {"attached": 1, "drift": 1, "unknown": 0}
-    assert doc["expert"]["harvest_method"] is None
+    assert doc["expert"]["harvest_method"] == "hel_plade"  # expert, round 2
+    assert doc["warnings"] and doc["invasive"] is False
 
     summaries = publish_species(tmp_path, [doc])
     manifest = write_manifest(tmp_path, summaries, risk=None, version="test")
@@ -69,3 +70,42 @@ def test_every_species_has_distinct_name_and_gbif_key():
     keys = [s["gbif_usage_key"] for s in TARGET_SPECIES]
     assert len(set(names)) == len(names)
     assert len(set(keys)) == len(keys)
+
+
+def test_lookalikes_and_extra_keys_are_consistent():
+    names = {s["scientific_name"] for s in TARGET_SPECIES}
+    keys = [k for s in TARGET_SPECIES for k in [s["gbif_usage_key"], *s["gbif_extra_keys"]]]
+    assert len(set(keys)) == len(keys)
+    for sp in TARGET_SPECIES:
+        assert set(sp["lookalikes"]) <= names, sp["scientific_name"]
+        assert all(w.strip() for w in sp["warnings"])
+        assert sp["danish_name"] or not sp["danish_name_verified"]
+
+
+def test_manifest_sorts_by_shown_name(tmp_path):
+    def summary(dk, sci):
+        return {"danish_name": dk, "scientific_name": sci}
+
+    manifest = write_manifest(
+        tmp_path,
+        [
+            summary("Sukkertang", "Saccharina latissima"),
+            summary("", "Ulva lacinulata"),
+            summary("Almindelig søsalat", "Ulva fenestrata"),
+        ],
+        risk=None,
+        version="test",
+    )
+    assert [s["scientific_name"] for s in manifest["species"]] == [
+        "Ulva fenestrata",
+        "Saccharina latissima",
+        "Ulva lacinulata",
+    ]
+
+
+def test_observations_for_merges_keys_without_duplicates(monkeypatch):
+    from pipeline.ingest import gbif
+
+    records = {1: [obs(key=10), obs(key=11)], 2: [obs(key=11), obs(key=12)]}
+    monkeypatch.setattr(gbif, "observations", lambda key: records[key])
+    assert [o["gbif_id"] for o in gbif.observations_for([1, 2])] == [10, 11, 12]

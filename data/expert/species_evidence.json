@@ -675,5 +675,214 @@
       "median": 0.0,
       "p90": 13.0
     }
+  },
+  {
+    "scientific_name": "Porphyra purpurea",
+    "gbif_usage_key": 5275561,
+    "danish_name": "Rød purpurhinde",
+    "danish_name_source": "GBIF vernacularNames (unverified)",
+    "records_dk": 113,
+    "records_since_2015": 2,
+    "top_datasets": [
+      [
+        "NHMD Phycology Herbarium - static",
+        90
+      ],
+      [
+        "The New York Botanical Garden Herbarium (NY)",
+        4
+      ],
+      [
+        "Earth Guardians Weekly Feed",
+        2
+      ],
+      [
+        "Bernice P. Bishop Museum",
+        2
+      ]
+    ],
+    "decades": {
+      "1880s": 1,
+      "1890s": 1,
+      "1950s": 8,
+      "1960s": 26,
+      "1970s": 9,
+      "1980s": 34,
+      "1990s": 13,
+      "2000s": 17,
+      "2020s": 2
+    },
+    "attachment": {
+      "unknown": 69,
+      "attached": 41,
+      "drift": 3
+    },
+    "depth": {
+      "n": 80,
+      "p10": 0.0,
+      "median": 0.0,
+      "p90": 1.0
+    }
+  },
+  {
+    "scientific_name": "Ulva lacinulata",
+    "gbif_usage_key": 8960338,
+    "danish_name": null,
+    "danish_name_source": "GBIF vernacularNames (unverified)",
+    "records_dk": 19,
+    "records_since_2015": 18,
+    "top_datasets": [
+      [
+        "INSDC Sequences",
+        19
+      ]
+    ],
+    "decades": {
+      "2020s": 18
+    },
+    "attachment": {
+      "unknown": 19
+    },
+    "depth": null
+  },
+  {
+    "scientific_name": "Ulva compressa",
+    "gbif_usage_key": 5273322,
+    "danish_name": "Flad rørhinde",
+    "danish_name_source": "GBIF vernacularNames (unverified)",
+    "records_dk": 293,
+    "records_since_2015": 23,
+    "top_datasets": [
+      [
+        "NHMD Phycology Herbarium - static",
+        255
+      ],
+      [
+        "INSDC Sequences",
+        23
+      ],
+      [
+        "Botany (UPS)",
+        5
+      ],
+      [
+        "The New York Botanical Garden Herbarium (NY)",
+        3
+      ]
+    ],
+    "decades": {
+      "1840s": 4,
+      "1870s": 1,
+      "1890s": 65,
+      "1900s": 32,
+      "1910s": 5,
+      "1920s": 22,
+      "1930s": 59,
+      "1950s": 28,
+      "1960s": 1,
+      "1970s": 12,
+      "1980s": 9,
+      "1990s": 2,
+      "2000s": 14,
+      "2020s": 23
+    },
+    "attachment": {
+      "unknown": 236,
+      "attached": 40,
+      "drift": 17
+    },
+    "depth": {
+      "n": 126,
+      "p10": 0.0,
+      "median": 0.0,
+      "p90": 1.0
+    }
+  },
+  {
+    "scientific_name": "Gracilaria vermiculophylla",
+    "gbif_usage_key": 5278964,
+    "danish_name": "Brunlig gracilariatang",
+    "danish_name_source": "arter.dk vernacularName",
+    "records_dk": 43,
+    "records_since_2015": 18,
+    "top_datasets": [
+      [
+        "NHMD Phycology Herbarium - static",
+        19
+      ],
+      [
+        "Species recordings from the Danish National Portal Arter.dk",
+        7
+      ],
+      [
+        "Danish government nature monitoring portal \"Danmarks Miljøportals Naturdatabase\"",
+        5
+      ],
+      [
+        "UNESCO eDNA expedition in The Wadden Sea (Denmark, Germany, The Netherlands): April 2023",
+        4
+      ]
+    ],
+    "decades": {
+      "2000s": 20,
+      "2010s": 1,
+      "2020s": 17
+    },
+    "attachment": {
+      "unknown": 36,
+      "drift": 3,
+      "attached": 4
+    },
+    "depth": {
+      "n": 19,
+      "p10": 0.0,
+      "median": 0.0,
+      "p90": 1.0
+    }
+  },
+  {
+    "scientific_name": "Sargassum muticum",
+    "gbif_usage_key": 3197314,
+    "danish_name": "Butblæret sargassotang",
+    "danish_name_source": "arter.dk vernacularName",
+    "records_dk": 203,
+    "records_since_2015": 83,
+    "top_datasets": [
+      [
+        "NHMD Phycology Herbarium - static",
+        110
+      ],
+      [
+        "iNaturalist Research-grade Observations",
+        53
+      ],
+      [
+        "NABU|naturgucker",
+        15
+      ],
+      [
+        "Species recordings from the Danish National Portal Arter.dk",
+        7
+      ]
+    ],
+    "decades": {
+      "1950s": 2,
+      "1980s": 16,
+      "1990s": 70,
+      "2000s": 32,
+      "2010s": 16,
+      "2020s": 67
+    },
+    "attachment": {
+      "unknown": 140,
+      "drift": 15,
+      "attached": 48
+    },
+    "depth": {
+      "n": 91,
+      "p10": 0.0,
+      "median": 1.0,
+      "p90": 1.0
+    }
   }
 ]

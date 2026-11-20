@@ -83,6 +83,19 @@ def raw_records(taxon_key: int) -> Iterator[dict[str, Any]]:
             return
 
 
+def observations_for(taxon_keys: list[int]) -> list[Observation]:
+    """Records for several GBIF keys (e.g. a species plus an outdated name whose
+    Danish records belong to it), each record once."""
+    seen: set[int] = set()
+    out = []
+    for key in taxon_keys:
+        for obs in observations(key):
+            if obs["gbif_id"] not in seen:
+                seen.add(obs["gbif_id"])
+                out.append(obs)
+    return out
+
+
 def observations(taxon_key: int) -> list[Observation]:
     out = []
     for record in raw_records(taxon_key):

@@ -106,3 +106,21 @@ to as low as 293 mg/kg dw [2]. Boiling lowered iodine in *Alaria* by about
 
 No species is proposed for a cadmium flag: Holdt et al. found cadmium
 insignificant.
+
+## Round 2 (2026-11-20)
+
+- The expert agreed with the iodine proposal for sukkertang and stated that
+  Laminaria species can hold very large amounts of iodine: `accumulation: ["jod"]`
+  for sukkertang and fingertang, with a warning. The arsenic proposal for
+  fingertang is still open.
+- **Kainic acid in søl** (expert): a natural neurotoxin. Primary source: Jørgensen
+  K, Olesen PT (2018), *Kainic acid in the seaweed Palmaria palmata (dulse)*, Food
+  Additives & Contaminants B 11(3): 198–200,
+  doi:[10.1080/19393210.2018.1462258](https://doi.org/10.1080/19393210.2018.1462258)
+  (DTU Food Institute; 20 retail samples, trace to ≈ 560 µg/g dw).
+- **Butblæret sargassotang** (invasive, new): the expert says it can hold very
+  high inorganic arsenic. No species-specific primary source was found; the
+  related hijiki (*Sargassum fusiforme*) is known for it [3]. Shown as the
+  expert's statement (evidence "ekspert").
+- New species without measurements get "no data" or "uncertain" proposals; see
+  `data/expert/accumulation_proposals.json`.

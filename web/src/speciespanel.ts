@@ -12,6 +12,7 @@ import {
   seasonText,
   type FieldText,
 } from "./species";
+import { shownName } from "./types";
 import type { Attachment, Manifest, SpeciesDoc, SpeciesSummary } from "./types";
 
 const STATUS_LABEL: Record<FieldText["status"], string | null> = {
@@ -78,6 +79,12 @@ export class SpeciesPanel {
     this.render();
   }
 
+  /** "Danish (Scientific)" for a registered species, else the scientific name. */
+  private nameOf(scientific: string): string {
+    const s = this.manifest.species.find((x) => x.scientific_name === scientific);
+    return s?.danish_name ? `${s.danish_name} (${scientific})` : scientific;
+  }
+
   private back(): void {
     this.selected = null;
     this.hooks.onSelect(null, this.visible);
@@ -120,8 +127,17 @@ export class SpeciesPanel {
               h(
                 "span",
                 { class: "row__main" },
-                h("span", { class: "row__name" }, s.danish_name),
-                h("span", { class: "row__sci" }, s.scientific_name),
+                h(
+                  "span",
+                  { class: s.danish_name ? "row__name" : "row__name row__name--sci" },
+                  shownName(s),
+                  s.invasive ? h("span", { class: "badge badge--invasive" }, "Invasiv") : null,
+                ),
+                h(
+                  "span",
+                  { class: "row__sci" },
+                  s.danish_name ? s.scientific_name : "Intet dansk navn",
+                ),
               ),
               h(
                 "span",
@@ -182,8 +198,11 @@ export class SpeciesPanel {
       h(
         "h2",
         {},
-        doc.danish_name,
-        !doc.danish_name_verified
+        shownName(doc),
+        doc.invasive
+          ? h("span", { class: "badge badge--invasive", title: "Invasiv art" }, "Invasiv art")
+          : null,
+        doc.danish_name && !doc.danish_name_verified
           ? h(
               "span",
               { class: "badge badge--provisional", title: "Navnet er ikke bekræftet mod arter.dk" },
@@ -191,7 +210,29 @@ export class SpeciesPanel {
             )
           : null,
       ),
-      h("p", { class: "sci" }, doc.scientific_name, ` · ${doc.group}`),
+      h(
+        "p",
+        { class: "sci" },
+        doc.danish_name ? doc.scientific_name : "Intet dansk navn",
+        ` · ${doc.group}`,
+      ),
+      doc.warnings.length
+        ? h(
+            "section",
+            { class: "warning-box", role: "note" },
+            h("h3", {}, "Vigtigt"),
+            ...doc.warnings.map((w) => h("p", {}, w)),
+          )
+        : null,
+      doc.lookalikes.length
+        ? h(
+            "p",
+            { class: "lookalikes" },
+            h("strong", {}, "Kan forveksles med: "),
+            doc.lookalikes.map((sci) => this.nameOf(sci)).join(", "),
+            ".",
+          )
+        : null,
 
       h(
         "section",

@@ -1,7 +1,7 @@
 {
-  "status": "udkast",
-  "version": "2026-10-23",
-  "note": "Draft by Claude from the expert's brief, pending the expert's review (review page, 'Trafiklys'). One source of truth: web/src/verdict.ts evaluates these, scripts/build_expert_review.py shows them to the expert. Coastal-water chemical status is deliberately not a rule: 121 of 123 Danish coastal waters are 'Ikke-god kemisk tilstand', so it would make every spot yellow.",
+  "status": "gennemgaaet",
+  "version": "2026-11-20",
+  "note": "Rules reviewed by the expert on the review page (round 2, 2026-11-20): every rule kept, the yellow overflow rule widened to 2 km and the active dumping site to 500 m on his advice, and his stream-mouth rule added. One source of truth: web/src/verdict.ts evaluates these, scripts/build_expert_review.py shows them to the expert. Coastal-water chemical status is deliberately not a rule: 121 of 123 Danish coastal waters are 'Ikke-god kemisk tilstand', so it would make every spot yellow.",
   "rain_mm_48h": 10,
   "rules": [
     {
@@ -12,6 +12,14 @@
       "within_m": 500,
       "needs_rain": true,
       "text": "Kloakoverløb inden for 500 m, og mindst 10 mm regn de seneste 48 timer"
+    },
+    {
+      "id": "vandloeb_regn",
+      "level": "red",
+      "type": "stream",
+      "within_m": 200,
+      "needs_rain": true,
+      "text": "Vandløb eller å-udløb inden for 200 m, og mindst 10 mm regn de seneste 48 timer"
     },
     {
       "id": "udledning_naer",
@@ -36,16 +44,23 @@
       "type": "nearby",
       "groups": ["klapplads"],
       "kind_contains": "aktiv",
-      "within_m": 0,
-      "text": "Nålen ligger på en aktiv klapplads"
+      "within_m": 500,
+      "text": "Aktiv klapplads inden for 500 m"
     },
     {
       "id": "overloeb",
       "level": "yellow",
       "type": "nearby",
       "groups": ["overloeb"],
-      "within_m": 1000,
-      "text": "Kloakoverløb inden for 1 km"
+      "within_m": 2000,
+      "text": "Kloakoverløb inden for 2 km"
+    },
+    {
+      "id": "vandloeb",
+      "level": "yellow",
+      "type": "stream",
+      "within_m": 200,
+      "text": "Vandløb eller å-udløb inden for 200 m"
     },
     {
       "id": "udledning",

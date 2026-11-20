@@ -5,8 +5,10 @@ Date: 2026-10-23
 ## Status
 
 Accepted. Supersedes [ADR-0004](0004-risk-shown-as-factors-not-a-score.md).
-The rules themselves are a draft (`status: "udkast"` in
-`web/src/verdict-rules.json`) until the expert has reviewed them.
+The expert reviewed every rule in round 2 (2026-11-20): all kept, the yellow
+overflow rule widened to 2 km, the active dumping site to 500 m, and a
+stream-mouth rule added (yellow within 200 m, red after ≥ 10 mm rain in 48 h).
+`status` in `web/src/verdict-rules.json` is now `"gennemgaaet"`.
 
 ## Context
 
