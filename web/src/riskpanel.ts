@@ -11,7 +11,9 @@ import { RISK_COLOR } from "./layers";
 import {
   queryProtected,
   querySoil,
-  queryStreams,
+  parseStreams,
+  queryNamedStreams,
+  querySmallStreams,
   queryWaterBodies,
   SOIL_RADIUS_M,
   STREAM_RADIUS_M,
@@ -47,7 +49,9 @@ export class RiskPanel {
   private wind: Pending<WindSummary | null> = "loading";
   private water: Pending<LiveResult<WaterBody>> = "loading";
   private soil: Pending<LiveResult<SoilSite>> = "loading";
-  private streams: Pending<Streams | null> = "loading";
+  /** Raw answers of the two watercourse queries (see live.ts). */
+  private namedStreams: Pending<unknown | null> = "loading";
+  private smallStreams: Pending<unknown | null> = "loading";
   private protectedAreas: Pending<LiveResult<ProtectedArea>> = "loading";
   private abort: AbortController | null = null;
 
@@ -65,7 +69,7 @@ export class RiskPanel {
     this.abort = new AbortController();
     const signal = this.abort.signal;
     this.items = this.rain = this.wind = this.water = this.soil = this.protectedAreas = "loading";
-    this.streams = "loading";
+    this.namedStreams = this.smallStreams = "loading";
     this.render();
 
     const done =
@@ -92,7 +96,8 @@ export class RiskPanel {
     );
     void queryWaterBodies(pin, signal).then(done((r) => (this.water = r)));
     void querySoil(pin, signal).then(done((r) => (this.soil = r)));
-    void queryStreams(pin, signal).then(done((r) => (this.streams = r)));
+    void queryNamedStreams(pin, signal).then(done((r) => (this.namedStreams = r)));
+    void querySmallStreams(pin, signal).then(done((r) => (this.smallStreams = r)));
     void queryProtected(pin, signal).then(done((r) => (this.protectedAreas = r)));
   }
 
@@ -161,8 +166,19 @@ export class RiskPanel {
     );
   }
 
+  /** Watercourses known so far; null if the named query failed. Small streams
+   * count once their (slow) query has answered. */
+  private streams(): Streams | null {
+    if (this.namedStreams === "loading" || this.namedStreams === null) return null;
+    const small = this.smallStreams === "loading" ? null : this.smallStreams;
+    return parseStreams(this.namedStreams, small);
+  }
+
   private verdictCard(): HTMLElement {
-    const settled = [this.items, this.rain, this.soil, this.streams].every((v) => v !== "loading");
+    // The small-stream query is slow and only supplementary: don't wait for it.
+    const settled = [this.items, this.rain, this.soil, this.namedStreams].every(
+      (v) => v !== "loading",
+    );
     if (!settled) {
       return h("section", { class: "verdict verdict--pending" }, h("p", {}, "Vurderer…"));
     }
@@ -173,7 +189,7 @@ export class RiskPanel {
       rain48: rain && rain !== "error" ? rain.mm48 : null,
       soilV2:
         soil !== "error" && soil.ok ? soil.items.filter((i) => i.level === "V2").length : null,
-      streams: this.streams === "error" ? null : (this.streams as Streams | null),
+      streams: this.streams(),
     });
     const text = LEVEL_TEXT[verdict.level];
     return h(
@@ -198,6 +214,9 @@ export class RiskPanel {
               ),
             ),
           )
+        : null,
+      this.smallStreams === "loading"
+        ? h("p", { class: "note" }, "Tjekker også mindre vandløb…")
         : null,
       verdict.unchecked.length
         ? h(
@@ -405,10 +424,9 @@ export class RiskPanel {
 
   private streamCard(): HTMLElement {
     const title = `Vandløb og å-udløb (inden for ${formatDistance(STREAM_RADIUS_M)})`;
-    const s = this.streams;
-    const status = this.status(s);
+    const status = this.status(this.namedStreams);
     if (status) return this.card(title, status);
-    const found = s as Streams | null;
+    const found = this.streams();
     if (found === null) return this.card(title, this.status("error"));
     const any = found.names.length + found.unnamed > 0;
     return this.card(
@@ -424,6 +442,9 @@ export class RiskPanel {
             ".",
           )
         : h("p", {}, "Ingen kortlagte vandløb ved nålen."),
+      this.smallStreams === "loading"
+        ? h("p", { class: "loading" }, "Tjekker også mindre vandløb…")
+        : null,
       h(
         "p",
         { class: "note" },
