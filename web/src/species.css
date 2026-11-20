@@ -1004,3 +1004,17 @@
 [data-spp-scrolled] .spp-nav {
   box-shadow: 0 1px 0 var(--border);
 }
+
+/* A chip cut off at the right edge fades out, hinting the row scrolls. */
+.spp-chips {
+  mask-image: linear-gradient(to right, #000 calc(100% - 1.25rem), transparent);
+}
+
+.spp-hint[hidden] {
+  display: none;
+}
+
+/* Room for the fade at the end, so it never covers the last row. */
+.spp-results {
+  padding-bottom: 1.5rem;
+}

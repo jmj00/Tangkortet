@@ -120,7 +120,7 @@ export class SpeciesPanel {
   private readonly search = h("input", {
     class: "spp-search__input",
     type: "search",
-    placeholder: "Søg art eller gruppe, fx søl",
+    placeholder: "Søg art, fx søl",
     "aria-label": "Søg i artslisten",
     autocomplete: "off",
     spellcheck: "false",
