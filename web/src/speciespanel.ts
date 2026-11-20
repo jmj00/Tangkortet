@@ -9,6 +9,7 @@
 
 import "./species.css";
 
+import { forgetPendingSpecies } from "./data";
 import { h, extLink } from "./dom";
 import {
   filterSpecies,
@@ -90,6 +91,9 @@ export interface SpeciesPanelHooks {
   loadDoc(summary: SpeciesSummary): Promise<SpeciesDoc>;
 }
 
+const DENSITIES = ["full", "compact", "tiny"] as const;
+type Density = (typeof DENSITIES)[number];
+
 interface RowRefs {
   li: HTMLLIElement;
   button: HTMLButtonElement;
@@ -141,6 +145,7 @@ export class SpeciesPanel {
       onSelect: (doc) => this.hooks.onSelect(doc, this.visible),
       render: (view, prev, user) => this.renderView(view, prev, user),
       isOffline: () => navigator.onLine === false,
+      onTimeout: (s) => forgetPendingSpecies(s.file),
     });
     this.buildFrame();
     this.renderView({ kind: "list" }, { kind: "list" }, false);
@@ -192,7 +197,9 @@ export class SpeciesPanel {
    * shell (the browser/phone back button). */
   closeDetail(): void {
     if (this.sel.view.kind === "list") return;
-    this.sel.home();
+    // Called for the browser's back button, perhaps while the map has focus:
+    // only take focus to the row if it was in the panel already.
+    this.sel.home(this.root.contains(document.activeElement));
   }
 
   selectBySlug(slug: string): void {
@@ -225,13 +232,43 @@ export class SpeciesPanel {
       node.style.setProperty("--spp-pad-bottom", `${pad("paddingBottom")}px`);
       node.style.setProperty("--spp-pad-x", `${pad("paddingLeft")}px`);
     }
-    // Shorter than ~26 lines of text: drop the hint and tighten the toolbar so
-    // rows show; shorter than ~12 lines: the chips go too (typing a group's
-    // name still works). In rem, so large text compacts sooner.
+    this.chooseDensity(scroller.clientHeight - pad("paddingTop") - pad("paddingBottom"));
+  }
+
+  /** The richest list density whose toolbar still leaves room for about two
+   * rows: "full", then "compact" (no hint, tighter), then "tiny" (no chips
+   * either; typing a group's name still works). Measured, so text size and
+   * sheet height both count. Going back to a richer density needs some spare
+   * room (hysteresis), so dragging the sheet across a threshold does not make
+   * the toolbar jump back and forth. */
+  private chooseDensity(room = this.listRoom()): void {
+    if (!this.listRoot.isConnected || room <= 0) return;
     const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-    const height = scroller.clientHeight;
-    this.listRoot.dataset.density =
-      height === 0 ? "full" : height < 12 * rem ? "tiny" : height < 26 * rem ? "compact" : "full";
+    const toolbar = this.listRoot.querySelector<HTMLElement>(".spp-toolbar");
+    if (!toolbar) return;
+    const current = DENSITIES.indexOf(this.listRoot.dataset.density as Density);
+    let pick: Density = "tiny";
+    for (const [i, density] of DENSITIES.entries()) {
+      this.listRoot.dataset.density = density;
+      const row = this.listRoot.querySelector<HTMLElement>(".spp-row");
+      const need = toolbar.offsetHeight + 2 * (row?.offsetHeight || 3 * rem);
+      const spare = current >= 0 && i < current ? 1.5 * rem : 0;
+      if (need + spare <= room) {
+        pick = density;
+        break;
+      }
+    }
+    this.listRoot.dataset.density = pick;
+  }
+
+  private listRoom(): number {
+    const scroller = this.scroller();
+    const style = getComputedStyle(scroller);
+    return (
+      scroller.clientHeight -
+      (parseFloat(style.paddingTop) || 0) -
+      (parseFloat(style.paddingBottom) || 0)
+    );
   }
 
   private renderView(
@@ -385,6 +422,7 @@ export class SpeciesPanel {
       this.patchRow(refs, s, near);
       list.append(refs.li);
     }
+    this.chooseDensity();
     // Re-parenting a focused row blurs it; put focus back.
     const focused = document.activeElement;
     this.results.replaceChildren(list);

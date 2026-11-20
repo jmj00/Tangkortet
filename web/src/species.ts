@@ -297,6 +297,9 @@ export interface SelectionHooks<S, D> {
   /** Draw `view`. `user` is true when the user asked for it just now (focus may move). */
   render(view: SelectionView<S, D>, prev: SelectionView<S, D>, user: boolean): void;
   isOffline(): boolean;
+  /** The load for `summary` timed out: drop any cached pending request so a
+   * retry starts afresh instead of waiting on the hung one. */
+  onTimeout?(summary: S): void;
   setTimer?(fn: () => void, ms: number): unknown;
   clearTimer?(id: unknown): void;
 }
@@ -381,11 +384,11 @@ export class SpeciesSelection<S extends { slug: string }, D extends { slug: stri
     else this.home();
   }
 
-  /** Straight to the list. */
-  home(): void {
+  /** Straight to the list. `user` false: return without moving focus. */
+  home(user = true): void {
     this.trail.length = 0;
     this.token++; // drop a load in flight
-    this.set({ kind: "list" }, true);
+    this.set({ kind: "list" }, user);
   }
 
   private startTimer(token: number, summary: S): void {
@@ -396,6 +399,7 @@ export class SpeciesSelection<S extends { slug: string }, D extends { slug: stri
       this.timer = null;
       // Still the same load and still waiting: say so, but let a late answer win.
       if (token === this.token && this.view.kind === "loading") {
+        this.hooks.onTimeout?.(summary);
         this.set({ kind: "error", summary, offline: this.hooks.isOffline() }, false);
       }
     }, this.timeoutMs);

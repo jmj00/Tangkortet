@@ -15,15 +15,32 @@ export function loadManifest(): Promise<Manifest> {
 }
 
 const speciesCache = new Map<string, Promise<SpeciesDoc>>();
+const speciesSettled = new Set<Promise<SpeciesDoc>>();
 
 export function loadSpecies(file: string): Promise<SpeciesDoc> {
   let pending = speciesCache.get(file);
   if (!pending) {
-    pending = getJson<SpeciesDoc>(file);
-    pending.catch(() => speciesCache.delete(file)); // let a later attempt retry
-    speciesCache.set(file, pending);
+    const request = getJson<SpeciesDoc>(file);
+    pending = request;
+    request.then(
+      () => speciesSettled.add(request),
+      () => {
+        // Let a later attempt retry -- unless a newer request already took its place.
+        if (speciesCache.get(file) === request) speciesCache.delete(file);
+      },
+    );
+    speciesCache.set(file, request);
   }
   return pending;
+}
+
+/** Forget a species request that is still pending (a hung connection), so the
+ * next loadSpecies starts a fresh one. A loaded document stays cached. The old
+ * request is left running: anything already waiting on it (the near-pin bulk
+ * load) still gets its answer if it ever comes. */
+export function forgetPendingSpecies(file: string): void {
+  const pending = speciesCache.get(file);
+  if (pending && !speciesSettled.has(pending)) speciesCache.delete(file);
 }
 
 /** Every species doc, for "finds near the pin" in the species list. */

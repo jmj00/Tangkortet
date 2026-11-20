@@ -77,6 +77,35 @@ describe("SpeciesSelection", () => {
     expect(views[views.length - 1]).toBe("sheet:ulva-fenestrata");
   });
 
+  it("retries a hung load with a fresh request after the timeout", async () => {
+    const calls: string[] = [];
+    const timedOut: string[] = [];
+    const timers: (() => void)[] = [];
+    const views: string[] = [];
+    let attempt = 0;
+    const sel = new SpeciesSelection<S, D>({
+      loadDoc: (s) => {
+        calls.push(s.slug);
+        // The first request hangs forever; the retry answers.
+        return attempt++ === 0 ? new Promise<D>(() => {}) : Promise.resolve(s);
+      },
+      onSelect: () => {},
+      render: (view) => views.push(view.kind),
+      isOffline: () => false,
+      onTimeout: (s) => timedOut.push(s.slug),
+      setTimer: (fn) => timers.push(fn),
+      clearTimer: () => {},
+    });
+    void sel.open(A, { user: true, via: "list" });
+    timers[0]();
+    expect(views[views.length - 1]).toBe("error");
+    expect(timedOut).toEqual(["ulva-fenestrata"]);
+    sel.retry();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toEqual(["ulva-fenestrata", "ulva-fenestrata"]);
+    expect(views[views.length - 1]).toBe("sheet");
+  });
+
   it("recovers a failed page when the bulk load brings its document", async () => {
     const { sel, pending, selected, views, tick } = setup();
     void sel.open(A, { user: true, via: "list" });
