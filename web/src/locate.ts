@@ -44,15 +44,15 @@ export function createLocateGate(): LocateGate {
 /** Said when the browser refuses (permission denied): otherwise the button
  * would just do nothing. */
 export const LOCATION_DENIED_MESSAGE =
-  "Placering er slået fra for siden. Slå den til i browserens indstillinger, eller tryk på kortet for at sætte en nål.";
+  "Placering er slået fra for siden. Slå den til i browserens indstillinger, eller zoom ind, og tryk på kysten for at sætte en nål.";
 
 /** Said when the position could not be found (no fix, or it took too long). */
 export const LOCATION_FAILED_MESSAGE =
-  "Kunne ikke finde din placering. Prøv igen, eller tryk på kortet for at sætte en nål.";
+  "Kunne ikke finde din placering. Prøv igen, eller zoom ind, og tryk på kysten for at sætte en nål.";
 
 /** Said when the browser has no geolocation at all. */
 export const LOCATION_UNSUPPORTED_MESSAGE =
-  "Din browser kan ikke oplyse din placering. Tryk på kortet for at sætte en nål.";
+  "Din browser kan ikke oplyse din placering. Zoom ind, og tryk på kysten for at sætte en nål.";
 
 /** The message for a failed request, by GeolocationPositionError code. */
 export function locateErrorMessage(code: number): string {

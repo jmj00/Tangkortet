@@ -57,8 +57,8 @@ body {
   background: var(--bg);
   color: var(--ink);
   font:
-    15px/1.5 system-ui,
-    -apple-system,
+    0.9375rem/1.5 system-ui,
+    /* 15px at the default size; follows the reader's text size */ -apple-system,
     "Segoe UI",
     sans-serif;
 }

@@ -379,6 +379,93 @@
   height: 1rem;
 }
 
+/* --- nothing near the pin: the nearest places with finds (elsewhere.ts) --- */
+.spp-away {
+  margin: 0.25rem 0 0.75rem;
+  padding: 0.75rem 0.85rem 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+
+.spp-away__title {
+  margin: 0 0 0.2rem;
+  font-size: 1rem;
+}
+
+.spp-away__lead,
+.spp-away__note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.spp-away__note {
+  margin-top: 0.4rem;
+}
+
+.spp-away__list {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+}
+
+.spp-away__spot {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.4rem 0.2rem;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.spp-away li:last-child .spp-away__spot {
+  border-bottom: none;
+}
+
+.spp-away__spot:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.spp-away__spot:focus-visible {
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+.spp-away__icon {
+  flex: none;
+  color: var(--accent);
+}
+
+.spp-away__icon svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.spp-away__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.spp-away__name {
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.spp-away__meta {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
 /* Rows scroll in the tab; a short fade at the bottom edge says there is more. */
 .spp-fade {
   position: sticky;

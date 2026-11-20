@@ -30,7 +30,8 @@ import { initSheet } from "./sheet";
 import { SpeciesPanel } from "./speciespanel";
 import { initStart } from "./start";
 import { landingTarget, type Landing } from "./startstate";
-import { summarizeFinds, TapCard, type PinSource } from "./tapcard";
+import { placeText, summarizeFinds, TapCard, type PinSource } from "./tapcard";
+import { loadPlaceIndex, nearestPlace } from "./placeindex";
 import { TAP_FLY_ZOOM, pointerKind, tapAgainMessage, tapIntent } from "./tapzoom";
 import { shownName, type Manifest } from "./types";
 
@@ -295,6 +296,15 @@ manifestReady
     manifest = m;
     speciesPanel = new SpeciesPanel(document.getElementById("tab-arter") as HTMLElement, m, {
       loadDoc: (s) => loadSpecies(s.file),
+      // Nothing near the pin: name the nearest places with finds, and go there.
+      beaches: async () =>
+        (await loadPlaceIndex()).coast.map((c): [number, number] => [c.lon, c.lat]),
+      nameSpot: async (p) => placeText(nearestPlace(await loadPlaceIndex(), p, 20_000)),
+      goToSpot: (p, label) => {
+        locateGate.superseded(); // the user picked a place; a late position must not undo it
+        setPin(p, label ? { kind: "search", label } : { kind: "tap" });
+        void framePin(p, 12);
+      },
       onSelect: (doc, visible) => {
         const opened = doc !== null && doc.slug !== framedSlug;
         const closed = doc === null && framedSlug !== null;

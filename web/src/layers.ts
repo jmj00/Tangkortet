@@ -35,10 +35,11 @@ export function algaeColor(group: string, dark = prefersDark()): string {
   return (dark ? ALGAE_COLOR_DARK : ALGAE_COLOR)[group] ?? (dark ? ACCENT.dark : ACCENT.light);
 }
 
-/** The pin and the dashed risk ring, per theme. Dark: a saturated cyan, apart
- * from the pale blue of the dark Regnvand markers (#9cc8e6). */
+/** The pin and the dashed risk ring, per theme. Dark: near-white, a colour no
+ * risk group or algae group uses (a cyan was too close to the pale blue of
+ * the dark Regnvand markers, #9cc8e6). */
 export function pinColor(dark = prefersDark()): string {
-  return dark ? "#22d3ee" : ACCENT.light;
+  return dark ? "#f4f7f8" : ACCENT.light;
 }
 
 /** Halo round a solid mark: white on the light map, near-black on the dark
