@@ -17,6 +17,7 @@ import {
 import { repaintCoast } from "./coastmap";
 import { prefersDark, restyleLayers, setPhotoBasemap } from "./layers";
 import { LocateControl } from "./locatecontrol";
+import { withoutWhite } from "./nodata";
 import { emptyStats, fetchTile, TileHealth, type RetryStats, type TileResult } from "./tileretry";
 
 type RasterPaint = NonNullable<RasterLayerSpecification["paint"]>;
@@ -73,11 +74,18 @@ export function photoPaint(dark: boolean, reducedMotion = false): RasterPaint {
  * missing tile is never blank), Skærmkort and the aerial photo. */
 const BASEMAP_LAYERS = ["osm", "sdfi", "orto"] as const;
 
+/** Whether the aerial photo is the basemap now (Basemap.apply). */
+let photoShown = false;
+
 function applyBasemapTheme(map: MapLibreMap): void {
   for (const id of BASEMAP_LAYERS) {
     if (!map.getLayer(id)) continue;
+    // Under the photo, OSM shows only where the photo has no data (out at
+    // sea): its dark paint is close to the photo's dark water in both themes.
     const paint =
-      id === "orto" ? photoPaint(prefersDark(), reducedMotion()) : currentBasemapPaint();
+      id === "orto"
+        ? photoPaint(prefersDark(), reducedMotion())
+        : basemapPaint(prefersDark() || (id === "osm" && photoShown), reducedMotion());
     for (const [name, value] of Object.entries(paint)) {
       map.setPaintProperty(id, name, value);
     }
@@ -127,9 +135,11 @@ const CC_BY = LINK("https://creativecommons.org/licenses/by/4.0/deed.da", "CC BY
 const SDFI_ATTRIBUTION =
   `Kort: ${LINK("https://www.geodanmark.dk", "GeoDanmark")} (${CC_BY}), ` +
   LINK("https://datafordeler.dk", "Datafordeler");
+// Kept as short as the map's credit, so the expanded credit on a phone stays
+// on two lines; "Om Tangkortet" names Ortofoto forår and Klimadatastyrelsen.
 const ORTO_ATTRIBUTION =
-  `Luftfoto: ${LINK("https://www.geodanmark.dk", "GeoDanmark")} Ortofoto forår, ` +
-  `Klimadatastyrelsen (${CC_BY}), ${LINK("https://datafordeler.dk", "Datafordeler")}`;
+  `Luftfoto: ${LINK("https://www.geodanmark.dk", "GeoDanmark")} (${CC_BY}), ` +
+  LINK("https://datafordeler.dk", "Datafordeler");
 
 type WmsId = "sdfi" | "orto";
 
@@ -141,6 +151,8 @@ interface WmsSpec {
   attribution: string;
   /** For console messages. */
   name: string;
+  /** Paints "no data" white (the photo out at sea): cleared (nodata.ts). */
+  whiteNoData?: boolean;
 }
 
 /**
@@ -168,6 +180,7 @@ const WMS: Record<WmsId, WmsSpec> = {
     format: "image/jpeg",
     attribution: ORTO_ATTRIBUTION,
     name: "Ortofoto",
+    whiteNoData: true,
   },
 };
 
@@ -222,7 +235,7 @@ function addProtocolOnce(lib: typeof import("maplibre-gl")): void {
       t.done = true;
       t.onGiveUp(r.result);
     }
-    if (r.data) return { data: r.data };
+    if (r.data) return { data: spec.whiteNoData ? await withoutWhite(r.data) : r.data };
     // no URL in the message: it carries the key
     throw new Error(`${spec.name}: tile not available after ${r.attempts} attempts`);
   });
@@ -326,6 +339,8 @@ class Basemap {
     if (this.map.getLayer("sdfi"))
       this.map.setLayoutProperty("sdfi", "visibility", photo ? "none" : "visible");
     this.control.setPhoto(photo);
+    photoShown = photo;
+    applyBasemapTheme(this.map);
     setPhotoBasemap(this.map, photo);
     repaintCoast(this.map);
   }
@@ -408,6 +423,23 @@ export async function createMap(
   if (basemap) map.addControl(basemap.control, "top-right");
   map.addControl(geolocate, "top-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
+
+  // Phone: the opened credit (two lines with Skærmkort or the photo) covers
+  // the map key and the locate button. MapLibre folds it on the first drag; a
+  // phone user may only tap, so fold it after a few seconds too. It stays
+  // one tap away behind the (i).
+  const phone = globalThis.matchMedia?.(
+    "(max-width: 559.98px), (max-width: 719.98px) and (min-height: 520.02px)",
+  );
+  map.once("load", () => {
+    window.setTimeout(() => {
+      if (!phone?.matches) return;
+      map
+        .getContainer()
+        .querySelector(".maplibregl-ctrl-attrib.maplibregl-compact-show")
+        ?.classList.remove("maplibregl-compact-show");
+    }, 5000);
+  });
 
   // Layers only need the style, not every tile: "style.load" fires as soon as
   // it is parsed, while "load" also waits for the first view's tiles (slow

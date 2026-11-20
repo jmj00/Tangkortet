@@ -48,6 +48,14 @@ export function openAbout(manifest: Manifest | null): void {
         {},
         "Byer, postnumre og stednavne i søgningen: Indeholder data fra Klimadatastyrelsen (CC BY 4.0)",
       ),
+      // the "Luftfoto" button exists only with the Datafordeler key (map.ts)
+      import.meta.env.VITE_DATAFORDELER_API_KEY
+        ? h(
+            "li",
+            {},
+            "Luftfoto: GeoDanmark Ortofoto forår, Klimadatastyrelsen (CC BY 4.0), via Datafordeler",
+          )
+        : null,
     ),
     manifest ? h("p", { class: "note" }, `Dataversion ${manifest.version}`) : null,
     h("form", { method: "dialog" }, h("button", { type: "submit", class: "primary" }, "Luk")),
