@@ -159,9 +159,16 @@ describe("riskFlags: compounds and negation", () => {
     expect(riskFlags(null, ["Kan indeholde uorganisk arsen."]).map((f) => f.key)).toEqual([
       "arsen",
     ]);
-    expect(riskFlags(null, ["Arten indeholder ikke kainsyre."])).toEqual([]);
-    expect(riskFlags(null, ["Ingen kendt arsen."])).toEqual([]);
-    // a negation in another sentence of the same warning does not count
+    // negations are not parsed: an extra badge is the safe error, a missing one is not
+    expect(riskFlags(null, ["Spis ikke tangen rå: kainsyre."]).map((f) => f.key)).toEqual([
+      "kainsyre",
+    ]);
+    expect(
+      riskFlags(null, ["Ingen grænse for jod i loven, men høj jod."]).map((f) => f.key),
+    ).toEqual(["jod"]);
+    expect(riskFlags(null, ["Bør ikke spises pga. kainsyre."]).map((f) => f.key)).toEqual([
+      "kainsyre",
+    ]);
     const kelp = ["Kan indeholde store mængder jod. Man bør ikke spise store mængder dagligt."];
     expect(riskFlags(null, kelp).map((f) => f.key)).toEqual(["jod"]);
   });

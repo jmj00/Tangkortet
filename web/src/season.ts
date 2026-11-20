@@ -220,8 +220,9 @@ export interface RiskFlag {
 // TODO(expert): kainic acid (and any substance only named in a warning) is
 // found by matching the warning text, because the expert's accumulation list
 // has no "kainsyre". It should become an explicit expert field; until then
-// the stems below also match compounds ("jodindhold", "uorganisk arsen") and
-// skip a term negated just before it ("indeholder ikke jod").
+// the stems below also match compounds ("jodindhold", "uorganisk arsen").
+// Negations are deliberately not parsed: a badge too many is the safe error,
+// one too few ("Spis ikke tangen rå: kainsyre.") is not.
 const RISKS: { key: RiskKey; label: string; stem: string }[] = [
   { key: "jod", label: "Jod", stem: "jod" },
   { key: "arsen", label: "Arsen", stem: "arsen" },
@@ -229,12 +230,9 @@ const RISKS: { key: RiskKey; label: string; stem: string }[] = [
   { key: "kainsyre", label: "Kainsyre", stem: "kainsyre" },
 ];
 
-/** Whether `text` names the substance, other than as "ikke/ingen/uden …". */
+/** Whether `text` names the substance anywhere. */
 function names(text: string, stem: string): boolean {
-  const any = new RegExp(stem, "i");
-  const negated = new RegExp(`\\b(?:ikke|ingen|uden)\\s+(?:\\S+\\s+){0,2}\\S*${stem}`, "i");
-  // per sentence, so a negation elsewhere in the warning does not count
-  return text.split(/(?<=[.!?])\s+/).some((s) => any.test(s) && !negated.test(s));
+  return new RegExp(stem, "i").test(text);
 }
 
 /** The note under the species list, as sentences: what the badges mean, that
