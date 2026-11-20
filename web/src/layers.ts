@@ -2,6 +2,7 @@
 // and the risk factors around the pin with the search radius.
 
 import type maplibregl from "maplibre-gl";
+import { fitCamera, mapInsets, visibleCenter, visibleTest } from "./camera";
 import type { RiskItem } from "./risk";
 import type { GroupKey } from "./risk";
 import type { Attachment, SpeciesDoc } from "./types";
@@ -121,27 +122,26 @@ export function framingForNearest(view: MapView, points: [number, number][]): Fr
   };
 }
 
+/** Reframe for a species just opened, inside the part of the map the sheet or
+ * sidebar leaves uncovered (camera.ts): a find under the sheet does not count
+ * as in view, and the new frame keeps clear of it. */
 export function frameToNearest(map: maplibregl.Map, points: [number, number][]): void {
-  const { lng, lat } = map.getCenter();
+  const pad = mapInsets(map);
+  // A find right at the edge of the uncovered map is easily missed: it counts
+  // as in view only some way inside it.
+  const EDGE = 24;
+  const inner = {
+    top: pad.top + EDGE,
+    right: pad.right + EDGE,
+    bottom: pad.bottom + EDGE,
+    left: pad.left + EDGE,
+  };
   const framing = framingForNearest(
-    {
-      center: [lng, lat],
-      zoom: map.getZoom(),
-      contains: (point) => map.getBounds().contains(point),
-    },
+    { center: visibleCenter(map, pad), zoom: map.getZoom(), contains: visibleTest(map, inner) },
     points,
   );
   if (!framing) return;
-  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-  const opts = { padding: 80, maxZoom: framing.maxZoom };
-  if (reduce) {
-    // `fitBounds`/`flyTo` with duration 0 NaNs the transform; compute the camera
-    // and jump to it instead.
-    const camera = map.cameraForBounds(framing.bounds, opts);
-    if (camera) map.jumpTo(camera);
-  } else {
-    map.fitBounds(framing.bounds, { ...opts, duration: 600 });
-  }
+  fitCamera(map, framing.bounds, { maxZoom: framing.maxZoom, padding: pad });
 }
 
 export function clearObservations(map: maplibregl.Map): void {

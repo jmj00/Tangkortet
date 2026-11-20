@@ -1,5 +1,5 @@
 /* The place search (placesearch.ts, addresscombo.ts). Where the field sits is
-   the shell's layout (style.css #search); this file styles what is inside it:
+   the shell's layout (shell.css #search); this file styles what is inside it:
    the field, the suggestions and the message under them. Sizes in rem so the
    field grows with the reader's text size. */
 
