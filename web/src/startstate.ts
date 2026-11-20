@@ -5,7 +5,7 @@
 // web/src/startstate.ts); the decisions are Tangkortet's.
 
 import type { HashState, Tab } from "./hash";
-import type { StartSnap } from "./nav";
+import type { NavState, StartSnap } from "./nav";
 import { GROUP_PLURAL, GROUPS } from "./species";
 import { shownName, type SpeciesSummary } from "./types";
 
@@ -22,9 +22,24 @@ export function hasSkipParam(search: string): boolean {
 /** The start screen is the home: it shows on every visit, first or not,
  * unless the address says where to go. A shared link with a pin or a species
  * goes straight there; a tab alone (`#tab=arter`, which the app writes on
- * every visit) does not count. Mirrored in index.html's inline script. */
-export function shouldShowStart(hash: Pick<HashState, "pin" | "species">, search: string): boolean {
-  return !hasSkipParam(search) && hash.pin === null && hash.species === null;
+ * every visit) does not count. A reload of one of the app's own history
+ * entries (`nav`, nav.ts) shows what that entry showed, so a reload after
+ * "Gå til kortet" stays on the map. Mirrored in index.html's inline script. */
+export function shouldShowStart(
+  hash: Pick<HashState, "pin" | "species">,
+  search: string,
+  nav: NavState | null = null,
+): boolean {
+  if (hasSkipParam(search)) return false;
+  if (nav) return (nav.stack[nav.stack.length - 1]?.start ?? null) !== null;
+  return hash.pin === null && hash.species === null;
+}
+
+/** The pinned safety line is cut to one line (which opens in full) where it
+ * would take too much of the screen: short screens, and large text, measured
+ * as the screen's height in root ems. */
+export function compactSafety(heightPx: number, remPx: number): boolean {
+  return heightPx < 520 || heightPx / remPx < 40;
 }
 
 // --- the ways in ------------------------------------------------------------
@@ -161,14 +176,14 @@ export function locateMessage(
   result: Exclude<LocateResult, "ok"> | "slow",
   verb: "tryk" | "klik",
 ): string {
-  const others = `Søg en by eller en strand i stedet, eller ${verb} på kortet.`;
+  const others = `Søg en by eller en strand i stedet, eller zoom ind, og ${verb} på kysten.`;
   switch (result) {
     case "denied":
       return `Placering er slået fra for siden. ${others}`;
     case "unavailable":
       return `Vi kunne ikke finde din placering. ${others}`;
     case "slow":
-      return `Det tager længere end ventet. Du kan også søge en by eller en strand, eller ${verb} på kortet.`;
+      return `Det tager længere end ventet. Søg en by eller en strand i stedet – eller zoom ind, og ${verb} på kysten.`;
   }
 }
 

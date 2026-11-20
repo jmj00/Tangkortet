@@ -18,6 +18,7 @@ import { initErrorMonitoring } from "./sentry";
 import { initSheet } from "./sheet";
 import { SpeciesPanel } from "./speciespanel";
 import { initStart } from "./start";
+import { TAP_FLY_ZOOM, tapAgainMessage, tapIntent } from "./tapzoom";
 import { landingTarget, type Landing } from "./startstate";
 import type { Manifest } from "./types";
 
@@ -370,7 +371,8 @@ function framePin(center: [number, number], zoom: number): Promise<void> {
   return appRoot.dataset.tab === "risiko" ? frameRing(center) : flyTo(center, zoom);
 }
 
-// --- messages over the map (the locate button's refusals) ---
+// --- messages over the map (the locate button's refusals, a far-out tap) ---
+const finePointer = window.matchMedia("(hover: hover) and (pointer: fine)");
 let statusTimer: number | undefined;
 const mapStatusText = mapStatus.querySelector(".map-status__text") as HTMLElement;
 const mapStatusClose = mapStatus.querySelector(".map-status__close") as HTMLButtonElement;
@@ -423,6 +425,18 @@ mapReady
           .addTo(map);
         return;
       }
+      // --- tap guard (tapzoom.ts, start.ts) ---
+      // The start screen decides whether a tap may pin at all (its species
+      // step asks for a species, not a place). From far out a tap means
+      // "about here": fly in, and let a second tap set the pin.
+      if (!start.allowsMapPin()) return;
+      if (tapIntent(map.getZoom()) === "zoom-in") {
+        void flyTo([e.lngLat.lng, e.lngLat.lat], TAP_FLY_ZOOM);
+        if (!start.sayZoomedIn())
+          showMapStatus(tapAgainMessage(finePointer.matches ? "klik" : "tryk"));
+        return;
+      }
+      // --- end tap guard ---
       locateGate.superseded(); // the user picked a spot; a late position must not undo it
       const { lng, lat } = e.lngLat;
       // A tap never moves the camera: the user is looking at that spot.
@@ -442,7 +456,9 @@ mapReady
     geolocate.on("error", (e) => {
       // A refusal is always said; a failed fix only while it is still wanted.
       const { code } = e as GeolocationPositionError;
-      if (locateGate.accept() || code === 1) showMapStatus(locateErrorMessage(code));
+      const wanted = locateGate.accept();
+      if (start.isOpen()) return; // the start screen's place step says it itself
+      if (wanted || code === 1) showMapStatus(locateErrorMessage(code));
     });
     geolocate.on("unsupported", () => showMapStatus(LOCATION_UNSUPPORTED_MESSAGE));
   })
@@ -535,6 +551,7 @@ async function applyNavSnapshot(snap: Snapshot): Promise<void> {
 // --- start screen (start.ts): each way in lands here, set up for its task ---
 function landFromStart(landing: Landing): void {
   const target = landingTarget(landing);
+  hideMapStatus(); // a message from before the start screen is stale now
   const place = landing.kind === "risk" || landing.kind === "beach" ? landing.place : undefined;
   if (place && (place.lngLat[0] !== pin?.[0] || place.lngLat[1] !== pin?.[1])) {
     locateGate.superseded(); // the user picked a place; a late position must not undo it

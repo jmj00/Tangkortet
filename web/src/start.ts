@@ -27,10 +27,12 @@ import { h } from "./dom";
 import { parseHash } from "./hash";
 import { DENMARK_BOUNDS, type MapBundle } from "./map";
 import { readNavState, type StartSnap } from "./nav";
+import { tapAgainMessage } from "./tapzoom";
 import { attachPlaceSearch } from "./placesearch";
 import { PHONE_LAYOUT } from "./sheet";
 import { LOAD_TIMEOUT_MS } from "./species";
 import {
+  compactSafety,
   entryStep,
   escapeFrom,
   fromStartSnap,
@@ -77,6 +79,12 @@ export interface StartScreen {
   navSnap(): StartSnap;
   /** Show what Back or Forward brings back: opens the layer if it is closed. */
   show(snap: Exclude<StartSnap, null>): void;
+  /** Whether a tap on the map may set the pin now: not while the species
+   * step is up (it asks for a species, not a place). */
+  allowsMapPin(): boolean;
+  /** A far-out tap has flown the map in (tapzoom.ts): say "tap again" in the
+   * layer. False when the layer is closed (main.ts says it over the map). */
+  sayZoomedIn(): boolean;
 }
 
 const PLACE_COPY: Record<PlaceFlow, { title: string; lead: string }> = {
@@ -143,6 +151,30 @@ export function initStart(deps: StartDeps): StartScreen {
   (document.getElementById("start-intro") as HTMLElement).replaceChildren(intro);
   (document.getElementById("start-welcome") as HTMLElement).replaceChildren(invitation);
   (document.getElementById("start-disclaimer") as HTMLElement).textContent = WELCOME_DISCLAIMER;
+
+  // On short screens and at large text the safety line is cut to one line;
+  // the same verbatim text opens in full on a tap.
+  const safety = root.querySelector<HTMLElement>(".start__safety") as HTMLElement;
+  const disclaimerToggle = document.getElementById("start-disclaimer-toggle") as HTMLButtonElement;
+  disclaimerToggle.textContent = WELCOME_DISCLAIMER;
+  disclaimerToggle.addEventListener("click", () => {
+    const open = disclaimerToggle.getAttribute("aria-expanded") !== "true";
+    disclaimerToggle.setAttribute("aria-expanded", String(open));
+    safety.toggleAttribute("data-expanded", open);
+  });
+  const fitSafety = (): void => {
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    root.toggleAttribute(
+      "data-compact",
+      compactSafety(app.clientHeight || window.innerHeight, rem),
+    );
+  };
+  fitSafety();
+  window.addEventListener("resize", fitSafety);
+  // a change of text size resizes the heading, not the window
+  if ("ResizeObserver" in window) new ResizeObserver(fitSafety).observe(homeTitle);
+  const homeMapHint = document.getElementById("start-maphint-text") as HTMLElement;
+  const homeMapHintText = homeMapHint.textContent ?? "";
 
   // --- the layer itself -----------------------------------------------------
 
@@ -270,12 +302,21 @@ export function initStart(deps: StartDeps): StartScreen {
 
   function close(): void {
     const wasOpen = view !== null;
+    const hadFocus = root.contains(document.activeElement);
     stopLocating();
     combobox?.close();
     pending = null;
+    homeMapHint.textContent = homeMapHintText;
     setView(null);
     restorePadding();
     transition(wasOpen ? "leaving" : null);
+    // Focus was in the layer, which is gone (Back, Escape): on to the tab in
+    // view. A landing (main.ts) moves it on from there.
+    if (hadFocus) {
+      document
+        .querySelector<HTMLElement>('#tabs [aria-selected="true"]')
+        ?.focus({ preventScroll: true });
+    }
   }
 
   /** Close the layer and land in the main interface. */
@@ -388,7 +429,7 @@ export function initStart(deps: StartDeps): StartScreen {
     },
   );
 
-  const mapHint = h("p", { class: "place__hint" });
+  const mapHint = h("p", { class: "place__hint", role: "status" });
   const mapHintText = h("span");
   mapHint.append(svg("place__hint-icon", ICON_MAP), mapHintText);
 
@@ -481,8 +522,8 @@ export function initStart(deps: StartDeps): StartScreen {
     locateButton.classList.toggle("place__option--primary", flow === "risk");
     mapHintText.textContent =
       verb() === "klik"
-        ? "Du kan også klikke på kortet og vælge stedet dér."
-        : "Du kan også trykke på kortet under dette felt og vælge stedet dér.";
+        ? "Du kan også zoome ind på kortet og klikke på kysten."
+        : "Du kan også zoome ind på kortet under dette felt og trykke på kysten.";
     const pin = deps.getPin();
     keepSub.textContent = pin?.label ?? "";
     const parts: Record<PlaceOption, HTMLElement[]> = {
@@ -629,12 +670,13 @@ export function initStart(deps: StartDeps): StartScreen {
   root.addEventListener("click", (event) => {
     const flow = (event.target as HTMLElement).closest<HTMLElement>("[data-flow]")?.dataset.flow;
     if (
+      flow === "map" ||
       flow === "risk" ||
       flow === "species" ||
       flow === "beach" ||
-      flow === "map" ||
       flow === "guide"
     ) {
+      event.preventDefault(); // "Gå til kortet" is a link (?kort) for when scripts fail
       choose(flow);
     }
   });
@@ -678,8 +720,9 @@ export function initStart(deps: StartDeps): StartScreen {
 
   // The inline script in index.html made the same call before the first
   // paint; this settles it.
-  if (shouldShowStart(parseHash(location.hash), location.search)) open();
-  else close();
+  if (shouldShowStart(parseHash(location.hash), location.search, readNavState(history.state))) {
+    open();
+  } else close();
 
   return {
     isOpen: () => view !== null,
@@ -688,12 +731,24 @@ export function initStart(deps: StartDeps): StartScreen {
     navSnap: () => toStartSnap(view, pending),
     show(snap): void {
       const { view: next, flow } = fromStartSnap(snap);
-      if (view === null) transition("entering");
       if (next === "home") {
-        if (view === null) open();
+        // from the map (Back/Forward): eases in and focuses the heading,
+        // since what had focus is now inert under the layer
+        if (view === null) open({ fromMain: true });
         else goHome();
-      } else if (next === "place") showPlace(flow ?? "risk");
+        return;
+      }
+      if (view === null) transition("entering");
+      if (next === "place") showPlace(flow ?? "risk");
       else showSpecies();
+    },
+    allowsMapPin: () => view === null || mapTapLanding(view, pending) !== null,
+    sayZoomedIn(): boolean {
+      if (view === null) return false;
+      const text = tapAgainMessage(verb());
+      if (view === "place") mapHintText.textContent = text;
+      else homeMapHint.textContent = text;
+      return true;
     },
   };
 }

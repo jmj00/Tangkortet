@@ -4,6 +4,7 @@ import { parseHash } from "./hash";
 import {
   ENTRY_ORDER,
   entryStep,
+  compactSafety,
   escapeFrom,
   fromStartSnap,
   hasSkipParam,
@@ -121,8 +122,8 @@ describe("history snapshots", () => {
 
 describe("locateMessage", () => {
   it("points at the other ways, with the device's verb", () => {
-    expect(locateMessage("denied", "tryk")).toMatch(/slået fra.*tryk på kortet/);
-    expect(locateMessage("unavailable", "klik")).toMatch(/kunne ikke finde.*klik på kortet/);
+    expect(locateMessage("denied", "tryk")).toMatch(/slået fra.*tryk på kysten/);
+    expect(locateMessage("unavailable", "klik")).toMatch(/kunne ikke finde.*klik på kysten/);
     expect(locateMessage("slow", "tryk")).toMatch(/længere end ventet/);
   });
 });
@@ -155,5 +156,43 @@ describe("pickerGroups", () => {
     expect(groups.map((g) => g.group)).toEqual(["grønalge", "andet"]);
     expect(groups[0].species.map((s) => s.scientific_name)).toEqual(["X y", "Ulva lacinulata"]);
     expect(groups[1].label).toBe("Andre");
+  });
+});
+
+describe("shouldShowStart on a reload", () => {
+  const nav = (...starts: (string | undefined)[]) =>
+    ({ tgk: 1, stack: starts.map((start) => ({ start, detail: null })) }) as Parameters<
+      typeof shouldShowStart
+    >[2];
+
+  it("stays on the map after 'Gå til kortet' (#tab=arter, the map entry)", () => {
+    expect(shouldShowStart(parseHash("#tab=arter"), "", nav("home", undefined))).toBe(false);
+  });
+
+  it("shows the start screen the entry showed, whatever the hash", () => {
+    expect(shouldShowStart(parseHash("#pin=56.15100,10.21900"), "", nav("home"))).toBe(true);
+    expect(shouldShowStart(parseHash(""), "", nav("home", "place-risk"))).toBe(true);
+  });
+
+  it("still lets ?kort skip it", () => {
+    expect(shouldShowStart(parseHash(""), "?kort", nav("home"))).toBe(false);
+  });
+
+  it("treats a malformed pin as no pin", () => {
+    expect(shouldShowStart(parseHash("#pin=abc"), "")).toBe(true);
+  });
+});
+
+describe("compactSafety", () => {
+  it("is compact on short screens and at large text", () => {
+    expect(compactSafety(360, 15)).toBe(true);
+    expect(compactSafety(664, 22.5)).toBe(true);
+    expect(compactSafety(844, 22.5)).toBe(true);
+  });
+
+  it("is full at normal text on phones and laptops", () => {
+    expect(compactSafety(640, 15)).toBe(false);
+    expect(compactSafety(664, 15)).toBe(false);
+    expect(compactSafety(650, 15)).toBe(false);
   });
 });
