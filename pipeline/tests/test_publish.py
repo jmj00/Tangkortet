@@ -9,6 +9,7 @@ RECORD = {
     "decimalLongitude": 10.123456,
     "decimalLatitude": 56.654321,
     "year": 1993,
+    "month": 6,
     "depth": 9.0,
     "license": "http://creativecommons.org/licenses/by/4.0/legalcode",
     "datasetKey": "x",
@@ -148,3 +149,13 @@ def test_every_images_file_belongs_to_a_species_and_is_well_formed():
             assert img["url"].startswith("https://")
             assert img["license"] in {"CC BY 4.0", "CC0 1.0"}
             assert img["credit"]
+
+
+def test_finds_by_month_counts_all_and_attached():
+    from pipeline.publish import finds_by_month
+
+    beach = obs(key=2, habitat="Beach", month=8, depth=None)
+    undated = obs(key=3, month=None)
+    out = finds_by_month([obs(), beach, undated, obs(key=4, month=13)])
+    assert out["all"][5] == 1 and out["all"][7] == 1 and sum(out["all"]) == 2
+    assert out["attached"][5] == 1 and sum(out["attached"]) == 1

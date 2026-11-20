@@ -24,6 +24,7 @@ class Observation(TypedDict):
     lon: float
     lat: float
     year: int | None
+    month: int | None
     attachment: Attachment
     depth_m: float | None
     dataset: str
@@ -49,6 +50,9 @@ def normalise(record: Mapping[str, Any], dataset_title: str) -> Observation | No
         "lon": round(float(lon), COORD_DECIMALS),
         "lat": round(float(lat), COORD_DECIMALS),
         "year": year if isinstance(year, int) else None,
+        "month": month
+        if isinstance(month := record.get("month"), int) and 1 <= month <= 12
+        else None,
         "attachment": classify(record),
         "depth_m": _depth(record),
         "dataset": dataset_title,
