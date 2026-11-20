@@ -87,43 +87,53 @@ def pct(values: list[float], q: float) -> float:
     return round(s[min(len(s) - 1, int(q * len(s)))], 1)
 
 
-def main() -> None:
-    evidence = []
-    for name in CANDIDATES:
-        match = get("species/match", name=name, kingdom="Chromista")
-        key = match.get("usageKey") or get("species/match", name=name)["usageKey"]
-        recs = records(key)
-        depths = [float(r["depth"]) for r in recs if r.get("depth") is not None]
-        dk_name, name_source = danish_name(key)
-        datasets = collections.Counter(dataset_title(r["datasetKey"]) for r in recs)
-        decades = collections.Counter(
-            f"{r['year'] // 10 * 10}s" for r in recs if isinstance(r.get("year"), int)
-        )
-        attach = collections.Counter(classify(r) for r in recs)
-        evidence.append(
+def evidence_for(name: str) -> dict:
+    match = get("species/match", name=name, kingdom="Chromista")
+    key = match.get("usageKey") or get("species/match", name=name)["usageKey"]
+    recs = records(key)
+    depths = [float(r["depth"]) for r in recs if r.get("depth") is not None]
+    dk_name, name_source = danish_name(key)
+    datasets = collections.Counter(dataset_title(r["datasetKey"]) for r in recs)
+    decades = collections.Counter(
+        f"{r['year'] // 10 * 10}s" for r in recs if isinstance(r.get("year"), int)
+    )
+    attach = collections.Counter(classify(r) for r in recs)
+    entry = {
+        "scientific_name": name,
+        "gbif_usage_key": key,
+        "danish_name": dk_name,
+        "danish_name_source": name_source,
+        "records_dk": len(recs),
+        "records_since_2015": sum(1 for r in recs if (r.get("year") or 0) >= 2015),
+        "top_datasets": datasets.most_common(4),
+        "decades": dict(sorted(decades.items())),
+        "attachment": dict(attach),
+        "depth": (
             {
-                "scientific_name": name,
-                "gbif_usage_key": key,
-                "danish_name": dk_name,
-                "danish_name_source": name_source,
-                "records_dk": len(recs),
-                "records_since_2015": sum(1 for r in recs if (r.get("year") or 0) >= 2015),
-                "top_datasets": datasets.most_common(4),
-                "decades": dict(sorted(decades.items())),
-                "attachment": dict(attach),
-                "depth": (
-                    {
-                        "n": len(depths),
-                        "p10": pct(depths, 0.1),
-                        "median": round(statistics.median(depths), 1),
-                        "p90": pct(depths, 0.9),
-                    }
-                    if depths
-                    else None
-                ),
+                "n": len(depths),
+                "p10": pct(depths, 0.1),
+                "median": round(statistics.median(depths), 1),
+                "p90": pct(depths, 0.9),
             }
-        )
-        print(name, key, dk_name, len(recs), evidence[-1]["depth"], dict(attach))
+            if depths
+            else None
+        ),
+    }
+    print(name, key, dk_name, len(recs), entry["depth"], dict(attach))
+    return entry
+
+
+def main() -> None:
+    """No arguments: rebuild the file for CANDIDATES. ``--append NAME ...``: add
+    entries for names not in the file yet, keeping the existing ones (and so the
+    review-page keys the expert's answers are stored under)."""
+    args = sys.argv[1:]
+    if args[:1] == ["--append"]:
+        evidence = json.loads(OUT.read_text(encoding="utf-8"))
+        have = {e["scientific_name"] for e in evidence}
+        evidence += [evidence_for(n) for n in args[1:] if n not in have]
+    else:
+        evidence = [evidence_for(n) for n in CANDIDATES]
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 

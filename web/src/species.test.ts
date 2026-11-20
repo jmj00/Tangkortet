@@ -18,6 +18,9 @@ function doc(overrides: Partial<SpeciesDoc> = {}): SpeciesDoc {
     scientific_name: "Saccharina latissima",
     group: "brunalge",
     gbif_usage_key: 1,
+    invasive: false,
+    lookalikes: [],
+    warnings: [],
     expert: {
       verified: false,
       depth_m: null,

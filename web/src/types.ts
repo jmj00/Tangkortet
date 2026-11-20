@@ -17,6 +17,7 @@ export interface SpeciesSummary {
   danish_name: string;
   scientific_name: string;
   group: string;
+  invasive: boolean;
   observation_count: number;
   attachment_counts: Record<Attachment, number>;
   file: string;
@@ -58,11 +59,17 @@ export interface ExpertFields {
 
 export interface SpeciesDoc {
   slug: string;
+  /** "" when the national species checklist has no Danish name. */
   danish_name: string;
   danish_name_verified: boolean;
   scientific_name: string;
   group: string;
   gbif_usage_key: number;
+  invasive: boolean;
+  /** Scientific names the expert says it is easily confused with. */
+  lookalikes: string[];
+  /** Danish advice shown prominently (official recommendations, via the expert). */
+  warnings: string[];
   expert: ExpertFields;
   observed_depth: { n: number; p10: number; median: number; p90: number } | null;
   attachment_counts: Record<Attachment, number>;
@@ -73,3 +80,8 @@ export interface SpeciesDoc {
 
 /** One risk cell file: layer key -> rows (`RiskLayerInfo.fields`). */
 export type RiskCell = Record<string, unknown[][]>;
+
+/** The name to show: Danish when the national checklist has one, else scientific. */
+export function shownName(s: { danish_name: string; scientific_name: string }): string {
+  return s.danish_name || s.scientific_name;
+}

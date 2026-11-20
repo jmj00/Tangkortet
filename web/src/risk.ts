@@ -1,9 +1,8 @@
 // Risk factors near a pin, from the precomputed grid cells (pipeline/ingest/risk.py).
 //
-// ADR-0004: shown as a list of factors with distance and source, never a
-// combined verdict. The group order below is a placeholder until the expert
-// weighs the factors on the review page (review/, "Risikofaktorer"); it lives in
-// one array so that answer is a one-line change.
+// Shown as a list of factors with distance and source, under the traffic light
+// (ADR-0005). The group order follows the expert's weights (review page, round 2):
+// wastewater and bathing water high; harbours, industry and sediment medium.
 
 import { distanceM } from "./geo";
 import type { RiskCell, RiskIndex } from "./types";
@@ -30,14 +29,24 @@ export const GROUPS: readonly GroupInfo[] = [
     why: "Udleder renset spildevand; kan bidrage med fækal forurening og kemiske reststoffer.",
   },
   {
-    key: "industri",
-    label: "Industriudledning",
-    why: "Direkte udledning af industrispildevand.",
+    key: "badevand",
+    label: "Badevand",
+    why: "EU-klassificeringen siger noget om bakterier, men intet om tangens kemiske sikkerhed.",
+  },
+  {
+    key: "regnvand",
+    label: "Regnvandsudløb",
+    why: "Regnvand fra veje og befæstede arealer; afstrømning øges ved kraftig regn.",
   },
   {
     key: "havne",
     label: "Havn",
     why: "Bundmaling, kobber, zink, olie, brændstof og PAH'er kan være relevante.",
+  },
+  {
+    key: "industri",
+    label: "Industriudledning",
+    why: "Direkte udledning af industrispildevand.",
   },
   {
     key: "klapplads",
@@ -48,16 +57,6 @@ export const GROUPS: readonly GroupInfo[] = [
     key: "akvakultur",
     label: "Fiskeopdræt",
     why: "Udleder næringsstoffer og evt. medicinrester.",
-  },
-  {
-    key: "regnvand",
-    label: "Regnvandsudløb",
-    why: "Regnvand fra veje og befæstede arealer; afstrømning øges ved kraftig regn.",
-  },
-  {
-    key: "badevand",
-    label: "Badevand",
-    why: "EU-klassificeringen siger noget om bakterier, men intet om tangens kemiske sikkerhed.",
   },
 ];
 

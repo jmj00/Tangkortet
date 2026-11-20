@@ -1,5 +1,6 @@
-// "Risiko" tab: what the app can find around the pin. ADR-0005: a draft
-// traffic light on top (verdict.ts, rules in verdict-rules.json) as a summary,
+// "Risiko" tab: what the app can find around the pin. ADR-0005: a traffic
+// light on top (verdict.ts, rules in verdict-rules.json, reviewed by the expert)
+// as a summary,
 // and the list of factors -- nearest first, each with its source -- as the
 // reasoning behind it.
 
@@ -10,8 +11,11 @@ import { RISK_COLOR } from "./layers";
 import {
   queryProtected,
   querySoil,
+  queryStreams,
   queryWaterBodies,
   SOIL_RADIUS_M,
+  STREAM_RADIUS_M,
+  type Streams,
   type LiveResult,
   type ProtectedArea,
   type SoilSite,
@@ -43,6 +47,7 @@ export class RiskPanel {
   private wind: Pending<WindSummary | null> = "loading";
   private water: Pending<LiveResult<WaterBody>> = "loading";
   private soil: Pending<LiveResult<SoilSite>> = "loading";
+  private streams: Pending<Streams | null> = "loading";
   private protectedAreas: Pending<LiveResult<ProtectedArea>> = "loading";
   private abort: AbortController | null = null;
 
@@ -60,6 +65,7 @@ export class RiskPanel {
     this.abort = new AbortController();
     const signal = this.abort.signal;
     this.items = this.rain = this.wind = this.water = this.soil = this.protectedAreas = "loading";
+    this.streams = "loading";
     this.render();
 
     const done =
@@ -86,6 +92,7 @@ export class RiskPanel {
     );
     void queryWaterBodies(pin, signal).then(done((r) => (this.water = r)));
     void querySoil(pin, signal).then(done((r) => (this.soil = r)));
+    void queryStreams(pin, signal).then(done((r) => (this.streams = r)));
     void queryProtected(pin, signal).then(done((r) => (this.protectedAreas = r)));
   }
 
@@ -147,14 +154,15 @@ export class RiskPanel {
         ),
       ),
       this.groups(),
-      this.soilCard(),
+      this.streamCard(),
       this.protectionCard(),
+      this.soilCard(),
       this.linksCard(),
     );
   }
 
   private verdictCard(): HTMLElement {
-    const settled = [this.items, this.rain, this.soil].every((v) => v !== "loading");
+    const settled = [this.items, this.rain, this.soil, this.streams].every((v) => v !== "loading");
     if (!settled) {
       return h("section", { class: "verdict verdict--pending" }, h("p", {}, "Vurderer…"));
     }
@@ -165,6 +173,7 @@ export class RiskPanel {
       rain48: rain && rain !== "error" ? rain.mm48 : null,
       soilV2:
         soil !== "error" && soil.ok ? soil.items.filter((i) => i.level === "V2").length : null,
+      streams: this.streams === "error" ? null : (this.streams as Streams | null),
     });
     const text = LEVEL_TEXT[verdict.level];
     return h(
@@ -225,7 +234,7 @@ export class RiskPanel {
             { class: "badge badge--provisional" },
             "Udkast – reglerne er endnu ikke godkendt af en fagperson",
           )
-        : null,
+        : h("p", { class: "note" }, "Reglerne er gennemgået af en fagperson (november 2026)."),
     );
   }
 
@@ -394,6 +403,35 @@ export class RiskPanel {
     );
   }
 
+  private streamCard(): HTMLElement {
+    const title = `Vandløb og å-udløb (inden for ${formatDistance(STREAM_RADIUS_M)})`;
+    const s = this.streams;
+    const status = this.status(s);
+    if (status) return this.card(title, status);
+    const found = s as Streams | null;
+    if (found === null) return this.card(title, this.status("error"));
+    const any = found.names.length + found.unnamed > 0;
+    return this.card(
+      title,
+      any
+        ? h(
+            "p",
+            {},
+            found.names.length ? h("strong", {}, found.names.join(", ")) : null,
+            found.unnamed
+              ? (found.names.length ? " og " : "") + "et mindre beskyttet vandløb"
+              : null,
+            ".",
+          )
+        : h("p", {}, "Ingen kortlagte vandløb ved nålen."),
+      h(
+        "p",
+        { class: "note" },
+        "Vandløb fører afstrømning fra marker, dræn og byer ud i havet – især efter regn. Fødevarestyrelsen råder til at undgå at samle tang ved åer.",
+      ),
+    );
+  }
+
   private soilCard(): HTMLElement {
     const title = `Kortlagt jordforurening (inden for ${formatDistance(SOIL_RADIUS_M)})`;
     const s = this.soil;
@@ -475,6 +513,12 @@ export class RiskPanel {
           {},
           extLink("https://www.badevand.dk/", "Badevand.dk"),
           " – aktuelle badevandsvarsler (kun i badesæsonen).",
+        ),
+        h(
+          "li",
+          {},
+          extLink("https://www.ditbadevand.dk/", "Ditbadevand.dk"),
+          " – modelberegnet risiko for kloakoverløb efter regn (privat tjeneste, ikke en myndighed).",
         ),
         h("li", {}, "Kommunens spildevandsplan – søg “[kommune] spildevandsplan kort”."),
         h("li", {}, "Lokale advarsler om algeopblomstring."),

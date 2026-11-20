@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseProtected, parseSoil, parseWaterBodies } from "./live";
+import { parseProtected, parseSoil, parseStreams, parseWaterBodies } from "./live";
 
 describe("live parsers", () => {
   it("reads Natura 2000 and fredning names", () => {
@@ -57,5 +57,22 @@ describe("live parsers", () => {
   it("treats a missing feature list as empty", () => {
     expect(parseWaterBodies({})).toEqual([]);
     expect(parseSoil("V1", null)).toEqual([]);
+  });
+
+  it("names water-plan streams once and counts unnamed ones only on their own", () => {
+    const named = {
+      features: [
+        { properties: { ov_navn: "Giberå" } },
+        { properties: { ov_navn: "Giberå" } },
+        { properties: { ov_navn: "Lille Fulden Bæk" } },
+      ],
+    };
+    const small = { features: [{ properties: {} }, { properties: {} }] };
+    expect(parseStreams(named, small)).toEqual({
+      names: ["Giberå", "Lille Fulden Bæk"],
+      unnamed: 0,
+    });
+    expect(parseStreams({ features: [] }, small)).toEqual({ names: [], unnamed: 1 });
+    expect(parseStreams({}, {})).toEqual({ names: [], unnamed: 0 });
   });
 });

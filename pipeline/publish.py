@@ -80,6 +80,9 @@ def species_doc(sp: Species, obs: list[Observation]) -> dict[str, Any]:
         "slug": slugify(sp["scientific_name"]),
         "danish_name": sp["danish_name"],
         "danish_name_verified": sp["danish_name_verified"],
+        "invasive": sp["invasive"],
+        "lookalikes": sp["lookalikes"],
+        "warnings": sp["warnings"],
         "scientific_name": sp["scientific_name"],
         "group": sp["group"],
         "gbif_usage_key": sp["gbif_usage_key"],
@@ -111,6 +114,7 @@ def species_summary(doc: dict[str, Any]) -> dict[str, Any]:
         "danish_name": doc["danish_name"],
         "scientific_name": doc["scientific_name"],
         "group": doc["group"],
+        "invasive": doc["invasive"],
         "observation_count": doc["observation_count"],
         "attachment_counts": doc["attachment_counts"],
         "file": f"species/{doc['slug']}.json",
@@ -126,7 +130,9 @@ def write_manifest(
     manifest = {
         "version": version or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
         "attribution": ATTRIBUTION,
-        "species": sorted(species, key=lambda s: s["danish_name"]),
+        "species": sorted(
+            species, key=lambda s: (s["danish_name"] or s["scientific_name"]).lower()
+        ),
         "risk": risk,
     }
     write_json(out / "manifest.json", manifest)

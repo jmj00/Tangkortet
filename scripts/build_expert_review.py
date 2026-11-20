@@ -164,6 +164,69 @@ WIND_DIRECTION = [
 ]
 
 
+FOLLOWUP2_SARGASSUM = [
+    ("fraraades", "Frarådes helt som fødevare"),
+    ("smaa_maengder", "Kan spises, men ikke store mængder dagligt"),
+]
+FOLLOWUP2_COMPRESSA = [
+    ("flad", "Flad rørhinde (den nationale artsliste)"),
+    ("andet", "Et andet navn (skriv det nedenfor)"),
+]
+FOLLOWUP2_GRACILARIA = [
+    ("arterdk", "Ja – brug arter.dk-navnet"),
+    ("begge", "Ja, men nævn også paryktang"),
+    ("nej", "Nej (skriv hvorfor nedenfor)"),
+]
+
+
+def _followup2() -> str:
+    """Round 3 (2026-11-20): what we did with the expert's round-2 answers, and the
+    questions they raised."""
+    return f"""<h2>Opfølgning 2 – tak for de mange svar</h2>
+<p class="intro">Det har vi gjort ud fra dine svar (se det i
+  <a href="https://tangkortet.pages.dev" target="_blank" rel="noopener">appen</a>):
+  høstmetoder for blæretang, søl og sukkertang; jod-advarslen for sukkertang og fingertang;
+  kainsyre i søl; arsen i butblæret sargassotang; Ulva fenestrata (Almindelig søsalat) i
+  stedet for Ulva lactuca; fem nye arter (kortene ligger nederst); risikofaktorerne sorteret
+  efter din vægtning; trafiklysets regler justeret, og din regel om å-udløb inden for 200 m
+  tilføjet; Fødevarestyrelsens råd og regler i "Før du går"; og en velkomstbesked. Vinden
+  (kun pålandsvind, frisk i ca. 1 døgn) er på vej.</p>
+
+<section class="card q" data-group="q2.sargassum">
+  <h3>Butblæret sargassotang</h3>
+  <p>Du skrev både, at den frarådes at spise, og at den kan spises, men ikke i store mængder
+    dagligt. Appen siger nu: "Frarådes som fødevare – spis den i hvert fald aldrig i større
+    mængder." Hvad skal den sige?</p>
+  <div class="opts">{_radio("q2.sargassum", FOLLOWUP2_SARGASSUM)}</div>
+  {_text("q2.sargassum.kommentar", "Uddyb gerne")}
+</section>
+
+<section class="card q" data-group="q2.compressa">
+  <h3>Navnet på Ulva compressa</h3>
+  <p>Du kaldte den tarm-rørhinde, men i den nationale artsliste hedder den
+    <b>Flad rørhinde</b>; "Tarm-rørhinde" bruges om Ulva intestinalis. Appen bruger nu
+    "Flad rørhinde". Er det rigtigt?</p>
+  <div class="opts">{_radio("q2.compressa", FOLLOWUP2_COMPRESSA)}</div>
+  {_text("q2.compressa.kommentar", "Fx det navn, du vil foreslå")}
+</section>
+
+<section class="card q" data-group="q2.gracilaria">
+  <h3>Navnet på Gracilaria vermiculophylla</h3>
+  <p>På arter.dk hedder den <b>Brunlig gracilariatang</b>; du skrev også paryktang. Appen
+    bruger nu arter.dk-navnet. Er det i orden?</p>
+  <div class="opts">{_radio("q2.gracilaria", FOLLOWUP2_GRACILARIA)}</div>
+  {_text("q2.gracilaria.kommentar", "Uddyb gerne")}
+</section>
+
+<section class="card q" data-group="q2.maengder">
+  <h3>Hvad er "store mængder dagligt"?</h3>
+  <p>Advarslerne om jod (Laminaria-arter), kainsyre (søl) og arsen siger, at man ikke bør
+    spise store mængder dagligt. Har du et tal eller en tommelfingerregel, vi kan bruge
+    (fx gram tørret tang pr. dag eller pr. uge)?</p>
+  {_text("q2.maengder", "Fx: højst X g tørret sukkertang om ugen")}
+</section>"""
+
+
 def _followup(rules: dict) -> str:
     """Round 2 (2026-10-23): follow-up on the expert's first answers -- the draft
     traffic light they asked for, and the wind check for drift tang."""
@@ -243,10 +306,20 @@ def _evidence(e: dict) -> str:
 </div>"""
 
 
+# Cards keyed by an outdated name keep their key, so the expert's answers stay put.
+RENAMED = {
+    "Ulva lactuca": (
+        "Almindelig søsalat",
+        "Ulva fenestrata (tidligere registreret som Ulva lactuca)",
+    )
+}
+PROPOSAL_ALIAS = {"ulva-lactuca": "ulva-fenestrata"}
+
 EVIDENCE_LABEL = {
     "dansk": "Danske målinger",
     "udenlandsk": "Udenlandsk litteratur",
     "usikker": "Sparsomme data",
+    "ekspert": "Ekspertens oplysning",
     "ingen": "Ingen data fundet",
 }
 FLAG_LABEL = {"jod": "Jod", "arsen": "Arsen", "cadmium": "Cadmium"}
@@ -287,10 +360,14 @@ def _species(e: dict, proposals: dict) -> str:
     k = f"art.{slug}"
     verified = e["danish_name_source"].startswith("arter.dk")
     name = e["danish_name"] or "(intet dansk navn fundet)"
+    sci = e["scientific_name"]
+    if sci in RENAMED:  # keep the card key (the expert's answers), show the new name
+        name, sci, verified = *RENAMED[sci], True
     badge = "" if verified else '<span class="badge">navn ikke bekræftet</span>'
     months = [(str(i + 1), m) for i, m in enumerate(MONTHS)]
+    proposal = proposals["species"][PROPOSAL_ALIAS.get(slug, slug)]
     return f"""<section class="card sp" data-group="{k}">
-  <h3>{_esc(name)} <span class="sci">{_esc(e["scientific_name"])}</span> {badge}</h3>
+  <h3>{_esc(name)} <span class="sci">{_esc(sci)}</span> {badge}</h3>
   {_evidence(e)}
   <div class="field"><span class="lbl">Med i første version?</span>
     <div class="opts row">{_radio(k + ".med", INCLUDE)}</div></div>
@@ -301,7 +378,7 @@ def _species(e: dict, proposals: dict) -> str:
     <div class="opts">{_radio(k + ".hoestmetode", HARVEST_METHODS)}</div></div>
   <div class="field"><span class="lbl">Bedste måneder at sanke</span>
     <div class="opts row">{_checks(k + ".maaneder", months)}</div></div>
-  <div class="field">{_proposal(k, proposals["species"][slug], proposals["sources"])}
+  <div class="field">{_proposal(k, proposal, proposals["sources"])}
     <span class="lbl">Ophobning at advare om (din vurdering)</span>
     <div class="opts row">{_checks(k + ".ophobning", ACCUMULATION)}</div></div>
   <div class="field"><span class="lbl">Forvekslingsarter, friskhed, tilberedning, andet</span>
@@ -482,7 +559,7 @@ def main() -> None:
     risks = "\n".join(_risk_row(k, label) for k, label in RISK_FACTORS)
     proposals = json.loads(PROPOSALS.read_text(encoding="utf-8"))
     species = "\n".join(_species(e, proposals) for e in evidence)
-    followup = _followup(json.loads(VERDICT_RULES.read_text(encoding="utf-8")))
+    followup = _followup2() + _followup(json.loads(VERDICT_RULES.read_text(encoding="utf-8")))
 
     doc = f"""<!doctype html>
 <html lang="da">

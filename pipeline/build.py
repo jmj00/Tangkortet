@@ -27,7 +27,7 @@ SAMPLE_BBOX = (10.0, 56.0, 10.8, 56.45)
 def build_species(out: pathlib.Path) -> list[dict[str, Any]]:
     docs = []
     for sp in published_species():
-        obs = gbif.observations(sp["gbif_usage_key"])
+        obs = gbif.observations_for([sp["gbif_usage_key"], *sp["gbif_extra_keys"]])
         doc = species_doc(sp, obs)
         docs.append(doc)
         print(f"  {sp['scientific_name']:24} {len(obs):5} obs  {doc['attachment_counts']}")

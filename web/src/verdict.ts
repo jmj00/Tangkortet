@@ -1,8 +1,8 @@
 // The combined traffic light (ADR-0005): a supplement to the list of factors,
 // asked for by the expert so inexperienced foragers get a summary while
 // experienced ones can see exactly why. Rules are data (verdict-rules.json),
-// shown in the app and on the expert review page; status "udkast" until the
-// expert has approved them.
+// shown in the app and on the expert review page. The expert reviewed them in
+// round 2 (status "gennemgaaet"); his stream-mouth rule uses live watercourse data.
 //
 // Green never means "safe": it means none of the rules matched the mapped data.
 
@@ -15,7 +15,7 @@ export type Level = "red" | "yellow" | "green" | "unknown";
 export interface Rule {
   id: string;
   level: "red" | "yellow";
-  type: "nearby" | "soil_v2" | "rain";
+  type: "nearby" | "soil_v2" | "rain" | "stream";
   text: string;
   groups?: string[];
   within_m?: number;
@@ -40,6 +40,8 @@ export interface VerdictInput {
   rain48: number | null;
   /** V2 sites within 1 km; null = unknown. */
   soilV2: number | null;
+  /** Watercourses within 200 m (live.ts queryStreams); null = unknown. */
+  streams: { names: string[]; unnamed: number } | null;
 }
 
 export interface Reason {
@@ -63,6 +65,12 @@ function matches(rule: Rule, item: RiskItem): boolean {
   return true;
 }
 
+function streamEvidence(s: { names: string[]; unnamed: number }): string {
+  const parts = [...s.names];
+  if (s.unnamed) parts.push("et mindre beskyttet vandløb");
+  return parts.join(", ");
+}
+
 const mm = (v: number) => `${String(Math.round(v * 10) / 10).replace(".", ",")} mm`;
 
 export function evaluate(input: VerdictInput, file: RulesFile = RULES): Verdict {
@@ -81,6 +89,10 @@ export function evaluate(input: VerdictInput, file: RulesFile = RULES): Verdict 
     }
     if (rule.type === "rain") {
       reasons.push({ rule, evidence: `${mm(input.rain48 as number)} de seneste 48 timer` });
+    } else if (rule.type === "stream") {
+      if (input.streams === null) unchecked.push(rule);
+      else if (input.streams.names.length + input.streams.unnamed > 0)
+        reasons.push({ rule, evidence: streamEvidence(input.streams) });
     } else if (rule.type === "soil_v2") {
       if (input.soilV2 === null) unchecked.push(rule);
       else if (input.soilV2 > 0)
@@ -101,16 +113,17 @@ export function evaluate(input: VerdictInput, file: RulesFile = RULES): Verdict 
   }
 
   // A rule satisfied at red also satisfies its yellow sibling (e.g. an overflow
-  // at 300 m); show each finding once, at its most severe level.
-  const redGroups = new Set(
-    reasons.filter((r) => r.rule.level === "red").flatMap((r) => r.rule.groups ?? []),
-  );
-  const shown = reasons.filter(
-    (r) =>
-      r.rule.level === "red" ||
-      r.rule.type !== "nearby" ||
-      !(r.rule.groups ?? []).every((g) => redGroups.has(g)),
-  );
+  // at 300 m, or a stream mouth after rain); show each finding once, at its most
+  // severe level.
+  const red = reasons.filter((r) => r.rule.level === "red").map((r) => r.rule);
+  const redGroups = new Set(red.flatMap((r) => r.groups ?? []));
+  const redStream = red.some((r) => r.type === "stream");
+  const shown = reasons.filter((r) => {
+    if (r.rule.level === "red") return true;
+    if (r.rule.type === "stream") return !redStream;
+    if (r.rule.type !== "nearby") return true;
+    return !(r.rule.groups ?? []).every((g) => redGroups.has(g));
+  });
 
   const level: Level = shown.some((r) => r.rule.level === "red")
     ? "red"

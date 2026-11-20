@@ -1,6 +1,7 @@
 import type maplibregl from "maplibre-gl";
 import "./style.css";
 import { openAbout } from "./about";
+import { maybeWelcome } from "./welcome";
 import { searchAddresses, type AddressSuggestion } from "./addresses";
 import { loadAllSpecies, loadManifest, loadSpecies } from "./data";
 import { formatDistance } from "./geo";
@@ -15,6 +16,7 @@ import { SpeciesPanel } from "./speciespanel";
 import type { Manifest } from "./types";
 
 initErrorMonitoring();
+maybeWelcome();
 registerServiceWorker();
 
 const mapReady: Promise<MapBundle> = createMap("map");

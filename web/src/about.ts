@@ -1,6 +1,7 @@
 // "Om Tangkortet": what the app is and isn't, and where the data comes from.
 
 import { h, extLink } from "./dom";
+import { welcomeText } from "./welcome";
 import { DISCLAIMER } from "./riskpanel";
 import type { Manifest } from "./types";
 
@@ -20,6 +21,7 @@ export function openAbout(manifest: Manifest | null): void {
       {},
       "Appen siger aldrig, at et sted eller en tang er sikker at spise. Felter markeret “foreløbig” eller “afventer ekspert” er endnu ikke gennemgået af en fagperson.",
     ),
+    ...welcomeText(),
     h("h3", {}, "Data"),
     h(
       "ul",

@@ -2,7 +2,7 @@
 // (§2, §4, §5; the brief itself is kept private). Marked "foreløbig" until the expert has
 // reviewed it as app text. Items the app helps with point to the Risiko tab.
 
-import { h } from "./dom";
+import { h, extLink } from "./dom";
 
 interface CheckItem {
   text: string;
@@ -17,7 +17,7 @@ const CHECKLIST: CheckItem[] = [
   },
   {
     text: "Kortlæg udløb, vandløb, dræn og landbrugsoplande.",
-    app: "Risiko: udløb (vandløb og dræn mangler endnu)",
+    app: "Risiko: udløb og vandløb inden for 200 m (dræn og landbrugsoplande mangler endnu)",
   },
   {
     text: "Undersøg renseanlæg, kloakoverløb og regnvandsudløb.",
@@ -75,6 +75,46 @@ export function renderGuide(root: HTMLElement): void {
       "p",
       {},
       "Foretræk frisk, fastsiddende tang frem for opskyllet eller nedbrudt materiale. Undgå områder ved synlige udløb, havne, oliehinder, misfarvninger eller mistænkelig lugt. Notér dato, præcis lokalitet, art, vejr og eventuelle observationer.",
+    ),
+    h("h2", {}, "Fødevarestyrelsens råd"),
+    h(
+      "ul",
+      { class: "plain" },
+      h("li", {}, "Pluk kun frisk tang – pluk den i vandet, og saml den ikke op på stranden."),
+      h("li", {}, "Vandet skal være klart og rent: undgå havne, byer, åer og spildevandsudløb."),
+      h("li", {}, "Pluk kun tang, når du kender arten."),
+      h(
+        "li",
+        {},
+        "Skyl tangen i havvand, når du plukker den, og vask den i drikkevand lige før brug.",
+      ),
+    ),
+    h(
+      "p",
+      { class: "note" },
+      extLink(
+        "https://www.foedevarestyrelsen.dk/kost-og-foedevarer/alt-om-mad/god-koekkenhygiejne/saadan-goer-du/tang",
+        "Råd til dig, som plukker tang (Fødevarestyrelsen)",
+      ),
+    ),
+    h("h2", {}, "Regler"),
+    h(
+      "ul",
+      { class: "plain" },
+      h(
+        "li",
+        {},
+        "Natura 2000-områder og fredninger kan have regler for indsamling – Risiko-fanen viser, om nålen ligger i et. Undersøg reglerne for det konkrete område.",
+      ),
+      h(
+        "li",
+        {},
+        "Vil du sælge den tang, du samler, skal du registreres hos Fødevarestyrelsen. ",
+        extLink(
+          "https://www.foedevarestyrelsen.dk/kost-og-foedevarer/start-og-drift-af-foedevarevirksomhed/specifikke-foedevarer-hygiejneregler/tang-og-mikroalger",
+          "Læs mere",
+        ),
+      ),
     ),
     h("h2", {}, "Opskyllet tang"),
     h(

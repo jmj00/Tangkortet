@@ -17,7 +17,7 @@ const VD_JORD = "https://kort.vd.dk/server/rest/services/Grunddata/Jordforurenin
 const TIMEOUT_MS = 20_000;
 
 /** Pins on the beach should still find the protected area / water body. */
-const NEAR_M = { protection: 100, water: 1000, soil: 1000 } as const;
+const NEAR_M = { protection: 100, water: 1000, soil: 1000, stream: 200 } as const;
 
 export type LiveResult<T> = { ok: true; items: T[] } | { ok: false };
 
@@ -109,6 +109,23 @@ export function parseWaterBodies(json: unknown): WaterBody[] {
   }));
 }
 
+export interface Streams {
+  /** Named water-plan watercourses (MiljøGIS), each once. */
+  names: string[];
+  /** 1 when only unnamed protected watercourses (Miljøportalen) were found, else 0.
+   * Those come as segments that often overlap the named ones, so they are never
+   * counted on top of a named watercourse. */
+  unnamed: number;
+}
+
+export function parseStreams(named: unknown, small: unknown): Streams {
+  const names = [
+    ...new Set(featureProps(named).map((p) => text(p.ov_navn) ?? "Unavngivet vandløb")),
+  ];
+  const unnamed = names.length === 0 && featureProps(small).length > 0 ? 1 : 0;
+  return { names, unnamed };
+}
+
 export function parseSoil(level: SoilSite["level"], json: unknown): SoilSite[] {
   const features =
     (json as { features?: { attributes?: Props }[] })?.features?.map((f) => f.attributes ?? {}) ??
@@ -155,6 +172,36 @@ export function queryProtected(
   );
 }
 
+/** Watercourses within STREAM_RADIUS_M: at the coast that means a stream mouth
+ * (expert, round 2; Fødevarestyrelsen also advises avoiding "åer"). */
+export async function queryStreams(
+  pin: [number, number],
+  signal?: AbortSignal,
+): Promise<Streams | null> {
+  const xy = wgs84ToUtm32n(...pin);
+  try {
+    const [named, small] = await Promise.all([
+      getJson(
+        wfsUrl(
+          MILJOEGIS,
+          "vp3_2endelig2025:vp3_2e2025_vandloeb_samlet",
+          ["ov_navn"],
+          dwithin("wkb_geometry", xy, NEAR_M.stream),
+        ),
+        signal,
+      ),
+      getJson(
+        wfsUrl(MILJOEPORTAL, "dai:bes_vandloeb", ["Temanavn"], dwithin("Shape", xy, NEAR_M.stream)),
+        signal,
+      ),
+    ]);
+    return parseStreams(named, small);
+  } catch (err) {
+    if ((err as Error).name !== "AbortError") console.warn("stream query failed", err);
+    return null;
+  }
+}
+
 export function queryWaterBodies(
   pin: [number, number],
   signal?: AbortSignal,
@@ -197,3 +244,4 @@ export function querySoil(
 }
 
 export const SOIL_RADIUS_M = NEAR_M.soil;
+export const STREAM_RADIUS_M = NEAR_M.stream;

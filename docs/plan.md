@@ -239,3 +239,16 @@ traffic light alongside the list ([ADR-0005](adr/0005-traffic-light-as-draft-rul
 draft rules out for review). Still open: species cards (depth, harvest, season,
 accumulation), risk-factor weights, collecting rules.
 
+## Expert round 2 (2026-11-20)
+
+Applied: harvest methods (blæretang, søl: cut the tips; sukkertang: whole
+blade); iodine confirmed for sukkertang and stated for Laminaria; official-style
+warnings for iodine (Laminaria), kainic acid (søl) and arsenic (butblæret
+sargassotang); *Ulva lactuca* renamed *Ulva fenestrata* (Almindelig søsalat), old
+records merged; five new species (*Porphyra purpurea*, *Ulva lacinulata*, *Ulva
+compressa*, and the invasive *Gracilaria vermiculophylla* and *Sargassum
+muticum*); risk factors ordered by the expert's weights; traffic-light rules
+reviewed and the stream-mouth rule added; Fødevarestyrelsen's advice and rules in
+the guide; a first-visit welcome. Follow-up questions are on the review page
+(Sargassum wording, two names, what "large amounts" means). Next: onshore wind
+only, with drift tang fresh for about a day.
