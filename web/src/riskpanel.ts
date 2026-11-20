@@ -7,7 +7,7 @@
 import { loadRiskCell } from "./data";
 import { h, extLink } from "./dom";
 import { bboxAround, cellKeys, formatDistance } from "./geo";
-import { RISK_COLOR } from "./layers";
+import { riskColor } from "./layers";
 import {
   queryProtected,
   querySoil,
@@ -25,9 +25,9 @@ import {
   type WaterBody,
 } from "./live";
 import { fetchRain, type RainSummary } from "./rain";
-import { groupNearby, riskItems, type RiskItem } from "./risk";
+import { groupNearby, riskItems, type GroupKey, type RiskItem } from "./risk";
 import type { Manifest } from "./types";
-import { evaluate, LEVEL_TEXT, RULES } from "./verdict";
+import { evaluate, LEVEL_TEXT, RULES, type Level } from "./verdict";
 import {
   compass,
   daysAgo,
@@ -48,6 +48,9 @@ export const DISCLAIMER =
 export interface RiskPanelHooks {
   onItems(pin: [number, number], radiusM: number, items: RiskItem[]): void;
   onFocus(item: RiskItem): void;
+  /** The traffic light for `pin` each time the panel draws it ("pending"
+   * until its inputs have answered); the pin's card (tapcard.ts) shows it. */
+  onVerdict?(pin: [number, number], level: Level | "pending"): void;
 }
 
 type Pending<T> = T | "loading" | "error";
@@ -67,6 +70,8 @@ export class RiskPanel {
   private smallStreams: Pending<unknown | null> = "loading";
   private protectedAreas: Pending<LiveResult<ProtectedArea>> = "loading";
   private abort: AbortController | null = null;
+  /** The traffic light last reported through onVerdict, and for which pin. */
+  private reported: { pin: [number, number]; level: Level | "pending" } | null = null;
 
   constructor(
     private root: HTMLElement,
@@ -74,6 +79,11 @@ export class RiskPanel {
     private hooks: RiskPanelHooks,
   ) {
     this.render();
+    // The group dots match the markers on the map, which follow the theme.
+    globalThis.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
+      for (const dot of this.root.querySelectorAll<HTMLElement>(".dot[data-group]"))
+        dot.style.background = riskColor(dot.dataset.group as GroupKey);
+    });
   }
 
   setPin(pin: [number, number]): void {
@@ -192,12 +202,24 @@ export class RiskPanel {
     return parseStreams(this.namedStreams, small);
   }
 
+  /** Report the traffic light when it changes (a new pin, or an answer that
+   * settles or changes it), not on every redraw. */
+  private emitVerdict(level: Level | "pending"): void {
+    const pin = this.pin;
+    if (!pin) return;
+    const last = this.reported;
+    if (last && last.pin === pin && last.level === level) return;
+    this.reported = { pin, level };
+    this.hooks.onVerdict?.(pin, level);
+  }
+
   private verdictCard(): HTMLElement {
     // The small-stream query is slow and only supplementary: don't wait for it.
     const settled = [this.items, this.rain, this.soil, this.namedStreams].every(
       (v) => v !== "loading",
     );
     if (!settled) {
+      this.emitVerdict("pending");
       return h("section", { class: "verdict verdict--pending" }, h("p", {}, "Vurderer…"));
     }
     const soil = this.soil as LiveResult<SoilSite> | "error";
@@ -209,6 +231,7 @@ export class RiskPanel {
         soil !== "error" && soil.ok ? soil.items.filter((i) => i.level === "V2").length : null,
       streams: this.streams(),
     });
+    this.emitVerdict(verdict.level);
     const text = LEVEL_TEXT[verdict.level];
     return h(
       "section",
@@ -438,7 +461,11 @@ export class RiskPanel {
             h(
               "summary",
               {},
-              h("span", { class: "dot", style: `background:${RISK_COLOR[g.key]}` }),
+              h("span", {
+                class: "dot",
+                "data-group": g.key,
+                style: `background:${riskColor(g.key)}`,
+              }),
               h("span", { class: "group__label" }, g.label),
               h(
                 "span",

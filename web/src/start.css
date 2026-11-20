@@ -1070,7 +1070,8 @@
     display: none;
   }
 
-  #readout {
+  /* room for the "Forside" pill on the place line only, not the buttons */
+  #readout .tapcard__where {
     padding-right: 7.5rem;
   }
 }
@@ -1211,7 +1212,8 @@
     display: none;
   }
 
-  #readout {
+  /* room for the "Forside" pill on the place line only, not the buttons */
+  #readout .tapcard__where {
     padding-right: 8.75rem;
   }
 

@@ -231,7 +231,10 @@ export function initPlaceSearch(onPlace: (place: ChosenPlace) => void): void {
       // On a phone the keyboard would cover the map that is about to move: on
       // to the pin's label (read out as it changes), not to nowhere.
       if (!finePointer.matches) {
-        const readout = document.getElementById("readout");
+        // the pin card's place line (tapcard.ts), else the whole readout
+        const readout =
+          document.querySelector<HTMLElement>("#readout .tapcard__where") ??
+          document.getElementById("readout");
         if (readout) {
           if (!readout.hasAttribute("tabindex")) readout.tabIndex = -1;
           readout.focus({ preventScroll: true });
