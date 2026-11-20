@@ -90,10 +90,13 @@ jobs:
           pbf=build/osm/denmark-latest.osm.pbf
           if [ -s "$pbf" ]; then
             python -m pipeline.ingest.stednavne --coast-pbf "$pbf"
+            echo "fetched=true" >> "$GITHUB_OUTPUT"
           else
+            # Without the coastline the lake bays come back: use the file for
+            # this deploy only and never cache it for the month.
             python -m pipeline.ingest.stednavne
+            echo "::warning::No OpenStreetMap extract; place names not cached this month"
           fi
-          echo "fetched=true" >> "$GITHUB_OUTPUT"
       - name: Warn when the place names could not be fetched
         if: steps.sn-fetch.outcome == 'failure'
         run: echo "::warning::Danske Stednavne failed; keeping the cached or committed place names"

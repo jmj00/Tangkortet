@@ -18,7 +18,7 @@ the names a forager says about the shore and the water:
 * sea baths (``sn:Friluftsbad``: ``hav``, published as ``havbad``).
 
 Waters must be the sea's: the register's bugt, løb and nor also name bays of
-lakes (Valdemars Vig in Tissø, Kinabugten in Furesø, Ågabet in Arresø). A
+lakes (Valdemars Vig in the Silkeborg lakes, Kinabugten in Furesø, Ågabet in Arresø). A
 water counts as the sea when it lies within :data:`SEA_COAST_M` of the
 OpenStreetMap coastline (``--coast-pbf``, the extract the coast cells come
 from), is a ``hav``, or touches a water already counted (grown outwards, so a
@@ -569,7 +569,7 @@ def sea_waters(
     waters: Sequence[NameFeature], coastline: Sequence[Sequence[Point]]
 ) -> tuple[list[NameFeature], list[NameFeature]]:
     """(sea, lake) waters. The register's bugt, løb and nor also name bays of
-    lakes (Valdemars Vig in Tissø, Kinabugten in Furesø), so a water counts as
+    lakes (Valdemars Vig in the Silkeborg lakes, Kinabugten in Furesø), so a water counts as
     the sea only when it is within :data:`SEA_COAST_M` of the OpenStreetMap
     coastline, or is a ``hav``, or touches (within :data:`SEA_TOUCH_M`) or lies
     inside a water already counted, grown outwards until nothing changes (a
@@ -854,7 +854,7 @@ def main(argv: list[str] | None = None) -> None:
         coastline = osm_coastline(args.coast_pbf)
         print(f"  {len(coastline)} coastline ways from {args.coast_pbf}")
     else:
-        print("  warning: no OpenStreetMap extract; only the named waters say what is coastal")
+        print("  warning: no OpenStreetMap extract; every named water counts as sea")
     extract = prepare(raw, coastline)
     check_counts(extract)
     doc = to_json(extract, fetched_s)

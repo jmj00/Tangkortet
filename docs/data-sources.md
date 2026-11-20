@@ -166,9 +166,9 @@ lat, lon order. 25 requests, **about 90 s** for all of Denmark (the bays are
 | `sn:UrentFarvand` | tørtVedLavvande / overskylledeSten (not the 1,092 `undersøiskGrund`) | 57 / 6 | all |
 | `sn:Friluftsbad` | hav (published as `havbad`) | 32 | all |
 
-The register's bugt, løb and nor also name bays of lakes (Valdemars Vig in
-Tissø, Kinabugten in Furesø, Ågabet in Arresø, Møllekrog in Esrum Sø, the
-Silkeborg lakes' vige), so a water counts as the sea only when it lies within
+The register's bugt, løb and nor also name bays of lakes (Valdemars Vig and
+the other Silkeborg lakes' vige, Kinabugten in Furesø, Ågabet in Arresø,
+Møllekrog in Esrum Sø), so a water counts as the sea only when it lies within
 300 m of the OpenStreetMap coastline, is a `hav`, or touches (150 m) a water
 already counted, grown outwards until nothing changes: a fjord behind a sluice
 (Ringkøbing Fjord, Nissum Fjord) stays. 27 waters are lakes'; Limfjorden,
