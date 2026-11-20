@@ -258,7 +258,9 @@ export class MapLegend {
       this.panel.append(this.riskSection(risk, pin));
       const group = el("span", "map-key__summary-group");
       for (const g of risk.groups.slice(0, 4)) group.append(riskMark(g.color));
-      group.append(el("span", undefined, risk.groups.length ? "kilder" : "ingen kilder"));
+      // "none drawn", never "none": soil and streams count in the verdict but
+      // are not drawn as points
+      group.append(el("span", undefined, risk.groups.length ? "kilder" : "ingen punkter"));
       this.summary.append(group);
     } else if (pin) {
       this.panel.append(this.pinSection(pin));
@@ -292,7 +294,13 @@ export class MapLegend {
       list.append(row);
     }
     if (risk.groups.length === 0) {
-      list.append(el("li", "map-key__row map-key__none", "Ingen kortlagte kilder i ringen"));
+      list.append(
+        el(
+          "li",
+          "map-key__row map-key__none",
+          "Ingen kilder vist som punkter i ringen – se listen for jord og vandløb",
+        ),
+      );
     }
     const around = el("ul", "map-key__list");
     if (pin) around.append(this.pinRow(pin));
