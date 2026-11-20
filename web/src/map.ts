@@ -142,10 +142,17 @@ const OSM_SOURCE: RasterSourceSpecification = {
  * (Basemap.giveUp): no doubled traffic against the OSMF tile policy, and no
  * OSM credit for a map that doesn't show it. */
 function baseStyle(withOsm: boolean): StyleSpecification {
+  // the photo's sea tone from the start when the photo is the stored choice:
+  // no flash of the land tone before Basemap.apply
   const background: LayerSpecification = {
     id: "bg",
     type: "background",
-    paint: { "background-color": backgroundColor(prefersDark(), false) },
+    paint: {
+      "background-color": backgroundColor(
+        prefersDark(),
+        !!DATAFORDELER_KEY && readBasemapMode() === "photo",
+      ),
+    },
   };
   const osm: LayerSpecification = {
     id: "osm",
@@ -256,6 +263,8 @@ interface Tracked {
   /** Given up already: later results don't count. */
   done: boolean;
   onGiveUp: (result: TileResult) => void;
+  /** A tile of this layer loaded: the key works. */
+  onLoaded: () => void;
 }
 
 /** The layers currently on the map, by id. */
@@ -274,8 +283,18 @@ function addProtocolOnce(lib: typeof import("maplibre-gl")): void {
     const id = match?.[1] as WmsId | undefined;
     if (!match || !id || !(id in WMS)) throw new Error("unknown basemap tile");
     const spec = WMS[id];
-    // throws AbortedError when the tile is no longer wanted: not counted
-    const r = await fetchTile(wmsUrl(spec, match[2]), abortController.signal);
+    // In flight, so a stray ServiceException on the first tile back doesn't
+    // condemn the layer while the rest of the view may still load (TileHealth).
+    const started = tracked.get(id);
+    started?.health.begin();
+    let r: Awaited<ReturnType<typeof fetchTile>>;
+    try {
+      r = await fetchTile(wmsUrl(spec, match[2]), abortController.signal);
+    } catch (error) {
+      // AbortedError: the tile is no longer wanted, not counted
+      started?.health.cancel();
+      throw error;
+    }
     const stats = tileStats[id];
     stats.tiles += 1;
     stats.attempts += r.attempts;
@@ -288,6 +307,9 @@ function addProtocolOnce(lib: typeof import("maplibre-gl")): void {
     // TileHealth), not a rejected key that would hide "Luftfoto".
     const result = r.result === "invalid" && keyWorks ? "failed" : r.result;
     const t = tracked.get(id);
+    // the layer was replaced while this tile was on its way: settle the old one
+    if (started && started !== t) started.health.cancel();
+    if (t && r.result === "loaded") t.onLoaded();
     if (t && !t.done && t.health.record(result) === "give-up") {
       t.done = true;
       t.onGiveUp(result);
@@ -303,9 +325,11 @@ function addProtocolOnce(lib: typeof import("maplibre-gl")): void {
  * picks it (BasemapControl, remembered per device), over a flat background in
  * the theme's land or water tone, so a tile that fails after its retries
  * leaves a quiet gap, not a hole. A layer is dropped only when the service
- * clearly doesn't work: a ServiceException before any tile loaded (an invalid
- * key), or no tile at all after several failed ones. Skærmkort dropped brings
- * in OpenStreetMap; the photo dropped goes back to the map.
+ * clearly doesn't work: ServiceExceptions before any tile loaded (an invalid
+ * key: two, or one with no other tile on its way), or no tile at all after
+ * several failed ones. Skærmkort dropped brings in OpenStreetMap; the photo
+ * dropped goes back to the map, and the photo button, hidden for a rejected
+ * key, comes back once any tile loads.
  */
 class Basemap {
   readonly control: BasemapControl;
@@ -346,6 +370,9 @@ class Basemap {
       health: new TileHealth(),
       done: false,
       onGiveUp: (result) => this.giveUp(id, result),
+      // the photo button back, should it have been hidden for a key that
+      // turned out to work after all
+      onLoaded: () => this.control.setAvailable(true),
     });
     this.map.addSource(id, {
       type: "raster",

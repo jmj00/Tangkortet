@@ -58,24 +58,47 @@ export const GIVE_UP_AFTER = 4;
 
 /** A layer's track record. Once a tile has loaded the service works: later
  * failures, a stray ServiceException included, only leave gaps (the map's
- * land/water background shows through), never a fallback. A ServiceException
- * before anything has loaded means a wrong key or layer: give up at once. */
+ * land/water background shows through), never a fallback. Before anything
+ * has loaded, a ServiceException means a wrong key or layer only when it
+ * repeats, or when no other tile of the layer is still on its way to prove
+ * otherwise: Datafordeler answers the odd good request with one too, and a
+ * single stray on the first tile back must not drop a working layer. A
+ * rejected key answers every tile so, and still gives up within a tile or two. */
 export class TileHealth {
   loaded = 0;
   failed = 0;
+  /** ServiceExceptions while nothing had loaded. */
+  exceptions = 0;
   invalid = false;
+  /** Tiles started (`begin`) and not yet recorded or cancelled. */
+  inFlight = 0;
+
+  /** A tile of this layer is being fetched. */
+  begin(): void {
+    this.inFlight += 1;
+  }
+
+  /** A tile ended without a result (the map no longer wanted it). */
+  cancel(): void {
+    this.inFlight = Math.max(0, this.inFlight - 1);
+  }
 
   record(result: TileResult): Verdict {
+    this.cancel();
     if (result === "loaded") this.loaded += 1;
     else if (result === "failed") this.failed += 1;
-    else if (this.loaded === 0) this.invalid = true;
-    else this.failed += 1;
+    else if (this.loaded > 0) this.failed += 1;
+    else {
+      this.exceptions += 1;
+      this.failed += 1;
+      if (this.exceptions >= 2 || this.inFlight === 0) this.invalid = true;
+    }
     return this.verdict();
   }
 
   verdict(): Verdict {
-    if (this.invalid) return "give-up";
     if (this.loaded > 0) return "ok";
+    if (this.invalid) return "give-up";
     return this.failed >= GIVE_UP_AFTER ? "give-up" : "pending";
   }
 }

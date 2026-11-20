@@ -67,11 +67,43 @@ describe("TileHealth", () => {
     expect(h.record("loaded")).toBe("ok");
     for (let i = 0; i < 50; i++) expect(h.record("failed")).toBe("ok");
   });
-  it("gives up at once on a ServiceException before anything has loaded", () => {
+  it("gives up on a ServiceException before anything has loaded when no other tile is on its way", () => {
     const h = new TileHealth();
     h.record("failed");
     expect(h.record("invalid")).toBe("give-up");
     expect(h.invalid).toBe(true);
+  });
+  it("survives one stray ServiceException on the first tile back while others are in flight", () => {
+    // the view's first tiles start together; the first answer is a stray XML
+    const h = new TileHealth();
+    for (let i = 0; i < 12; i++) h.begin();
+    expect(h.record("invalid")).toBe("pending");
+    expect(h.invalid).toBe(false);
+    expect(h.record("loaded")).toBe("ok");
+    for (let i = 0; i < 10; i++) expect(h.record("loaded")).toBe("ok");
+  });
+  it("gives up on the second ServiceException while nothing has loaded (a rejected key)", () => {
+    const h = new TileHealth();
+    for (let i = 0; i < 12; i++) h.begin();
+    expect(h.record("invalid")).toBe("pending");
+    expect(h.record("invalid")).toBe("give-up");
+    expect(h.invalid).toBe(true);
+  });
+  it("gives up on one ServiceException once the other tiles have been cancelled", () => {
+    const h = new TileHealth();
+    h.begin();
+    h.begin();
+    h.cancel();
+    expect(h.inFlight).toBe(1);
+    expect(h.record("invalid")).toBe("give-up");
+  });
+  it("still gives up after enough failed tiles when a stray ServiceException was one of them", () => {
+    const h = new TileHealth();
+    for (let i = 0; i < 12; i++) h.begin();
+    h.record("invalid");
+    for (let i = 1; i < GIVE_UP_AFTER - 1; i++) expect(h.record("failed")).toBe("pending");
+    expect(h.record("failed")).toBe("give-up");
+    expect(h.invalid).toBe(false);
   });
   it("keeps a working layer on a stray ServiceException, counting it as one failed tile", () => {
     const h = new TileHealth();
