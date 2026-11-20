@@ -422,13 +422,15 @@ export class SpeciesPanel {
       this.patchRow(refs, s, near);
       list.append(refs.li);
     }
-    this.chooseDensity();
     // Re-parenting a focused row blurs it; put focus back.
     const focused = document.activeElement;
     this.results.replaceChildren(list);
     if (focused instanceof HTMLElement && focused !== document.activeElement) {
       if (list.contains(focused)) focused.focus({ preventScroll: true });
     }
+    // Measure only once the rows are in the page: a detached list has no row
+    // to measure, and the fallback height made typing flip the density.
+    this.chooseDensity();
   }
 
   private emptyState(): HTMLElement {
