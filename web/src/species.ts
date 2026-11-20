@@ -268,3 +268,150 @@ export function licenseName(url: string): string {
   if (m) return `CC ${m[1].toUpperCase()} ${m[2]}`;
   return url.replace(/^https?:\/\//, "");
 }
+
+/** Species per group among those matching `query` (for the chip counts). */
+export function groupCounts<T extends Searchable>(
+  species: readonly T[],
+  query: string,
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const s of resolveQuery(query, species)) counts.set(s.group, (counts.get(s.group) ?? 0) + 1);
+  return counts;
+}
+
+// --- which species is open: a small state machine, kept free of the DOM ----
+
+/** A loading page turns into the error page (with "Prøv igen") after this. */
+export const LOAD_TIMEOUT_MS = 15_000;
+
+export type SelectionView<S, D> =
+  | { kind: "list" }
+  | { kind: "loading"; summary: S }
+  | { kind: "error"; summary: S; offline: boolean }
+  | { kind: "sheet"; summary: S; doc: D };
+
+export interface SelectionHooks<S, D> {
+  loadDoc(summary: S): Promise<D>;
+  /** The species whose finds the map shows (and the URL names), or null to clear. */
+  onSelect(doc: D | null): void;
+  /** Draw `view`. `user` is true when the user asked for it just now (focus may move). */
+  render(view: SelectionView<S, D>, prev: SelectionView<S, D>, user: boolean): void;
+  isOffline(): boolean;
+  setTimer?(fn: () => void, ms: number): unknown;
+  clearTimer?(id: unknown): void;
+}
+
+/** Opening, loading, failing and closing species pages. Rules:
+ *  - the map only ever shows the species whose page is open and loaded: any
+ *    move from a loaded page to a loading/error page or to the list clears it;
+ *  - a load that is overtaken by another open (or by "back") is dropped;
+ *  - a load still pending after LOAD_TIMEOUT_MS shows the error page, but if
+ *    the document arrives after all (late response, or `addDocs`), it shows;
+ *  - pages opened from a lookalike remember where they came from, so "back"
+ *    goes one step; "home" always returns to the list. */
+export class SpeciesSelection<S extends { slug: string }, D extends { slug: string }> {
+  view: SelectionView<S, D> = { kind: "list" };
+  /** Pages to step back through, most recent last. */
+  readonly trail: S[] = [];
+  private readonly docs = new Map<string, D>();
+  private token = 0;
+  private timer: unknown = null;
+
+  constructor(
+    private readonly hooks: SelectionHooks<S, D>,
+    private readonly timeoutMs = LOAD_TIMEOUT_MS,
+  ) {}
+
+  doc(slug: string): D | undefined {
+    return this.docs.get(slug);
+  }
+
+  /** Documents loaded elsewhere (the near-pin bulk load). Recovers a page that
+   * is loading or failed if its document is among them. */
+  addDocs(docs: readonly D[]): void {
+    for (const d of docs) this.docs.set(d.slug, d);
+    const v = this.view;
+    if (v.kind === "loading" || v.kind === "error") {
+      const doc = this.docs.get(v.summary.slug);
+      if (doc) {
+        this.token++;
+        this.set({ kind: "sheet", summary: v.summary, doc }, false);
+      }
+    }
+  }
+
+  /** Open a species. `via: "lookalike"` remembers the current page for "back". */
+  async open(summary: S, opts: { user: boolean; via?: "lookalike" | "list" }): Promise<void> {
+    const current = this.view;
+    if (opts.via === "lookalike" && current.kind !== "list") {
+      if (current.summary.slug !== summary.slug) this.trail.push(current.summary);
+    } else if (opts.via === "list") {
+      this.trail.length = 0;
+    }
+    const token = ++this.token;
+    const cached = this.docs.get(summary.slug);
+    if (cached) return this.set({ kind: "sheet", summary, doc: cached }, opts.user);
+
+    this.set({ kind: "loading", summary }, opts.user);
+    this.startTimer(token, summary);
+    let doc: D;
+    try {
+      doc = await this.hooks.loadDoc(summary);
+    } catch (err) {
+      if (token !== this.token) return;
+      console.error(err);
+      this.set({ kind: "error", summary, offline: this.hooks.isOffline() }, false);
+      return;
+    }
+    this.docs.set(doc.slug, doc);
+    if (token !== this.token) return; // another species was opened, or "back"
+    this.set({ kind: "sheet", summary, doc }, false);
+  }
+
+  /** Try the page that failed again. */
+  retry(user = true): void {
+    const v = this.view;
+    if (v.kind === "error") void this.open(v.summary, { user });
+  }
+
+  /** One step back: the page this one was opened from, else the list. */
+  back(): void {
+    const previous = this.trail.pop();
+    if (previous) void this.open(previous, { user: true });
+    else this.home();
+  }
+
+  /** Straight to the list. */
+  home(): void {
+    this.trail.length = 0;
+    this.token++; // drop a load in flight
+    this.set({ kind: "list" }, true);
+  }
+
+  private startTimer(token: number, summary: S): void {
+    const clear = this.hooks.clearTimer ?? ((id) => clearTimeout(id as number));
+    const set = this.hooks.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
+    if (this.timer !== null) clear(this.timer);
+    this.timer = set(() => {
+      this.timer = null;
+      // Still the same load and still waiting: say so, but let a late answer win.
+      if (token === this.token && this.view.kind === "loading") {
+        this.set({ kind: "error", summary, offline: this.hooks.isOffline() }, false);
+      }
+    }, this.timeoutMs);
+  }
+
+  private set(view: SelectionView<S, D>, user: boolean): void {
+    const prev = this.view;
+    this.view = view;
+    if (view.kind !== "loading" && this.timer !== null) {
+      (this.hooks.clearTimer ?? ((id) => clearTimeout(id as number)))(this.timer);
+      this.timer = null;
+    }
+    this.hooks.render(view, prev, user);
+    if (view.kind === "sheet") this.hooks.onSelect(view.doc);
+    else if (prev.kind === "sheet" || (view.kind === "list" && prev.kind !== "list")) {
+      this.hooks.onSelect(null);
+    }
+  }
+}

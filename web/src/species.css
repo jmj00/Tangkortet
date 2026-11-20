@@ -223,8 +223,19 @@
 .spp-status {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  flex-wrap: wrap;
+  gap: 0 0.25rem;
   min-height: 1.5rem;
+}
+
+.spp-sort-note {
+  flex-basis: 100%;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.spp-sort-note[hidden] {
+  display: none;
 }
 
 .spp-count {
@@ -633,7 +644,11 @@
 }
 
 /* Same marks as the map: filled = attached, ring = drift, faded = unknown. */
+/* Same colours as the list dots (3:1 in both themes) and the same idea as the
+   map marks: filled = attached, ring = drift, half-filled = unknown. The
+   unknown mark keeps a full-colour ring so it stays visible in dark mode. */
 .spp-swatch {
+  --c: var(--muted);
   flex: none;
   width: 0.8rem;
   height: 0.8rem;
@@ -642,12 +657,24 @@
   border: 2px solid var(--c);
 }
 
+.spp-swatch[data-group="brunalge"] {
+  --c: var(--spp-brunalge);
+}
+
+.spp-swatch[data-group="rødalge"] {
+  --c: var(--spp-rodalge);
+}
+
+.spp-swatch[data-group="grønalge"] {
+  --c: var(--spp-gronalge);
+}
+
 .spp-toggle--drift .spp-swatch {
   background: transparent;
 }
 
 .spp-toggle--unknown .spp-swatch {
-  opacity: 0.4;
+  background: color-mix(in srgb, var(--c) 35%, transparent);
 }
 
 .spp-near {
@@ -1017,4 +1044,104 @@
 /* Room for the fade at the end, so it never covers the last row. */
 .spp-results {
   padding-bottom: 1.5rem;
+}
+
+/* A chip with no species in the current search: still usable, visibly empty. */
+.spp-chip[data-empty]:not([aria-pressed="true"]) {
+  color: var(--muted);
+  border-style: dashed;
+}
+
+.spp-chip[data-empty]:not([aria-pressed="true"]) .spp-dot {
+  opacity: 0.45;
+}
+
+/* Back bar from a lookalike: "‹ Tilbage til Almindelig søsalat" + "Alle arter". */
+.spp-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.spp-back {
+  min-width: 0;
+}
+
+.spp-back__label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.spp-home {
+  position: relative;
+  flex: none;
+  margin-left: auto;
+  min-height: 2.25rem;
+  padding: 0 0.5rem;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.spp-home:hover {
+  background: var(--bg);
+}
+
+/* --- density: short sheets and large text (set from the scroller's height) ---
+   Search stays on top; the no-pin hint goes, the toolbar and rows tighten, so
+   at least one or two rows show. "tiny" also drops the chips. */
+.spp-list[data-density="compact"] .spp-toolbar,
+.spp-list[data-density="tiny"] .spp-toolbar {
+  gap: 0.25rem;
+  padding-bottom: 0.3rem;
+}
+
+.spp-list[data-density="compact"] .spp-hint,
+.spp-list[data-density="tiny"] .spp-hint,
+.spp-list[data-density="tiny"] .spp-chips,
+.spp-list[data-density="tiny"] .spp-sort-note {
+  display: none;
+}
+
+.spp-list[data-density="compact"] .spp-chips {
+  padding-block: 0.15rem;
+}
+
+.spp-list[data-density="compact"] .spp-chip {
+  min-height: 1.9rem;
+  padding-block: 0.1rem;
+}
+
+.spp-list[data-density="compact"] .spp-sort-note {
+  flex-basis: auto;
+}
+
+.spp-list[data-density="compact"] .spp-sort-note::before {
+  content: "· ";
+}
+
+.spp-list[data-density="compact"] .spp-row,
+.spp-list[data-density="tiny"] .spp-row {
+  min-height: 2.9rem;
+  padding-block: 0.3rem;
+}
+
+.spp-list[data-density="compact"] .spp-row__sub,
+.spp-list[data-density="tiny"] .spp-row__sub {
+  font-size: 0.78rem;
+}
+
+@media (pointer: coarse) {
+  .spp-list[data-density="compact"] .spp-chip::after {
+    inset: -0.45rem -0.1rem;
+  }
+
+  .spp-home {
+    min-height: 2.75rem;
+  }
 }

@@ -10,7 +10,6 @@
 import "./species.css";
 
 import { h, extLink } from "./dom";
-import { ALGAE_COLOR } from "./layers";
 import {
   filterSpecies,
   findsNear,
@@ -20,8 +19,11 @@ import {
   isActiveQuery,
   licenseName,
   NEAR_PIN_M,
+  groupCounts,
   sheetModel,
   sortByNear,
+  SpeciesSelection,
+  type SelectionView,
   type FieldText,
   type SheetModel,
 } from "./species";
@@ -88,12 +90,6 @@ export interface SpeciesPanelHooks {
   loadDoc(summary: SpeciesSummary): Promise<SpeciesDoc>;
 }
 
-type View =
-  | { kind: "list" }
-  | { kind: "loading"; summary: SpeciesSummary }
-  | { kind: "error"; summary: SpeciesSummary; offline: boolean }
-  | { kind: "sheet"; summary: SpeciesSummary; doc: SpeciesDoc };
-
 interface RowRefs {
   li: HTMLLIElement;
   button: HTMLButtonElement;
@@ -102,12 +98,10 @@ interface RowRefs {
 
 export class SpeciesPanel {
   private pin: [number, number] | null = null;
-  private docs: Map<string, SpeciesDoc> = new Map();
-  private view: View = { kind: "list" };
+  private readonly sel: SpeciesSelection<SpeciesSummary, SpeciesDoc>;
   private visible = new Set<Attachment>(ATTACHMENTS);
-  /** Row to return focus to on "← Alle arter": the one the user opened. */
+  /** Row to return focus to on the way back to the list: the one the user opened. */
   private returnSlug: string | null = null;
-  private loadToken = 0;
   private listScroll = 0;
   /** The near-pin line of the open sheet, patched when the pin moves. */
   private nearLine: HTMLElement | null = null;
@@ -132,6 +126,7 @@ export class SpeciesPanel {
     "aria-label": "Filtrér efter algegruppe",
   });
   private readonly count = h("p", { class: "spp-count", "aria-live": "polite", tabindex: "-1" });
+  private readonly sortNote = h("span", { class: "spp-sort-note" });
   private readonly reset = h("button", { type: "button", class: "spp-reset" }, "Nulstil");
   private readonly hint = h("p", { class: "spp-hint" });
   private readonly results = h("div", { class: "spp-results" });
@@ -141,92 +136,131 @@ export class SpeciesPanel {
     private manifest: Manifest,
     private hooks: SpeciesPanelHooks,
   ) {
-    this.buildFrame();
-    this.setView(this.view, false);
-    // The sticky back bar gets a hairline once the sheet has scrolled under it.
-    this.root.addEventListener(
-      "scroll",
-      () => this.root.toggleAttribute("data-spp-scrolled", this.root.scrollTop > 4),
-      { passive: true },
-    );
-    // A species that failed to load while offline is fetched again on reconnect.
-    window.addEventListener("online", () => {
-      if (this.view.kind === "error") void this.open(this.view.summary, this.headingHasFocus());
+    this.sel = new SpeciesSelection<SpeciesSummary, SpeciesDoc>({
+      loadDoc: (s) => this.hooks.loadDoc(s),
+      onSelect: (doc) => this.hooks.onSelect(doc, this.visible),
+      render: (view, prev, user) => this.renderView(view, prev, user),
+      isOffline: () => navigator.onLine === false,
     });
+    this.buildFrame();
+    this.renderView({ kind: "list" }, { kind: "list" }, false);
+
+    // Scroll events do not bubble; listen in the capture phase so this works
+    // whichever ancestor is the scroller. The sticky back bar gets a hairline
+    // once the page has scrolled under it.
+    document.addEventListener(
+      "scroll",
+      (e) => {
+        if (e.target instanceof Element && e.target.contains(this.root)) {
+          this.root.toggleAttribute("data-spp-scrolled", e.target.scrollTop > 4);
+        }
+      },
+      { capture: true, passive: true },
+    );
+    // Sheet height, the scroller's padding and the text size all change the
+    // layout: re-measure when the scroller resizes.
+    if (typeof ResizeObserver !== "undefined") {
+      new ResizeObserver(() => this.measure()).observe(this.scroller());
+    }
+    // Escape steps back, but only within this tab (no global listener).
+    this.root.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape" || e.defaultPrevented || this.sel.view.kind === "list") return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.sel.back();
+    });
+    // A page that failed while offline is fetched again on reconnect.
+    window.addEventListener("online", () => this.sel.retry(false));
   }
 
   setPin(pin: [number, number], allDocs: SpeciesDoc[]): void {
     this.pin = pin;
-    for (const d of allDocs) this.docs.set(d.slug, d);
-    if (this.view.kind === "list") this.refreshList();
-    else if (this.view.kind === "sheet") this.patchNear(this.view.doc);
+    this.sel.addDocs(allDocs); // may turn a loading/error page into the species page
+    const view = this.sel.view;
+    if (view.kind === "list") this.refreshList();
+    else if (view.kind === "sheet") this.patchNear(view.doc);
   }
 
   /** Slug of the open species (also while it loads or failed), or null on the list. */
   get selectedSlug(): string | null {
-    return this.view.kind === "list" ? null : this.view.summary.slug;
+    const view = this.sel.view;
+    return view.kind === "list" ? null : view.summary.slug;
+  }
+
+  /** Close the species page as "Alle arter" does: back to the list, map
+   * selection cleared, focus and scroll restored. No-op on the list. For the
+   * shell (the browser/phone back button). */
+  closeDetail(): void {
+    if (this.sel.view.kind === "list") return;
+    this.sel.home();
   }
 
   selectBySlug(slug: string): void {
     const summary = this.manifest.species.find((s) => s.slug === slug);
     // From a link: move focus only if the user is already working in the panel.
-    if (summary) void this.open(summary, this.root.contains(document.activeElement));
+    const user = this.root.contains(document.activeElement);
+    if (summary) void this.sel.open(summary, { user, via: "list" });
   }
 
-  private headingHasFocus(): boolean {
-    return document.activeElement?.classList.contains("spp-title") ?? false;
-  }
-
-  private async open(summary: SpeciesSummary, focus: boolean): Promise<void> {
-    const token = ++this.loadToken;
-    const cached = this.docs.get(summary.slug);
-    if (cached) return this.show(summary, cached, focus);
-
-    this.setView({ kind: "loading", summary }, focus);
-    let doc: SpeciesDoc;
-    try {
-      doc = await this.hooks.loadDoc(summary);
-    } catch (err) {
-      console.error(err);
-      if (token !== this.loadToken) return;
-      // Keep focus on the heading if it is there; never pull it back from elsewhere.
-      const offline = navigator.onLine === false;
-      this.setView({ kind: "error", summary, offline }, this.headingHasFocus());
-      return;
+  /** The element that scrolls the tab: the panel root or its nearest scrolling ancestor. */
+  private scroller(): HTMLElement {
+    for (let el: HTMLElement | null = this.root; el; el = el.parentElement) {
+      const overflow = getComputedStyle(el).overflowY;
+      if (overflow === "auto" || overflow === "scroll") return el;
     }
-    if (token !== this.loadToken) return; // another species was opened meanwhile
-    this.docs.set(doc.slug, doc);
-    this.show(summary, doc, this.headingHasFocus());
+    return this.root;
   }
 
-  private show(summary: SpeciesSummary, doc: SpeciesDoc, focus: boolean): void {
-    this.setView({ kind: "sheet", summary, doc }, focus);
-    this.hooks.onSelect(doc, this.visible);
-  }
-
-  private back(): void {
-    const closing = this.selectedSlug;
-    this.loadToken++; // drop a load still in flight
-    const wasSheet = this.view.kind === "sheet";
-    this.setView({ kind: "list" }, false);
-    if (wasSheet) this.hooks.onSelect(null, this.visible);
-    const target =
-      this.rows.get(this.returnSlug ?? "")?.button ?? this.rows.get(closing ?? "")?.button;
-    (target ?? this.search).focus({ preventScroll: true });
-    target?.scrollIntoView({ block: "nearest" });
-    this.returnSlug = null;
-  }
-
-  private setView(view: View, focus: boolean): void {
-    if (this.view.kind === "list" && this.listRoot.isConnected) {
-      this.listScroll = this.root.scrollTop;
+  /** Hand the scroller's padding to the sticky bar and the fade (so they reach
+   * its edges whatever padding the shell uses), and pick the list density
+   * from the height actually available. */
+  private measure(): void {
+    const scroller = this.scroller();
+    const boxes = scroller === this.root ? [scroller] : [scroller, this.root];
+    const pad = (side: "paddingTop" | "paddingBottom" | "paddingLeft") =>
+      boxes.reduce((sum, el) => sum + (parseFloat(getComputedStyle(el)[side]) || 0), 0);
+    const node = this.root.querySelector<HTMLElement>(":scope > .spp");
+    if (node) {
+      node.style.setProperty("--spp-pad-top", `${pad("paddingTop")}px`);
+      node.style.setProperty("--spp-pad-bottom", `${pad("paddingBottom")}px`);
+      node.style.setProperty("--spp-pad-x", `${pad("paddingLeft")}px`);
     }
-    this.view = view;
+    // Shorter than ~26 lines of text: drop the hint and tighten the toolbar so
+    // rows show; shorter than ~12 lines: the chips go too (typing a group's
+    // name still works). In rem, so large text compacts sooner.
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const height = scroller.clientHeight;
+    this.listRoot.dataset.density =
+      height === 0 ? "full" : height < 12 * rem ? "tiny" : height < 26 * rem ? "compact" : "full";
+  }
+
+  private renderView(
+    view: SelectionView<SpeciesSummary, SpeciesDoc>,
+    prev: SelectionView<SpeciesSummary, SpeciesDoc>,
+    user: boolean,
+  ): void {
+    const scroller = this.scroller();
+    if (prev.kind === "list" && this.listRoot.isConnected) this.listScroll = scroller.scrollTop;
+    // Focus inside the page being replaced (its heading, "Prøv igen", "back")
+    // moves to the new page's heading instead of being lost.
+    const hadFocus = prev.kind !== "list" && this.root.contains(document.activeElement);
     this.nearLine = null;
+
     if (view.kind === "list") {
       this.root.replaceChildren(this.listRoot);
       this.refreshList();
-      this.root.scrollTop = this.listScroll;
+      this.measure();
+      scroller.scrollTop = this.listScroll;
+      if (prev.kind !== "list") {
+        if (user || hadFocus) {
+          const target =
+            this.rows.get(this.returnSlug ?? "")?.button ??
+            this.rows.get(prev.summary.slug)?.button;
+          (target ?? this.search).focus({ preventScroll: true });
+          target?.scrollIntoView({ block: "nearest" });
+        }
+        this.returnSlug = null;
+      }
       return;
     }
     const sheet =
@@ -236,8 +270,11 @@ export class SpeciesPanel {
           ? this.placeholder(view.summary, "loading")
           : this.placeholder(view.summary, view.offline ? "offline" : "error");
     this.root.replaceChildren(sheet);
-    this.root.scrollTop = 0;
-    if (focus) sheet.querySelector<HTMLElement>(".spp-title")?.focus({ preventScroll: true });
+    this.measure();
+    scroller.scrollTop = 0;
+    if (user || hadFocus) {
+      sheet.querySelector<HTMLElement>(".spp-title")?.focus({ preventScroll: true });
+    }
   }
 
   // --- list ----------------------------------------------------------------
@@ -266,6 +303,10 @@ export class SpeciesPanel {
     }
 
     this.reset.addEventListener("click", () => this.resetFilters());
+    this.hint.append(
+      icon("pin", "spp-hint__icon"),
+      h("span", {}, "Sæt en nål ved kysten for at se arter i nærheden."),
+    );
 
     this.listRoot.append(
       h("h2", { class: "sr-only" }, "Arter"),
@@ -274,7 +315,7 @@ export class SpeciesPanel {
         { class: "spp-toolbar" },
         h("div", { class: "spp-search" }, icon("search", "spp-search__icon"), this.search),
         this.chips,
-        h("div", { class: "spp-status" }, this.count, this.reset),
+        h("div", { class: "spp-status" }, this.count, this.reset, this.sortNote),
         this.hint,
       ),
       this.results,
@@ -297,7 +338,7 @@ export class SpeciesPanel {
     if (!this.pin) return null;
     const near = new Map<string, number>();
     for (const s of this.manifest.species) {
-      const doc = this.docs.get(s.slug);
+      const doc = this.sel.doc(s.slug);
       if (doc) near.set(s.slug, findsNear(doc, this.pin).total);
     }
     return near;
@@ -313,20 +354,26 @@ export class SpeciesPanel {
       chip.setAttribute("aria-pressed", String(chip.dataset.group === this.group));
     }
     this.count.textContent = filtered ? `${matched.length} af ${total} arter` : `${total} arter`;
+    // With a pin the order is "most finds near the pin first": said beside the count
+    // (outside the live region, so typing does not repeat it).
+    this.sortNote.textContent = near
+      ? `Flest fund inden for ${NEAR_PIN_M / 1000} km af nålen først`
+      : "";
+    this.sortNote.hidden = !near;
+
+    // Chip counts follow the search, so a chip never promises rows that are not there.
+    const inQuery = groupCounts(this.manifest.species, this.query);
+    for (const chip of this.chips.querySelectorAll<HTMLButtonElement>(".spp-chip")) {
+      const n = inQuery.get(chip.dataset.group ?? "") ?? 0;
+      const label = chip.querySelector(".spp-chip__n");
+      if (label) label.textContent = String(n);
+      chip.toggleAttribute("data-empty", n === 0);
+    }
     this.reset.hidden = !filtered;
 
-    this.hint.replaceChildren(
-      icon("pin", "spp-hint__icon"),
-      h(
-        "span",
-        {},
-        near
-          ? `Sorteret efter fund inden for ${NEAR_PIN_M / 1000} km af nålen.`
-          : "Sæt en nål ved kysten for at se arter i nærheden.",
-      ),
-    );
-    this.hint.dataset.pinned = String(near !== null);
-    this.hint.hidden = matched.length === 0;
+    // Without a pin: how to get the near-pin order (hidden on short sheets,
+    // where the shell's own line already says to tap the map).
+    this.hint.hidden = near !== null || matched.length === 0;
 
     if (matched.length === 0) {
       this.results.replaceChildren(this.emptyState());
@@ -394,7 +441,7 @@ export class SpeciesPanel {
     );
     button.addEventListener("click", () => {
       this.returnSlug = s.slug;
-      void this.open(s, true);
+      void this.sel.open(s, { user: true, via: "list" });
     });
     const refs = { li: h("li", {}, button), button, meta };
     this.rows.set(s.slug, refs);
@@ -425,13 +472,24 @@ export class SpeciesPanel {
   /** Back button + heading, shared by the sheet and its loading/error states.
    * `verified` is null while the species document is not there yet. */
   private head(summary: SpeciesSummary, verified: boolean | null, lookalikes = 0): HTMLElement[] {
+    // Opened from a lookalike: "back" goes one step, and "Alle arter" sits beside it.
+    const from = this.sel.trail[this.sel.trail.length - 1];
     const back = h(
       "button",
       { type: "button", class: "spp-back" },
       icon("back", "spp-back__icon"),
-      h("span", {}, "Alle arter"),
+      h(
+        "span",
+        { class: "spp-back__label" },
+        from ? `Tilbage til ${shownName(from)}` : "Alle arter",
+      ),
     );
-    back.addEventListener("click", () => this.back());
+    back.addEventListener("click", () => this.sel.back());
+    let home: HTMLButtonElement | null = null;
+    if (from) {
+      home = h("button", { type: "button", class: "spp-home" }, "Alle arter");
+      home.addEventListener("click", () => this.sel.home());
+    }
 
     const unverified = verified === false && summary.danish_name !== "";
     const tags = [
@@ -457,7 +515,7 @@ export class SpeciesPanel {
     }
 
     return [
-      h("div", { class: "spp-nav" }, back),
+      h("div", { class: "spp-nav" }, back, home),
       h(
         "header",
         { class: "spp-head" },
@@ -489,18 +547,11 @@ export class SpeciesPanel {
   }
 
   private article(summary: SpeciesSummary, ...children: (HTMLElement | null)[]): HTMLElement {
-    const article = h(
+    return h(
       "article",
       { class: "spp spp-sheet", "aria-labelledby": `spp-title-${summary.slug}` },
       ...children,
     );
-    article.addEventListener("keydown", (e) => {
-      if (e.key !== "Escape" || e.defaultPrevented) return;
-      e.preventDefault();
-      e.stopPropagation();
-      this.back();
-    });
-    return article;
   }
 
   private placeholder(
@@ -517,7 +568,7 @@ export class SpeciesPanel {
       );
     } else {
       const retry = h("button", { type: "button", class: "spp-btn" }, "Prøv igen");
-      retry.addEventListener("click", () => void this.open(summary, true));
+      retry.addEventListener("click", () => this.sel.retry());
       body = h(
         "div",
         { class: `spp-state spp-state--${state}`, role: "alert" },
@@ -635,7 +686,6 @@ export class SpeciesPanel {
         h("p", { class: "spp-none" }, "Ingen fund på kortet endnu."),
       );
     }
-    const color = ALGAE_COLOR[doc.group] ?? "#888";
     const toggles = ATTACHMENTS.map((a) =>
       h(
         "label",
@@ -649,7 +699,7 @@ export class SpeciesPanel {
             this.hooks.onSelect(doc, this.visible);
           },
         }),
-        h("span", { class: "spp-swatch", style: `--c:${color}`, "aria-hidden": "true" }),
+        h("span", { class: "spp-swatch", "data-group": doc.group, "aria-hidden": "true" }),
         h("span", {}, ATTACHMENT_LABEL[a]),
         h("span", { class: "spp-toggle__n" }, NUMBER.format(m.finds.counts[a])),
       ),
@@ -702,7 +752,10 @@ export class SpeciesPanel {
         ),
         icon("chevron", "spp-look__chevron"),
       );
-      button.addEventListener("click", () => void this.open(summary, true));
+      button.addEventListener(
+        "click",
+        () => void this.sel.open(summary, { user: true, via: "lookalike" }),
+      );
       return h("li", {}, button);
     });
     return this.section(
