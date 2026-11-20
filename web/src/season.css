@@ -317,3 +317,11 @@
     transform: scaleY(0);
   }
 }
+
+/* Keep visually hidden parts (the rows' spoken badges, the finds table, the
+   toggles' legend) inside the tab's scroller: positioned against #panel they reached
+   below it and made #app scrollable, so jump links moved the whole page. */
+.spp-row,
+.spp-sec {
+  position: relative;
+}

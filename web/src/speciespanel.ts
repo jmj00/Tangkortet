@@ -1100,8 +1100,10 @@ export class SpeciesPanel {
     // #app and the sheet), leaving room for the sticky back bar.
     const scroller = this.scroller();
     const bar = this.root.querySelector<HTMLElement>(".spp-nav")?.offsetHeight ?? 0;
+    // the whole warning box, not just its heading
+    const box = target.closest<HTMLElement>(".spp-warn") ?? target;
     const top =
-      target.getBoundingClientRect().top -
+      box.getBoundingClientRect().top -
       scroller.getBoundingClientRect().top +
       scroller.scrollTop -
       bar -
