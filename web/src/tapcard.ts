@@ -13,9 +13,10 @@
 // Screen readers hear a new pin's place once, the traffic light once it has
 // settled (and again only if it changes level), not every redraw.
 
-import { summaryLine } from "./coast";
 import { formatDistance } from "./geo";
 import { loadPlaceIndex, loadedPlaceIndex, nearestPlace, type NearestPlace } from "./placeindex";
+import { NONE_TEXT } from "./coast";
+import { seaName, shoreLine } from "./names";
 import { findsNear, NEAR_PIN_M } from "./species";
 import type { SpeciesDoc } from "./types";
 import type { CoastState } from "./riskpanel";
@@ -60,6 +61,7 @@ export const AT_PLACE_M = 500;
 export function placeText(place: NearestPlace | null): string | null {
   if (!place) return null;
   const name = place.town ? `${place.name}, ${place.town}` : place.name;
+  if (place.on) return `På ${name}`;
   if (place.distanceM < AT_PLACE_M) return `Ved ${name}`;
   return `${formatDistance(place.distanceM)} fra ${name}`;
 }
@@ -123,8 +125,8 @@ export function coastText(coast: CoastState): string | null {
   if (coast === null) return null;
   if (coast === "loading") return "Kysten: henter…";
   if (coast === "error") return "Kysten: kunne ikke hentes";
-  const line = summaryLine(coast);
-  return coast.water || coast.nearby.length ? `Kysten: ${line}` : line;
+  const line = shoreLine(coast);
+  return line ? `Kysten: ${line}` : NONE_TEXT;
 }
 
 const same = (a: [number, number] | null, b: [number, number]): boolean =>
@@ -303,7 +305,10 @@ export class TapCard {
 
   private placeLine(): string {
     if (this.source.kind === "search") return this.source.label;
-    const near = placeText(this.place);
+    // out in the water: the water's name says more than "3 km fra Egå"
+    const sea = typeof this.coast === "object" ? seaName(this.coast) : null;
+    const near =
+      sea && !(this.place && this.place.distanceM < AT_PLACE_M) ? sea : placeText(this.place);
     if (this.source.kind === "locate") return near ? `Min placering · ${near}` : "Min placering";
     return near ?? (this.pin ? coordsText(this.pin) : "");
   }

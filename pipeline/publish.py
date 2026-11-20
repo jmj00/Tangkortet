@@ -47,7 +47,7 @@ ATTRIBUTION = {
     "coast": "Kysten her (strande, havne, broer, høfder, skrænter): © OpenStreetMap-bidragydere,"
     " ODbL 1.0 – kan være ufuldstændigt",
     # Danske Stednavne: CC BY 4.0, kept in their own files (names/<cell>.json)
-    "names": "Stednavne ved kysten (strande, havne, pynter, farvande) og byer: Indeholder data"
+    "names": "Stednavne ved kysten (strande, havne, pynter, øer, farvande): Indeholder data"
     " fra Klimadatastyrelsen, Danske Stednavne (CC BY 4.0)",
 }
 

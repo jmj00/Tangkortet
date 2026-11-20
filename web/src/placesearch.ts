@@ -1,5 +1,6 @@
-// The place search in the top field (#q): towns, postal districts and coastal
-// bathing sites from the app's own list (placeindex.ts), and addresses from
+// The place search in the top field (#q): towns, postal districts, coastal
+// bathing sites and official coastal names (beaches, harbours, landforms,
+// waters) from the app's own list (placeindex.ts), and addresses from
 // Adressevælgeren when Tangkortet has a key (addresses.ts). It says what
 // became of a search that has nothing to list. Adapted from Svampekortet
 // 624fb8b (web/src/placesearch.ts), with bathing sites where it has forests.
@@ -40,10 +41,25 @@ const ICON_POSTAL = svg(
 const ICON_ADDRESS = svg(
   '<path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.8 12 21 12 21z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="9.8" r="2.3" fill="none" stroke="currentColor" stroke-width="1.6"/>',
 );
+// An anchor: a harbour of any kind.
+const ICON_HARBOUR = svg(
+  '<circle cx="12" cy="5.2" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 7.2v13.3M8.5 10.5h7M4.5 13.5c0 3.9 3.3 7 7.5 7s7.5-3.1 7.5-7M3 15l1.5-1.5L6 15M18 15l1.5-1.5L21 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+);
+// A headland reaching into the water: a pynt, næs, odde, ø.
+const ICON_LANDFORM = svg(
+  '<path d="M2.5 6.5h5.5c2 0 2.6 1.7 4.2 3s3.6 1.6 5.6 1.8c1.2.1 1.7.9 1.2 1.7-.6 1-2.4 1.2-4.5 1.2-3 0-4.5 1.5-7 2.5s-3.7.8-5 .8M11 20.5c1.4 0 1.4-1.3 2.8-1.3s1.4 1.3 2.8 1.3 1.4-1.3 2.8-1.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+);
+// A bay: the shore round open water.
+const ICON_WATER = svg(
+  '<path d="M3.5 4c0 6.5 3.6 10 8.5 10s8.5-3.5 8.5-10M7.5 8.8c1.1 0 1.1-1 2.2-1s1.1 1 2.3 1 1.1-1 2.3-1 1.1 1 2.2 1M3 19c1.5 0 1.5-1.3 3-1.3s1.5 1.3 3 1.3 1.5-1.3 3-1.3 1.5 1.3 3 1.3 1.5-1.3 3-1.3 1.5 1.3 3 1.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+);
 const ICONS: Record<PlaceSuggestion["kind"], string> = {
   town: ICON_TOWN,
   postal: ICON_POSTAL,
   coast: ICON_COAST,
+  harbour: ICON_HARBOUR,
+  landform: ICON_LANDFORM,
+  water: ICON_WATER,
 };
 
 /** idle: nothing typed; loading: the place list is on its way; short: too

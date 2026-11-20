@@ -12,7 +12,9 @@
 //   - towns, parts of towns and holiday-home areas (Danske Stednavne) and
 //     postal districts (DAGI), from Svampekortet's list;
 //   - named coastal bathing sites (Miljøstyrelsen's badevand layer): the
-//     beaches a forager names ("Vemmetofte Strand").
+//     beaches a forager names ("Vemmetofte Strand");
+//   - official coastal names (Danske Stednavne): beaches, harbours, landforms
+//     ("Helgenæs", "Egå Marina", "Næsset") and waters ("Kalø Vig").
 //
 // It is used two ways: a typed place is a suggestion of its own
 // (matchPlaces), and a town or postal number after an address is turned into
@@ -54,10 +56,55 @@ export interface CoastSite {
   key: string;
 }
 
+/** An official coastal name (Danske Stednavne): a beach, a harbour, a
+ * landform or a water. */
+export interface NamedPlace {
+  name: string;
+  lon: number;
+  lat: number;
+  /** Radius of a circle of its area (km); 0 for a point. */
+  radiusKm: number;
+  /** The postal district it lies in (index), or -1 (a water). */
+  postal: number;
+  /** The Stednavne type: "strand", "lystbådehavn", "pynt", "bugt", ... */
+  kind: string;
+  group: NamedGroup;
+  /** normalizeName(name), for matching. */
+  key: string;
+}
+
+export type NamedGroup = "beach" | "harbour" | "landform" | "water";
+
+/** What each kind is called, and its group (as names.ts KINDS). */
+export const NAMED_KINDS: Record<string, { group: NamedGroup; label: string }> = {
+  strand: { group: "beach", label: "Strand" },
+  lystbådehavn: { group: "harbour", label: "Lystbådehavn" },
+  fiskerihavn: { group: "harbour", label: "Fiskerihavn" },
+  trafikhavn: { group: "harbour", label: "Havn" },
+  pynt: { group: "landform", label: "Pynt" },
+  næs: { group: "landform", label: "Næs" },
+  odde: { group: "landform", label: "Odde" },
+  klint: { group: "landform", label: "Klint" },
+  skræntNaturlig: { group: "landform", label: "Skrænt" },
+  skær: { group: "landform", label: "Skær" },
+  tange: { group: "landform", label: "Tange" },
+  hage: { group: "landform", label: "Hage" },
+  halvø: { group: "landform", label: "Halvø" },
+  ø: { group: "landform", label: "Ø" },
+  bugt: { group: "water", label: "Bugt" },
+  fjord: { group: "water", label: "Fjord" },
+  sund: { group: "water", label: "Sund" },
+  nor: { group: "water", label: "Nor" },
+  bredning: { group: "water", label: "Bredning" },
+  løb: { group: "water", label: "Løb" },
+  hav: { group: "water", label: "Hav" },
+};
+
 export interface PlaceIndex {
   towns: Town[];
   postal: PostalDistrict[];
   coast: CoastSite[];
+  named: NamedPlace[];
   byPostnr: Map<string, PostalDistrict>;
   /** Normalised name -> towns of that name, the one it means first. */
   townsByName: Map<string, Town[]>;
@@ -74,6 +121,8 @@ export interface RawPlaces {
   postal: [string, string, number, number, number, number][];
   towns: [string, number, number, number, number, number][];
   coast?: [string, number, number, number][];
+  /** [name, lon, lat, radiusKm, postal index, kind] */
+  names?: [string, number, number, number, number, string][];
 }
 
 /** "Århus", "aarhus" and "AARHUS" are one search; so are "Sankt" and "Skt."
@@ -109,6 +158,21 @@ export function buildPlaceIndex(raw: RawPlaces): PlaceIndex {
     postal: district,
     key: normalizeName(name),
   }));
+  const named: NamedPlace[] = [];
+  for (const [name, lon, lat, radiusKm, district, kind] of raw.names ?? []) {
+    const info = NAMED_KINDS[kind];
+    if (!info) continue;
+    named.push({
+      name,
+      lon,
+      lat,
+      radiusKm,
+      postal: district,
+      kind,
+      group: info.group,
+      key: normalizeName(name),
+    });
+  }
   const byPostnr = new Map(postal.map((p) => [p.postnr, p]));
   const townsByName = new Map<string, Town[]>();
   for (const town of towns) {
@@ -143,7 +207,7 @@ export function buildPlaceIndex(raw: RawPlaces): PlaceIndex {
     if (!best || mainRank(district, town) < mainRank(district, best))
       mainTown.set(district.postnr, town);
   }
-  return { towns, postal, coast, byPostnr, townsByName, postalByName, names, mainTown };
+  return { towns, postal, coast, named, byPostnr, townsByName, postalByName, names, mainTown };
 }
 
 /** How well a town stands for its district, lower is better: the one of
@@ -315,11 +379,12 @@ export function isPlaceName(index: PlaceIndex, query: string): boolean {
     !/\d/.test(key) &&
     (index.townsByName.has(key) ||
       index.postalByName.has(key) ||
-      index.coast.some((c) => c.key === key))
+      index.coast.some((c) => c.key === key) ||
+      index.named.some((c) => c.key === key))
   );
 }
 
-export type PlaceKind = "town" | "postal" | "coast";
+export type PlaceKind = "town" | "postal" | "coast" | "harbour" | "landform" | "water";
 
 /** A place the search offers, and how close to fly. */
 export interface PlaceSuggestion {
@@ -327,7 +392,7 @@ export interface PlaceSuggestion {
    * "6857 Blåvand", "Vemmetofte Strand". */
   text: string;
   /** What it is and where, in a second, quieter line: "By · 9510 Arden",
-   * "Postnummer", "Badested · 4640 Faxe". */
+   * "Postnummer", "Badested · 4640 Faxe", "Lystbådehavn · 8250 Egå", "Bugt". */
   meta: string;
   kind: PlaceKind;
   target: [number, number];
@@ -438,6 +503,34 @@ function coastSuggestion(index: PlaceIndex, site: CoastSite, rank: number): Plac
   };
 }
 
+const NAMED_PLACE_KIND: Record<NamedGroup, PlaceKind> = {
+  beach: "coast",
+  harbour: "harbour",
+  landform: "landform",
+  water: "water",
+};
+
+/** How close to fly to an official name: a point (a skerry, a headland) as
+ * close as a bathing site; an area so that it fits on a phone. */
+export function namedZoom(radiusKm: number): number {
+  if (radiusKm < 0.3) return COAST_ZOOM;
+  const zoom = 13.5 - Math.log2(radiusKm / 0.4);
+  return Math.round(Math.min(COAST_ZOOM, Math.max(8, zoom)) * 2) / 2;
+}
+
+function namedSuggestion(index: PlaceIndex, place: NamedPlace, rank: number): PlaceSuggestion {
+  const label = NAMED_KINDS[place.kind]?.label ?? "";
+  const where = place.group === "water" ? "" : districtText(index.postal[place.postal]);
+  return {
+    text: place.name,
+    meta: [label, where].filter(Boolean).join(" · "),
+    kind: NAMED_PLACE_KIND[place.group],
+    target: [place.lon, place.lat],
+    zoom: namedZoom(place.radiusKm),
+    rank,
+  };
+}
+
 /** How well a name matches what is typed (both normalised): 0 it is the
  * name, 1 the name or one of its words begins with it, 2 it is inside a
  * word, -1 not at all. */
@@ -527,6 +620,7 @@ export function matchPlaces(index: PlaceIndex, query: string): PlaceSuggestion[]
       ...index.names.filter((n) => fold(n) === plain),
       ...index.names.filter((n) => fold(n).startsWith(plain) && fold(n) !== plain),
       ...index.coast.filter((c) => fold(c.key).startsWith(plain)).map((c) => c.key),
+      ...index.named.filter((c) => fold(c.key).startsWith(plain)).map((c) => c.key),
     ];
     if (names.length > 0) return matchName(index, names[0]);
   }
@@ -568,6 +662,9 @@ export function exactPlaces(index: PlaceIndex, key: string): PlaceSuggestion[] {
   }
   for (const site of index.coast) {
     if (site.key === key) out.push(coastSuggestion(index, site, 0));
+  }
+  for (const place of index.named) {
+    if (place.key === key) out.push(namedSuggestion(index, place, 0));
   }
   return out.slice(0, LIMITS.total);
 }
@@ -635,6 +732,11 @@ function matchName(index: PlaceIndex, key: string): PlaceSuggestion[] {
     if (rank < 0 || (rank === 2 && key.length < 4)) continue;
     coast.push({ s: coastSuggestion(index, site, rank), tier: 1, size: -site.name.length });
   }
+  for (const place of index.named) {
+    const rank = nameRank(place.key, key);
+    if (rank < 0 || (rank === 2 && key.length < 4)) continue;
+    coast.push({ s: namedSuggestion(index, place, rank), tier: 1, size: -place.name.length });
+  }
   // a beach name one slip off ("Vemmetofte strnd"), when none has what is typed
   // (and no town has it either: "Rørvig" is not "Rødvig Øst")
   if (coast.length === 0 && (slipped || keptTowns.length === 0) && key.length >= 5) {
@@ -642,6 +744,11 @@ function matchName(index: PlaceIndex, key: string): PlaceSuggestion[] {
       const rank = coastSlip(site.key, key);
       if (rank >= 0)
         coast.push({ s: coastSuggestion(index, site, rank), tier: 1, size: -site.name.length });
+    }
+    for (const place of index.named) {
+      const rank = coastSlip(place.key, key);
+      if (rank >= 0)
+        coast.push({ s: namedSuggestion(index, place, rank), tier: 1, size: -place.name.length });
     }
   }
   // a town or holiday-home area named after the beach beside it: the beach is
@@ -782,13 +889,15 @@ export function loadPlaceIndex(): Promise<PlaceIndex> {
 
 export interface NearestPlace {
   name: string;
-  kind: "town" | "coast";
+  kind: "town" | "coast" | "landform";
   /** Metres from the point: to a bathing site's point, or to the edge of a
    * town's circle (0 inside it). */
   distanceM: number;
   /** For a bathing site with a generic name ("Sydstranden"): the town it
    * belongs to, said after it ("Sydstranden, Kerteminde"). */
   town?: string;
+  /** On an island or a peninsula: "På Helgenæs", not "Ved". */
+  on?: boolean;
 }
 
 /** A bathing site this close wins over any town: it names the very beach. */
@@ -798,6 +907,11 @@ export const COAST_PREFERRED_M = 400;
 export const COAST_NEAR_M = 800;
 /** A town proper this near is said after a beach or a part of a town. */
 export const TOWN_CONTEXT_M = 1000;
+/** A landform (a pynt, a næs, an island) this near names the place, when
+ * it is nearer than any town ("Ved Næsset", "På Helgenæs"). */
+export const LANDFORM_NEAR_M = 500;
+/** Islands and peninsulas wider than this (Fyn, Djursland) name no spot. */
+export const LANDFORM_MAX_KM = 8;
 
 /** A bathing site's name that is a description of where it is ("100 m nord
  * for ...", "Syd for Humlebæk Havn", "Ud for Tværvej", "Ved Lunden"). */
@@ -832,7 +946,10 @@ export function isGenericCoastName(name: string): boolean {
 
 /**
  * The named place nearest `[lon, lat]`, for the pin's card:
- *   - a coastal bathing site within COAST_PREFERRED_M;
+ *   - a coastal bathing site (or an official beach or harbour) within
+ *     COAST_PREFERRED_M;
+ *   - else a landform within LANDFORM_NEAR_M that is nearer than any town
+ *     ("Ved Næsset", "På Helgenæs");
  *   - else one within COAST_NEAR_M, unless the point lies inside a town
  *     proper (not a part of a town);
  *   - else the nearest town, part of a town or bathing site (towns measured
@@ -855,6 +972,25 @@ export function nearestPlace(
     const d = distanceM([lon, lat], [site.lon, site.lat]);
     if (d > maxM || (coast && d >= coast.distanceM)) continue;
     const name = coastPlaceName(site.name);
+    if (name) coast = { name, kind: "coast", distanceM: d };
+  }
+  // official names: a beach or harbour counts as a bathing site does (to
+  // the edge of its area); the nearest landform is kept apart
+  let landform: NearestPlace | null = null;
+  for (const place of index.named) {
+    if (place.group === "water") continue;
+    const radiusM = place.radiusKm * 1000;
+    if (!near(place.lon, place.lat, maxM + radiusM)) continue;
+    const d = Math.max(0, distanceM([lon, lat], [place.lon, place.lat]) - radiusM);
+    if (d > maxM) continue;
+    if (place.group === "landform") {
+      if (place.radiusKm > LANDFORM_MAX_KM || (landform && d >= landform.distanceM)) continue;
+      const on = d === 0 && (place.kind === "ø" || place.kind === "halvø");
+      landform = { name: place.name, kind: "landform", distanceM: d, ...(on ? { on } : {}) };
+      continue;
+    }
+    if (coast && d >= coast.distanceM) continue;
+    const name = coastPlaceName(place.name);
     if (name) coast = { name, kind: "coast", distanceM: d };
   }
 
@@ -892,6 +1028,14 @@ export function nearestPlace(
       (coast.distanceM <= COAST_NEAR_M && !inTownProper) ||
       !town ||
       coast.distanceM < town.distanceM);
+  // a landform nearer than any town, unless a beach right by the pin names it
+  if (
+    landform &&
+    landform.distanceM <= LANDFORM_NEAR_M &&
+    (!town || landform.distanceM < town.distanceM) &&
+    !(coast && coast.distanceM <= COAST_PREFERRED_M && coast.distanceM <= landform.distanceM)
+  )
+    return landform;
   if (coast && coastWins) {
     // a generic beach always gets its town; another one when a town proper
     // is close and the name does not already say where ("Kronborgbugten,
