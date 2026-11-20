@@ -177,11 +177,14 @@ export class MapLegend {
 
     if (finds) {
       this.panel.append(this.findsSection(finds));
+      // each mark kept with its word when the line wraps (large text)
       for (const kind of finds.kinds.filter((k) => k !== "unknown")) {
-        this.summary.append(
+        const pair = el("span", "map-key__summary-group");
+        pair.append(
           findMark(kind, finds.color),
           el("span", undefined, KIND_TEXT[kind].toLowerCase()),
         );
+        this.summary.append(pair);
       }
     }
     if (risk) {
