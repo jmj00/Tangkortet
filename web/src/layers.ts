@@ -3,17 +3,50 @@
 
 import type maplibregl from "maplibre-gl";
 import { fitCamera, mapInsets, visibleCenter, visibleTest } from "./camera";
+import { legendFor } from "./maplegend";
 import type { RiskItem } from "./risk";
-import type { GroupKey } from "./risk";
+import { GROUPS, type GroupKey } from "./risk";
 import type { Attachment, SpeciesDoc } from "./types";
-import { ATTACHMENTS } from "./types";
+import { ATTACHMENTS, shownName } from "./types";
 
 export const ALGAE_COLOR: Record<string, string> = {
   brunalge: "#8a5f1d",
   rødalge: "#b0405a",
-  grønalge: "#3c8a3c",
+  // darker than the list's dot would need: a washed-up find is a ring with
+  // no halo, and it must reach 3:1 on the muted water (#b6cacf)
+  grønalge: "#2e7a2e",
 };
 
+/** The same groups lighter, for the dark basemap: a ring in the light-theme
+ * colour all but disappears on dark land. */
+export const ALGAE_COLOR_DARK: Record<string, string> = {
+  brunalge: "#d3a35a",
+  rødalge: "#ec8aa0",
+  grønalge: "#79c779",
+};
+
+const ACCENT = { light: "#1f6f78", dark: "#7cc4cc" };
+
+export const prefersDark = (): boolean =>
+  globalThis.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+
+/** The colour a species' finds are drawn in (its algae group), per theme. */
+export function algaeColor(group: string, dark = prefersDark()): string {
+  return (dark ? ALGAE_COLOR_DARK : ALGAE_COLOR)[group] ?? (dark ? ACCENT.dark : ACCENT.light);
+}
+
+/** The pin and the dashed risk ring, per theme. Dark: a saturated cyan, apart
+ * from the pale blue of the dark Regnvand markers (#9cc8e6). */
+export function pinColor(dark = prefersDark()): string {
+  return dark ? "#22d3ee" : ACCENT.light;
+}
+
+/** Halo round a solid mark: white on the light map, near-black on the dark
+ * one, so a mark reads against land and water alike. */
+export const haloColor = (dark = prefersDark()): string => (dark ? "#0d1415" : "#ffffff");
+
+/** Risk markers on the light basemap; each reaches 3:1 against its white
+ * halo (Regnvand's blue darkened for it). */
 export const RISK_COLOR: Record<GroupKey, string> = {
   overloeb: "#b3412c",
   rens: "#7d4f96",
@@ -21,9 +54,49 @@ export const RISK_COLOR: Record<GroupKey, string> = {
   havne: "#2f6f9f",
   klapplads: "#8c6d1f",
   akvakultur: "#2f8f7f",
-  regnvand: "#6f9fbf",
+  regnvand: "#5689ad",
   badevand: "#3a9a5b",
 };
+
+/** The same groups lighter for the dark basemap: 3:1 or more against the
+ * dark water (#3a4e54) and land as well as the dark halo. */
+export const RISK_COLOR_DARK: Record<GroupKey, string> = {
+  overloeb: "#ec7a62",
+  rens: "#bf93db",
+  industri: "#b2b2bf",
+  havne: "#6aa8d8",
+  klapplads: "#d4ab55",
+  akvakultur: "#52c4ad",
+  regnvand: "#9cc8e6",
+  badevand: "#62c784",
+};
+
+export function riskColor(group: GroupKey, dark = prefersDark()): string {
+  return (dark ? RISK_COLOR_DARK : RISK_COLOR)[group];
+}
+
+function riskColorExpression(dark: boolean): maplibregl.ExpressionSpecification {
+  const color: unknown[] = ["match", ["get", "g"]];
+  for (const [group, c] of Object.entries(dark ? RISK_COLOR_DARK : RISK_COLOR))
+    color.push(group, c);
+  color.push("#888888");
+  return color as maplibregl.ExpressionSpecification;
+}
+
+/** What the key last said about the risk markers, for a theme change. */
+let shownRisk: { radiusM: number; groups: GroupKey[] } | null = null;
+
+function riskLegend(dark = prefersDark()) {
+  if (!shownRisk) return null;
+  return {
+    radiusM: shownRisk.radiusM,
+    groups: GROUPS.filter((g) => shownRisk?.groups.includes(g.key)).map((g) => ({
+      key: g.key,
+      label: g.label,
+      color: riskColor(g.key, dark),
+    })),
+  };
+}
 
 const OBS = "observations";
 const RISK = "risk";
@@ -39,6 +112,22 @@ function setGeoJson(map: maplibregl.Map, id: string, data: GeoJSON.FeatureCollec
   return true;
 }
 
+/** The group of the species whose finds are on the map, for a theme change. */
+let shownGroup: string | null = null;
+
+function paintObservations(map: maplibregl.Map, group: string): void {
+  const dark = prefersDark();
+  const color = algaeColor(group, dark);
+  map.setPaintProperty(OBS, "circle-color", color);
+  map.setPaintProperty(OBS, "circle-stroke-color", [
+    "match",
+    ["get", "a"],
+    "drift",
+    color,
+    haloColor(dark),
+  ]);
+}
+
 export function showObservations(
   map: maplibregl.Map,
   doc: SpeciesDoc,
@@ -51,29 +140,58 @@ export function showObservations(
       geometry: { type: "Point", coordinates: [lon, lat] },
       properties: { a: ATTACHMENTS[a], year, depth },
     }));
-  const color = ALGAE_COLOR[doc.group] ?? "#1f6f78";
   if (setGeoJson(map, OBS, { type: "FeatureCollection", features })) {
-    map.addLayer({
-      id: OBS,
-      type: "circle",
-      source: OBS,
-      paint: {
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 3, 12, 7],
-        "circle-stroke-width": ["match", ["get", "a"], "drift", 2, 1],
-        "circle-stroke-color": ["match", ["get", "a"], "drift", color, "#ffffff"],
-        "circle-color": color,
-        "circle-opacity": ["match", ["get", "a"], "attached", 0.85, "drift", 0, 0.35],
+    // Under the ring and the risk markers, which belong to the pin.
+    map.addLayer(
+      {
+        id: OBS,
+        type: "circle",
+        source: OBS,
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 3, 12, 7],
+          // attached: solid with a halo; drift: a ring; unknown: faint
+          "circle-stroke-width": ["match", ["get", "a"], "drift", 2, 1],
+          "circle-opacity": ["match", ["get", "a"], "attached", 0.9, "drift", 0, 0.35],
+        },
       },
-    });
+      map.getLayer(RING) ? RING : undefined,
+    );
   }
-  map.setPaintProperty(OBS, "circle-color", color);
-  map.setPaintProperty(OBS, "circle-stroke-color", [
-    "match",
-    ["get", "a"],
-    "drift",
-    color,
-    "#ffffff",
-  ]);
+  shownGroup = doc.group;
+  paintObservations(map, doc.group);
+  shownFinds = {
+    name: shownName(doc),
+    kinds: ATTACHMENTS.filter((a) => visible.has(a) && doc.attachment_counts[a] > 0),
+  };
+  legendFor(map).update({ finds: { ...shownFinds, color: algaeColor(doc.group) } });
+}
+
+/** What the key says about the finds on the map (its colour follows the theme). */
+let shownFinds: { name: string; kinds: Attachment[] } | null = null;
+/** Whether the pin is on the map, for the key. */
+let pinShown = false;
+
+/** Tell the key whether a pin is on the map (main.ts sets the marker). */
+export function setPinInLegend(map: maplibregl.Map, shown: boolean): void {
+  pinShown = shown;
+  legendFor(map).update({ pin: shown ? pinColor() : null });
+}
+
+/** Repaint the layers in the colours of the current theme (map.ts calls it
+ * when the OS switches between light and dark). */
+export function restyleLayers(map: maplibregl.Map): void {
+  const dark = prefersDark();
+  if (map.getLayer(OBS) && shownGroup) paintObservations(map, shownGroup);
+  if (map.getLayer(RING)) map.setPaintProperty(RING, "line-color", pinColor(dark));
+  if (map.getLayer(RISK)) {
+    map.setPaintProperty(RISK, "circle-stroke-color", haloColor(dark));
+    map.setPaintProperty(RISK, "circle-color", riskColorExpression(dark));
+  }
+  legendFor(map).update({
+    finds: shownFinds && shownGroup ? { ...shownFinds, color: algaeColor(shownGroup, dark) } : null,
+    pin: pinShown ? pinColor(dark) : null,
+    risk: riskLegend(dark),
+  });
 }
 
 // --- reframing, ported from Svampekortet's observations.ts (0024b43) ---
@@ -147,6 +265,9 @@ export function frameToNearest(map: maplibregl.Map, points: [number, number][]):
 export function clearObservations(map: maplibregl.Map): void {
   if (map.getLayer(OBS)) map.removeLayer(OBS);
   if (map.getSource(OBS)) map.removeSource(OBS);
+  shownGroup = null;
+  shownFinds = null;
+  legendFor(map).update({ finds: null });
 }
 
 function circlePolygon(center: [number, number], radiusM: number): GeoJSON.Feature {
@@ -169,30 +290,26 @@ export function showRisk(
   radiusM: number,
   items: RiskItem[],
 ): void {
-  const color: unknown[] = ["match", ["get", "g"]];
-  for (const [group, c] of Object.entries(RISK_COLOR)) color.push(group, c);
-  color.push("#888888");
-
+  const inside = items.filter((i) => i.distanceM <= radiusM);
   const points: GeoJSON.FeatureCollection = {
     type: "FeatureCollection",
-    features: items
-      .filter((i) => i.distanceM <= radiusM)
-      .map((i) => ({
-        type: "Feature",
-        geometry: { type: "Point", coordinates: [i.lon, i.lat] },
-        properties: { g: i.group, title: i.title },
-      })),
+    features: inside.map((i) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [i.lon, i.lat] },
+      properties: { g: i.group, title: i.title },
+    })),
   };
   const ring: GeoJSON.FeatureCollection = {
     type: "FeatureCollection",
     features: [circlePolygon(pin, radiusM)],
   };
+  const dark = prefersDark();
   if (setGeoJson(map, RING, ring)) {
     map.addLayer({
       id: RING,
       type: "line",
       source: RING,
-      paint: { "line-color": "#1f6f78", "line-width": 1.5, "line-dasharray": [2, 2] },
+      paint: { "line-color": pinColor(dark), "line-width": 2, "line-dasharray": [2, 1.5] },
     });
   }
   if (setGeoJson(map, RISK, points)) {
@@ -201,13 +318,16 @@ export function showRisk(
       type: "circle",
       source: RISK,
       paint: {
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 3, 14, 7],
-        "circle-color": color as maplibregl.ExpressionSpecification,
-        "circle-stroke-width": 1,
-        "circle-stroke-color": "#ffffff",
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 3.5, 14, 7.5],
+        "circle-color": riskColorExpression(dark),
+        "circle-stroke-width": 1.5,
+        "circle-stroke-color": haloColor(dark),
       },
     });
   }
+  const present = new Set(inside.map((i) => i.group));
+  shownRisk = { radiusM, groups: [...present] as GroupKey[] };
+  legendFor(map).update({ risk: riskLegend(dark) });
 }
 
 export function clearRisk(map: maplibregl.Map): void {
@@ -215,4 +335,6 @@ export function clearRisk(map: maplibregl.Map): void {
     if (map.getLayer(id)) map.removeLayer(id);
     if (map.getSource(id)) map.removeSource(id);
   }
+  shownRisk = null;
+  legendFor(map).update({ risk: null });
 }

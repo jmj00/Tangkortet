@@ -2,23 +2,37 @@ import type maplibregl from "maplibre-gl";
 import "./style.css";
 import "./shell.css";
 import { openAbout } from "./about";
-import { maybeWelcome } from "./welcome";
 import { initPlaceSearch, type ChosenPlace } from "./placesearch";
 import { flyCamera, fitCamera, mapInsets, popupAnchor, ringBounds } from "./camera";
 import { loadAllSpecies, loadManifest, loadSpecies } from "./data";
 import { formatDistance } from "./geo";
 import { renderGuide } from "./guide";
 import { formatHash, parseHash, type Tab } from "./hash";
-import { clearObservations, clearRisk, frameToNearest, showObservations, showRisk } from "./layers";
+import { findCard, type FindProps } from "./findcard";
+import {
+  algaeColor,
+  clearObservations,
+  clearRisk,
+  frameToNearest,
+  pinColor,
+  setPinInLegend,
+  showObservations,
+  showRisk,
+} from "./layers";
 import { createLocateGate, locateErrorMessage, LOCATION_UNSUPPORTED_MESSAGE } from "./locate";
 import { createMap, DENMARK_BOUNDS, type MapBundle } from "./map";
+import { legendInsets } from "./maplegend";
 import { initNavigation, readNavState, type Navigation, type Snapshot } from "./nav";
 import { registerServiceWorker } from "./register-sw";
 import { RiskPanel } from "./riskpanel";
 import { initErrorMonitoring } from "./sentry";
 import { initSheet } from "./sheet";
 import { SpeciesPanel } from "./speciespanel";
-import type { Manifest } from "./types";
+import { initStart } from "./start";
+import { landingTarget, type Landing } from "./startstate";
+import { summarizeFinds, TapCard, type PinSource } from "./tapcard";
+import { TAP_FLY_ZOOM, pointerKind, tapAgainMessage, tapIntent } from "./tapzoom";
+import { shownName, type Manifest } from "./types";
 
 initErrorMonitoring();
 registerServiceWorker();
@@ -31,13 +45,15 @@ const mapReady: Promise<MapBundle> = createMap("map", {
   onLocateAsk: () => locateGate.asked(),
   onAbout: () => openAbout(manifest),
 });
-const readout = document.getElementById("readout") as HTMLParagraphElement;
+const readout = document.getElementById("readout") as HTMLElement;
 const appRoot = document.getElementById("app") as HTMLElement;
 const panelEl = document.getElementById("panel") as HTMLElement;
 const searchForm = document.getElementById("search") as HTMLFormElement;
 const mapStatus = document.getElementById("map-status") as HTMLElement;
 
 let manifest: Manifest | null = null;
+/** The payload could not be loaded: no risk verdict or species will come. */
+let payloadFailed = false;
 let speciesPanel: SpeciesPanel | null = null;
 let riskPanel: RiskPanel | null = null;
 let pin: [number, number] | null = null;
@@ -232,6 +248,22 @@ for (const button of tabButtons) {
   });
 }
 
+// --- the pin's card (tapcard.ts): place, traffic light, finds nearby ---
+
+/** "Se risiko" / "Se arter": the tab through its own button (a click on the
+ * tab already showing would fold the sheet, so that one is only opened), and
+ * the focus to the tab's content, where the answer is. */
+function showTab(tab: Tab): void {
+  if (appRoot.dataset.tab === tab) sheet.atLeast("half");
+  else tabButtons.find((b) => b.dataset.tab === tab)?.click();
+  document.getElementById(`tab-${tab}`)?.focus({ preventScroll: true });
+}
+
+const tapCard = new TapCard(readout, {
+  onShowRisk: () => showTab("risiko"),
+  onShowSpecies: () => showTab("arter"),
+});
+
 // --- shareable links (hash.ts) ---
 function writeHash(species = speciesPanel?.selectedSlug ?? null): void {
   // history.state is nav.ts's; the hash only rides along on the same entry.
@@ -256,7 +288,9 @@ let fullBeforeDetail = false;
 let resolvePanel: (panel: SpeciesPanel | null) => void = () => {};
 const panelReady = new Promise<SpeciesPanel | null>((resolve) => (resolvePanel = resolve));
 
-loadManifest()
+// One fetch of the manifest, shared by the panels and the start screen.
+const manifestReady = loadManifest();
+manifestReady
   .then((m) => {
     manifest = m;
     speciesPanel = new SpeciesPanel(document.getElementById("tab-arter") as HTMLElement, m, {
@@ -303,15 +337,18 @@ loadManifest()
         if (resized) void frameRing(p);
       },
       onFocus: (item) => {
-        readout.textContent = `${item.title} – ${formatDistance(item.distanceM)} fra nålen`;
+        tapCard.setFocus(`${item.title} – ${formatDistance(item.distanceM)} fra nålen`);
         void flyTo([item.lon, item.lat], 15);
       },
+      onVerdict: (p, level) => tapCard.setVerdict(p, level),
     });
     if (pin) applyPin(pin);
   })
   .catch((err) => {
     console.error(err);
     resolvePanel(null);
+    payloadFailed = true;
+    if (pin) payloadMissing(pin);
     const panel = document.getElementById("tab-arter");
     if (panel) panel.textContent = "Kunne ikke indlæse data.";
   });
@@ -321,23 +358,44 @@ function applyPin(p: [number, number]): void {
   if (manifest && speciesPanel) {
     const panel = speciesPanel;
     void loadAllSpecies(manifest)
-      .then((docs) => panel.setPin(p, docs))
-      .catch((err) => console.error("species docs failed to load", err));
+      .then((docs) => {
+        panel.setPin(p, docs);
+        tapCard.setFinds(p, summarizeFinds(docs, p));
+      })
+      .catch((err) => {
+        console.error("species docs failed to load", err);
+        tapCard.setFinds(p, "error");
+      });
   }
 }
 
-function setPin(lngLat: [number, number], label: string): void {
-  readout.textContent = label;
+/** Without the payload the card must not wait forever. */
+function payloadMissing(p: [number, number]): void {
+  tapCard.setVerdict(p, "unknown");
+  tapCard.setFinds(p, "error");
+}
+
+function placeMarker(map: maplibregl.Map, lib: typeof import("maplibre-gl")): void {
+  marker?.remove();
+  marker = pin ? new lib.Marker({ color: pinColor() }).setLngLat(pin).addTo(map) : null;
+}
+
+function setPin(lngLat: [number, number], source: PinSource): void {
   pin = lngLat;
+  tapCard.setPin(lngLat, source);
+  if (payloadFailed) payloadMissing(lngLat);
   applyPin(lngLat);
   writeHash();
   void mapReady.then(({ map, maplibregl }) => {
-    marker?.remove();
-    marker = new maplibregl.Marker({ color: "#1f6f78" }).setLngLat(lngLat).addTo(map);
+    placeMarker(map, maplibregl);
+    onMap((m) => setPinInLegend(m, true));
   });
 }
 
-const pinLabel = (p: [number, number]): string => `Nål: ${p[1].toFixed(5)}, ${p[0].toFixed(5)}`;
+// The pin follows the theme like the rest of the map (map.ts).
+globalThis.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
+  void mapReady.then(({ map, maplibregl }) => placeMarker(map, maplibregl));
+});
 
 /** Fly so `center` lands in the middle of the uncovered map (camera.ts). A
  * fully open phone sheet comes down to half first: it would hide the map it
@@ -356,7 +414,8 @@ function frameRing(center: [number, number], lowerSheet = true): Promise<void> {
     fitCamera(map, ringBounds(center, riskRadiusM), {
       maxZoom: 15,
       margin: 16,
-      padding: mapInsets(map, { controls: true }),
+      // clear of the map key too, open or closed (maplegend.ts)
+      padding: legendInsets(map, mapInsets(map, { controls: true })),
     }),
   );
 }
@@ -367,7 +426,9 @@ function framePin(center: [number, number], zoom: number): Promise<void> {
   return appRoot.dataset.tab === "risiko" ? frameRing(center) : flyTo(center, zoom);
 }
 
-// --- messages over the map (the locate button's refusals) ---
+// --- messages over the map (the locate button's refusals, a far-out tap) ---
+const finePointer = window.matchMedia("(hover: hover) and (pointer: fine)");
+const coarsePointer = window.matchMedia("(pointer: coarse)");
 let statusTimer: number | undefined;
 const mapStatusText = mapStatus.querySelector(".map-status__text") as HTMLElement;
 const mapStatusClose = mapStatus.querySelector(".map-status__close") as HTMLButtonElement;
@@ -389,41 +450,102 @@ function hideMapStatus(): void {
 }
 mapStatusClose.addEventListener("click", hideMapStatus);
 
-// --- map interaction: tap = pin, tap on a find = its details ---
-const ATTACHMENT_TEXT: Record<string, string> = {
-  attached: "fastsiddende",
-  drift: "opskyllet",
-  unknown: "ukendt om fastsiddende",
-};
+// --- map interaction: tap = pin, tap on a find = its card (findcard.ts) ---
+
+/** The open find card, if any. */
+let findPopup: maplibregl.Popup | null = null;
+
+function closeFindPopup(): void {
+  const popup = findPopup;
+  if (!popup) return;
+  findPopup = null;
+  const hadFocus = popup.getElement()?.contains(document.activeElement) ?? false;
+  popup.remove();
+  // back to the map the card lay over
+  if (hadFocus) void mapReady.then(({ map }) => map.getCanvas().focus({ preventScroll: true }));
+}
+
+// Escape closes the find card (a dialog, the search field or any other text
+// field has its own Escape).
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || !findPopup || e.defaultPrevented) return;
+  if (document.querySelector("dialog[open]")) return;
+  const active = document.activeElement;
+  if (searchForm.contains(active)) return;
+  if (active instanceof HTMLElement && active.closest("input, textarea, select, [contenteditable]"))
+    return;
+  closeFindPopup();
+});
+
+// The card's mark is in the colours of the theme it opened in: a switch
+// closes it (the dots it described are repainted, see map.ts).
+globalThis
+  .matchMedia?.("(prefers-color-scheme: dark)")
+  .addEventListener?.("change", () => closeFindPopup());
 
 mapReady
   .then(({ map, geolocate, maplibregl }) => {
     map.on("click", (e) => {
       hideMapStatus();
+      // Touch: a finger covers more than the dot.
+      const slop = 6;
       const find = map.getLayer("observations")
-        ? map.queryRenderedFeatures(e.point, { layers: ["observations"] })[0]
+        ? map.queryRenderedFeatures(
+            [
+              [e.point.x - slop, e.point.y - slop],
+              [e.point.x + slop, e.point.y + slop],
+            ],
+            { layers: ["observations"] },
+          )[0]
         : undefined;
       if (find) {
-        const p = find.properties as { a: string; year: number | null; depth: number | null };
-        const parts = [
-          p.year ? `Fundet ${p.year}` : "Årstal ukendt",
-          ATTACHMENT_TEXT[p.a] ?? p.a,
-          typeof p.depth === "number" ? `${String(p.depth).replace(".", ",")} m dybde` : null,
-        ].filter(Boolean);
+        const props = find.properties as FindProps;
+        const species = manifest?.species.find((s) => s.slug === framedSlug) ?? null;
         // Open towards the uncovered map, never down under the sheet.
         const { clientWidth: w, clientHeight: h } = map.getContainer();
         const pad = mapInsets(map, { controls: true });
         const anchor = popupAnchor(e.point.x, e.point.y, w, h, pad);
-        new maplibregl.Popup({ closeButton: false, anchor, offset: 10 })
-          .setLngLat(e.lngLat)
-          .setText(parts.join(" · "))
+        closeFindPopup();
+        const popup = new maplibregl.Popup({
+          closeButton: false,
+          anchor,
+          offset: 10,
+          className: "find-card",
+          maxWidth: "17rem",
+        });
+        const content = findCard(
+          species ? shownName(species) : null,
+          props,
+          algaeColor(species?.group ?? ""),
+          closeFindPopup,
+        );
+        popup
+          .setLngLat((find.geometry as GeoJSON.Point).coordinates as [number, number])
+          .setDOMContent(content)
           .addTo(map);
+        popup.on("close", () => {
+          if (findPopup === popup) findPopup = null;
+        });
+        findPopup = popup;
         return;
       }
+      // --- tap guard (tapzoom.ts, start.ts) ---
+      // The start screen decides whether a tap may pin at all (its species
+      // step asks for a species, not a place). From far out a tap means
+      // "about here": fly in, and let a second tap set the pin.
+      if (!start.allowsMapPin()) return;
+      const pointer = pointerKind(coarsePointer.matches); // touch needs a closer view
+      if (tapIntent(map.getZoom(), pointer) === "zoom-in") {
+        void flyTo([e.lngLat.lng, e.lngLat.lat], TAP_FLY_ZOOM[pointer]);
+        if (!start.sayZoomedIn())
+          showMapStatus(tapAgainMessage(finePointer.matches ? "klik" : "tryk"));
+        return;
+      }
+      // --- end tap guard ---
       locateGate.superseded(); // the user picked a spot; a late position must not undo it
       const { lng, lat } = e.lngLat;
       // A tap never moves the camera: the user is looking at that spot.
-      setPin([lng, lat], pinLabel([lng, lat]));
+      setPin([lng, lat], { kind: "tap" });
     });
     map.on("mouseenter", "observations", () => (map.getCanvas().style.cursor = "pointer"));
     map.on("mouseleave", "observations", () => (map.getCanvas().style.cursor = ""));
@@ -433,13 +555,15 @@ mapReady
       hideMapStatus();
       const { longitude, latitude } = (e as GeolocationPosition).coords;
       const here: [number, number] = [longitude, latitude];
-      setPin(here, `Min placering – ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+      setPin(here, { kind: "locate" });
       void framePin(here, Math.max(map.getZoom(), 13));
     });
     geolocate.on("error", (e) => {
       // A refusal is always said; a failed fix only while it is still wanted.
       const { code } = e as GeolocationPositionError;
-      if (locateGate.accept() || code === 1) showMapStatus(locateErrorMessage(code));
+      const wanted = locateGate.accept();
+      if (start.isOpen()) return; // the start screen's place step says it itself
+      if (wanted || code === 1) showMapStatus(locateErrorMessage(code));
     });
     geolocate.on("unsupported", () => showMapStatus(LOCATION_UNSUPPORTED_MESSAGE));
   })
@@ -450,7 +574,7 @@ mapReady
 
 if (initial.pin) {
   const p = initial.pin;
-  setPin(p, pinLabel(p));
+  setPin(p, { kind: "link" });
   cameraSettled = framePin(p, 12);
 }
 
@@ -469,7 +593,7 @@ window.addEventListener("hashchange", () => {
   if (next.pin && (next.pin[0] !== pin?.[0] || next.pin[1] !== pin?.[1])) {
     const p = next.pin;
     locateGate.superseded();
-    setPin(p, pinLabel(p));
+    setPin(p, { kind: "link" });
     cameraSettled = framePin(p, 12);
   }
   if (next.species && next.species !== speciesPanel?.selectedSlug) {
@@ -482,7 +606,11 @@ window.addEventListener("hashchange", () => {
 
 function navSnapshot(): Snapshot {
   const dialog = document.querySelector("dialog[open]") !== null;
-  return { detail: speciesPanel?.selectedSlug ?? null, ...(dialog ? { dialog } : {}) };
+  return {
+    start: start.navSnap(),
+    detail: speciesPanel?.selectedSlug ?? null,
+    ...(dialog ? { dialog } : {}),
+  };
 }
 
 function openSpecies(panel: SpeciesPanel, slug: string): Promise<void> {
@@ -502,6 +630,8 @@ async function applyNavSnapshot(snap: Snapshot): Promise<void> {
       dialog.close();
     }
   }
+  if (snap.start) start.show(snap.start);
+  else if (start.isOpen()) start.close();
   const panel = await panelReady;
   if (!panel || panel.selectedSlug === snap.detail) return;
   const hadFocus = panelEl.contains(document.activeElement);
@@ -523,6 +653,44 @@ async function applyNavSnapshot(snap: Snapshot): Promise<void> {
   }
 }
 
+// --- start screen (start.ts): each way in lands here, set up for its task ---
+function landFromStart(landing: Landing): void {
+  const target = landingTarget(landing);
+  hideMapStatus(); // a message from before the start screen is stale now
+  const place = landing.kind === "risk" || landing.kind === "beach" ? landing.place : undefined;
+  if (place && (place.lngLat[0] !== pin?.[0] || place.lngLat[1] !== pin?.[1])) {
+    locateGate.superseded(); // the user picked a place; a late position must not undo it
+    setPin(place.lngLat, { kind: "search", label: place.label });
+  }
+  if (target.tab) setTab(target.tab);
+  writeHash();
+  if (target.tab) sheet.snapTo("half");
+  if (pin && target.camera === "ring") void frameRing(pin);
+  if (pin && target.camera === "place") void flyTo(pin, place?.zoom ?? 13);
+  const focusTarget =
+    target.focus === "tab"
+      ? tabButtons.find((b) => b.getAttribute("aria-selected") === "true")
+      : document.getElementById(`tab-${appRoot.dataset.tab}`);
+  focusTarget?.focus({ preventScroll: true });
+  // (focus is in the panel first, so the species sheet takes it on its title)
+  if (landing.kind === "species") speciesPanel?.selectBySlug(landing.slug);
+}
+
+const start = initStart({
+  app: appRoot,
+  behind: {
+    search: searchForm,
+    panel: panelEl,
+    map: document.getElementById("map") as HTMLElement,
+  },
+  map: mapReady,
+  manifest: manifestReady,
+  getPin: () => (pin ? { lngLat: pin, label: tapCard.placeLabel() ?? "" } : null),
+  cancelLocate: () => locateGate.superseded(),
+  enter: landFromStart,
+  onNavigate: () => navigation?.record(),
+});
+
 navigation = initNavigation({ current: navSnapshot, apply: applyNavSnapshot });
 
 // A modal dialog opening or closing, by any route (its button, Escape, a
@@ -537,14 +705,11 @@ new MutationObserver((records) => {
   attributeFilter: ["open"],
 });
 
-// After the history is set up, so the welcome dialog gets an entry of its own.
-maybeWelcome();
-
 // --- place search (placesearch.ts): towns, postal districts, bathing sites
 // and, with a key, addresses. A chosen place becomes the pin.
 function onPlaceChosen({ lngLat, label, zoom }: ChosenPlace): void {
   locateGate.superseded(); // the user picked a place; a late position must not undo it
-  setPin(lngLat, label);
+  setPin(lngLat, { kind: "search", label });
   void framePin(lngLat, zoom);
 }
 initPlaceSearch(onPlaceChosen);

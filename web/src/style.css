@@ -11,6 +11,10 @@
   --link: #1a5f67;
   --warn: #a8452a;
   --provisional: #9a5b00;
+  /* the traffic light (the Risiko tab and the pin's card in map.css) */
+  --level-red: #c0392b;
+  --level-yellow: #d39e00;
+  --level-green: #2e8b57;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -367,15 +371,15 @@ button.primary {
 }
 
 .verdict--red {
-  --light: #c0392b;
+  --light: var(--level-red);
 }
 
 .verdict--yellow {
-  --light: #d39e00;
+  --light: var(--level-yellow);
 }
 
 .verdict--green {
-  --light: #2e8b57;
+  --light: var(--level-green);
 }
 
 .verdict__head {
@@ -415,11 +419,11 @@ button.primary {
 }
 
 .reason--red::marker {
-  color: #c0392b;
+  color: var(--level-red);
 }
 
 .reason--yellow::marker {
-  color: #d39e00;
+  color: var(--level-yellow);
 }
 
 .verdict__rules summary {

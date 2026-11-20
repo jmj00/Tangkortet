@@ -16,7 +16,9 @@ Mobile-first PWA: a MapLibre map of the Danish coast with three tabs.
   fredninger.
 - **Før du går**: the expert's checklist and advice, verbatim from the brief.
 
-Shareable links: `#pin=<lat>,<lon>&tab=<arter|risiko|guide>&art=<slug>`.
+Shareable links: `#pin=<lat>,<lon>&tab=<arter|risiko|guide>&art=<slug>`. A visit
+without a pin or a species in the link opens on the start screen
+(`src/start.ts`, decisions in `src/startstate.ts`); `?kort` skips it.
 
 Ported from Svampekortet (0024b43): `map.ts`, `addresses.ts`, `register-sw.ts`,
 `sentry.ts`, `public/sw.js`, the reframing in `layers.ts`, and the build setup.
@@ -38,7 +40,10 @@ web/public/data --sample`). Try `#pin=56.15100,10.21900&tab=risiko`.
 Without `VITE_DATAFORDELER_API_KEY` (see `.env.example`) the map uses
 OpenStreetMap and the search box finds towns, postal districts and coastal
 bathing sites only (`src/placesearch.ts`, list `src/data/places.json` from
-`py -m pipeline.places`); with the key it finds addresses too.
+`py -m pipeline.places`); with the key it finds addresses too. The same list
+names the pin's place in the sheet header (`src/tapcard.ts`, nearest town or
+bathing site): it is fetched on the first pin (or the first search, whichever
+comes first), and coordinates show until it arrives or when it cannot be had.
 
 ## Live sources (called from the browser)
 

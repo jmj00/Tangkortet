@@ -1,0 +1,1382 @@
+/* =====================================================================
+   START SCREEN (start.ts, markup in index.html) and the "Forside" button
+   that leads back to it. A layer of the same page: on phones a sheet over
+   the map with a band of map showing above it, in the sidebar layout the
+   sidebar's content with the map alongside. Built on the shell's tokens
+   (style.css, shell.css). Adapted from Svampekortet (624fb8b,
+   web/src/start.css) with Tangkortet's coastal palette.
+
+   Sizes: the base rules are the compact ones, made to show the three ways
+   in, the way to the map and the safety line without scrolling on a phone
+   (390x664, 360x640) and a low laptop window (1366x650).
+   ===================================================================== */
+
+:root {
+  /* how much map stays visible above the start sheet on a phone */
+  --start-band: clamp(4.75rem, 13dvh, 9rem);
+  --start-radius: 14px;
+  /* the first way in ("Kan jeg sanke her?"): the app's sea green */
+  --start-hero-bg: #1f6f78;
+  --start-hero-ink: #ffffff;
+  --start-hero-sub: rgb(255 255 255 / 0.9);
+  --start-hero-line: rgb(255 255 255 / 0.3);
+  --start-pin: #f2b84b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --start-hero-bg: #1b5d64;
+    --start-hero-ink: #f1f8f8;
+    --start-hero-sub: rgb(241 248 248 / 0.88);
+    --start-hero-line: rgb(241 248 248 / 0.24);
+  }
+}
+
+@media (min-height: 780px) {
+  :root {
+    --start-band: clamp(4.75rem, 17dvh, 10rem);
+  }
+}
+
+/* --- the layer ----------------------------------------------------------- */
+/* (data-start-leaving: still on screen for its way out, see "motion") */
+#app:not([data-start]):not([data-start-leaving]) #start {
+  display: none;
+}
+
+#start {
+  /* The algae group dots (.spp-dot), as species.css sets them on .spp. */
+  --spp-brunalge: #8a5f1d;
+  --spp-rodalge: #b0405a;
+  --spp-gronalge: #3c8a3c;
+  position: absolute;
+  inset: 0;
+  z-index: 6; /* over the sheet (3), the map status (4) and the search (5) */
+  pointer-events: none; /* only the sheet takes input; the band is map */
+}
+
+@media (prefers-color-scheme: dark) {
+  #start {
+    --spp-brunalge: #c99b57;
+    --spp-rodalge: #e4849c;
+    --spp-gronalge: #74c274;
+  }
+}
+
+/* What the start screen covers is hidden as well as inert (start.ts). */
+#app[data-start] #search,
+#app[data-start] #map-status {
+  visibility: hidden;
+}
+
+/* The sheet does not scroll itself: the views scroll inside it, and the
+   safety line stays put underneath them. */
+.start__sheet {
+  position: absolute;
+  top: var(--start-band);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: var(--elev-sheet);
+  pointer-events: auto;
+}
+
+.start__scroll {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 max(var(--gutter), env(safe-area-inset-right)) 0.75rem
+    max(var(--gutter), env(safe-area-inset-left));
+}
+
+.start__view {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+
+.start__view[hidden] {
+  display: none;
+}
+
+/* --- wordmark ------------------------------------------------------------ */
+/* Phone: a pill over the band of map. Sidebar: the top row (further down). */
+.start__brand {
+  position: absolute;
+  top: var(--shell-top);
+  left: max(0.75rem, env(safe-area-inset-left));
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  height: 2.5rem;
+  padding: 0 1rem 0 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--elev-2);
+}
+
+.start__mark {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.start__mark-wave {
+  stroke: color-mix(in srgb, var(--accent) 45%, var(--surface));
+}
+
+.start__wordmark {
+  color: var(--accent);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+
+.start__tag {
+  display: none;
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* --- home view: headline and the expert's welcome ------------------------ */
+.start__head {
+  margin-top: 0.8rem;
+}
+
+.start__title {
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+.start__title:focus {
+  outline: none; /* programmatic focus target only (tabindex -1) */
+}
+
+.start__intro p,
+.start__welcome p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.start__welcome {
+  margin-top: 0.9rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+}
+
+.start__welcome a {
+  color: var(--link);
+}
+
+/* --- home view: the ways in ---------------------------------------------- */
+.start__flows {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--start-radius);
+  background: var(--surface);
+  box-shadow: var(--elev-1);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.16s var(--ease-out),
+    box-shadow 0.16s var(--ease-out),
+    border-color 0.16s var(--ease-out);
+}
+
+.flow__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.flow__title {
+  font-size: 1.08rem;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.flow__sub {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+@media (hover: hover) {
+  .flow:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--elev-2);
+    transform: translateY(-1px);
+  }
+
+  .flow--hero:hover {
+    border-color: transparent;
+    filter: brightness(1.06);
+  }
+}
+
+.flow:active {
+  transform: translateY(0) scale(0.99);
+}
+
+.flow:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* the first way in: risk, the expert's first priority */
+.flow--hero {
+  min-height: 5.25rem;
+  padding-right: 6.25rem; /* room for the drawing */
+  overflow: hidden;
+  border-color: transparent;
+  background: var(--start-hero-bg);
+  color: var(--start-hero-ink);
+}
+
+.flow--hero .flow__title {
+  font-size: 1.25rem;
+}
+
+.flow--hero .flow__sub {
+  color: var(--start-hero-sub);
+}
+
+.flow__art {
+  position: absolute;
+  right: -0.5rem;
+  bottom: -1.5rem;
+  width: 6.5rem;
+  height: 6.5rem;
+}
+
+.flow__ring {
+  fill: none;
+  stroke: var(--start-hero-line);
+  stroke-width: 1.5;
+}
+
+.flow__ring--inner {
+  fill: rgb(255 255 255 / 0.08);
+}
+
+.flow__pin {
+  fill: var(--start-pin);
+}
+
+.flow__pin-eye {
+  fill: var(--start-hero-bg);
+}
+
+.flow__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  color: var(--accent);
+}
+
+.flow__icon svg {
+  width: 1.4rem;
+  height: 1.4rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* three colour dots: the groups of the species list */
+.flow__icon--dots {
+  display: flex;
+  justify-content: center;
+  gap: 0.15rem;
+}
+
+.flow__icon--dots .spp-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+}
+
+.flow__icon--dots .spp-dot:nth-child(2) {
+  margin-top: -0.6rem;
+}
+
+/* --- home view: the map, plainly ------------------------------------------- */
+/* Sidebar only: the map beside the layer can be clicked. */
+.start__maphint {
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.7rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.start__maphint svg {
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.start__skip {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 0.4rem;
+  min-height: 2.75rem;
+  margin-top: 0.35rem;
+  padding: 0 0.6rem;
+  margin-left: -0.6rem;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.start__skip svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.16s var(--ease-out);
+}
+
+@media (hover: hover) {
+  .start__skip:hover {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+
+  .start__skip:hover svg {
+    transform: translateX(2px);
+  }
+}
+
+/* --- the safety line, pinned under the views ------------------------------- */
+.start__safety {
+  flex: none;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0 0.55rem;
+  padding: 0.5rem max(var(--gutter), env(safe-area-inset-right))
+    max(0.15rem, env(safe-area-inset-bottom)) max(var(--gutter), env(safe-area-inset-left));
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 55%, var(--bg));
+  color: var(--ink);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.start__safety-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-top: 0.05rem;
+  fill: none;
+  stroke: var(--warn);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.start__safety-icon circle {
+  fill: var(--warn);
+}
+
+.start__safety p {
+  margin: 0;
+}
+
+.start__guide {
+  grid-column: 2;
+  justify-self: start;
+  min-height: 2.25rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+/* Short screens and large text (start.ts sets data-compact): the safety line
+   is two lines at most, the verbatim text cut with "…", which opens in full
+   on a tap; the guide link sits beside it. */
+.start__disclaimer-toggle {
+  display: none;
+}
+
+#start[data-compact] .start__safety {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0 0.5rem;
+  padding-top: 0.15rem;
+}
+
+#start[data-compact] .start__safety-icon {
+  margin-top: 0;
+}
+
+#start[data-compact] .start__disclaimer {
+  display: none;
+}
+
+#start[data-compact] .start__disclaimer-toggle {
+  display: block;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.2rem 0;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* the clamp is on the text, so the button keeps its 44px around it */
+#start[data-compact] .start__disclaimer-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+#start[data-compact] .start__safety[data-expanded] {
+  align-items: start;
+}
+
+#start[data-compact] .start__safety[data-expanded] .start__disclaimer-toggle {
+  padding: 0.6rem 0;
+}
+
+#start[data-compact] .start__safety[data-expanded] .start__disclaimer-text {
+  display: block;
+  -webkit-line-clamp: none;
+  line-clamp: none;
+  text-decoration: none;
+}
+
+#start[data-compact] .start__safety[data-expanded] .start__safety-icon {
+  margin-top: 0.75rem;
+}
+
+#start[data-compact] .start__guide {
+  grid-column: auto;
+  min-height: 2.75rem;
+  white-space: nowrap;
+}
+
+#start[data-compact] .start__guide-more {
+  display: none;
+}
+
+/* --- the two steps: shared frame ------------------------------------------- */
+/* The "Forside" button comes after the heading in the document (focus lands
+   on the heading and Tab goes on to it) but shows above it. */
+.start__view[data-view="place"],
+.start__view[data-view="species"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+}
+
+.start__view[data-view="place"][hidden],
+.start__view[data-view="species"][hidden] {
+  display: none;
+}
+
+.start__bar {
+  order: -1;
+  display: flex;
+  align-items: center;
+  min-height: 2.75rem;
+  margin: 0.35rem 0 0 -0.5rem;
+}
+
+.start__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  min-height: 2.75rem;
+  padding: 0 0.85rem 0 0.35rem;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .start__back:hover {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+}
+
+.start__back-icon {
+  display: grid;
+}
+
+.start__back-icon svg {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.start__title--step {
+  font-size: 1.3rem;
+}
+
+.start__lead {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+/* --- place step ---------------------------------------------------------------- */
+.place {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 0.8rem;
+}
+
+.place__option {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--start-radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.place__option:active {
+  transform: scale(0.99);
+}
+
+.place__option--primary {
+  border-color: transparent;
+  background: var(--start-hero-bg);
+  color: var(--start-hero-ink);
+}
+
+.place__option-icon {
+  flex: none;
+  display: grid;
+  color: var(--accent);
+}
+
+.place__option--primary .place__option-icon {
+  color: inherit;
+}
+
+.place__option-icon svg {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.place__option-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.place__option-title {
+  font-weight: 700;
+}
+
+.place__option-sub {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* the position did not come: the search is the way forward, the button steps back */
+.place__option[data-state="failed"] {
+  border-color: var(--border-strong);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.place__option[data-state="failed"] .place__option-icon {
+  color: var(--accent);
+}
+
+.place__option[aria-disabled="true"] {
+  cursor: progress;
+}
+
+.place__spinner {
+  display: none;
+  flex: none;
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: start-spin 0.9s linear infinite;
+}
+
+.place__option[data-state="busy"] .place__spinner,
+.place__spinner.is-on {
+  display: inline-block;
+}
+
+.place__message {
+  margin: 0;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warn) 9%, var(--surface));
+  color: var(--ink);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.place__message[hidden] {
+  display: none;
+}
+
+.start-field {
+  position: relative;
+}
+
+.place__input {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.6rem 0.85rem 0.6rem 2.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--start-radius);
+  background: var(--surface)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235b6b6c' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5l5 5'/%3E%3C/svg%3E")
+    no-repeat 0.8rem 50% / 1.15rem;
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem; /* 16px: below this iOS zooms the page on focus */
+  line-height: 1.3;
+  text-overflow: ellipsis;
+}
+
+@media (prefers-color-scheme: dark) {
+  .place__input {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2393a5a6' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5l5 5'/%3E%3C/svg%3E");
+  }
+}
+
+.place__input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+.place__input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.place__field.is-suggested .place__input {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* the start step's own status line sits in the card: no floating shadow */
+.place__field .search-status {
+  box-shadow: none;
+}
+
+/* the suggestions: in the flow of the card, like the main field's list */
+.place__results {
+  margin: 0.375rem 0 0;
+  padding: 0.25rem;
+  max-height: min(45dvh, 22rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.place__results:empty {
+  display: none;
+}
+
+.place__results li {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 2.75rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 7px;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.place__results li:hover,
+.place__results li.is-active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.place__results li.is-active {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.place__results li[data-kind="address"] .opt-name {
+  font-weight: 400;
+}
+
+.place__results li.results-note {
+  min-height: 0;
+  margin-top: 0.25rem;
+  padding: 0.45rem 0.65rem 0.2rem;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  cursor: default;
+  background: none;
+}
+
+.place__hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.1rem 0 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.place__hint-icon {
+  flex: none;
+  display: grid;
+  margin-top: 0.05rem;
+}
+
+.place__hint-icon svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+/* --- species step ---------------------------------------------------------- */
+.picker {
+  margin-top: 0.6rem;
+}
+
+.picker__group + .picker__group {
+  margin-top: 0.9rem;
+}
+
+.picker__heading {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.picker__count {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+
+.picker__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pick {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  height: 100%;
+  min-height: 3rem;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .pick:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--elev-1);
+  }
+}
+
+.pick .spp-dot {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.pick__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pick__name {
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.pick__name--sci {
+  font-style: italic;
+}
+
+.pick__sci {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-style: italic;
+  line-height: 1.3;
+}
+
+.pick .spp-tag {
+  flex: none;
+}
+
+.picker__status {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.5rem 0;
+  color: var(--muted);
+}
+
+.picker__failed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 1.25rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border));
+  border-radius: var(--start-radius);
+  background: color-mix(in srgb, var(--warn) 9%, var(--surface));
+  color: var(--ink);
+  text-align: center;
+}
+
+.picker__retry {
+  min-height: 2.75rem;
+  margin-top: 0.6rem;
+  padding: 0 1.25rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--link);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* --- "Forside": the wordmark leads home ------------------------------------ */
+#brand {
+  margin: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.brand-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--link);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* a small house in front of "Forside" */
+.brand-home::before {
+  content: "";
+  width: 0.95rem;
+  height: 0.95rem;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 3 2.5 11h2.8v9.5h5.2v-6h3v6h5.2V11h2.8z'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 3 2.5 11h2.8v9.5h5.2v-6h3v6h5.2V11h2.8z'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+
+#brand:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+  border-radius: var(--radius-m);
+}
+
+/* --- phone: a sheet over the map ------------------------------------------- */
+@media (max-width: 559.98px), (max-width: 719.98px) and (min-height: 520.02px) {
+  /* The main interface's sheet steps aside for the layer. */
+  #app[data-start] #panel {
+    visibility: hidden;
+  }
+
+  /* Map controls keep clear of the layer: in the place step the map below
+     the card has the whole screen under it. */
+  #app[data-start="home"],
+  #app[data-start="species"] {
+    --map-inset-bottom: calc(100dvh - var(--start-band)) !important;
+  }
+
+  #app[data-start="place"] {
+    --map-inset-bottom: 0px !important;
+  }
+
+  #app[data-start="home"] #map .maplibregl-ctrl-top-right,
+  #app[data-start="species"] #map .maplibregl-ctrl-top-right,
+  #app[data-start="home"] #map .maplibregl-ctrl-bottom-left,
+  #app[data-start="species"] #map .maplibregl-ctrl-bottom-left,
+  #app[data-start="home"] #map .maplibregl-ctrl-bottom-right,
+  #app[data-start="species"] #map .maplibregl-ctrl-bottom-right {
+    display: none;
+  }
+
+  /* The place step is a card at the top, so the map below can be tapped. */
+  #start[data-view="place"] .start__sheet {
+    top: 0;
+    bottom: auto;
+    max-height: calc(100% - 7rem); /* always a strip of map to tap */
+    padding-top: env(safe-area-inset-top);
+    border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+    box-shadow: var(--elev-2);
+  }
+
+  #start[data-view="place"] .start__brand,
+  #start[data-view="place"] .start__safety {
+    display: none; /* the card has the top of the screen; Risiko carries the line */
+  }
+
+  #start[data-view="place"] .start__scroll {
+    padding-bottom: 0.9rem;
+  }
+
+  #start[data-view="place"] .start__lead {
+    font-size: 0.85rem;
+  }
+
+  /* "Forside" in the sheet's header: a pill at its top right. */
+  #sheet-header {
+    position: relative;
+  }
+
+  #brand {
+    position: absolute;
+    top: 0.2rem;
+    right: max(0.6rem, env(safe-area-inset-right));
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    height: 2rem;
+    padding: 0 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+  }
+
+  #brand .brand-mark,
+  #brand .brand-name {
+    display: none;
+  }
+
+  /* room for the "Forside" pill on the place line only, not the buttons */
+  #readout .tapcard__where {
+    padding-right: 7.5rem;
+  }
+}
+
+@media (max-width: 559.98px) and (pointer: coarse),
+  (max-width: 719.98px) and (min-height: 520.02px) and (pointer: coarse) {
+  /* 44px to hit, without making the pill itself taller */
+  #brand::after {
+    content: "";
+    position: absolute;
+    inset: -6px -4px;
+  }
+}
+
+/* Narrow phones: the words need the width more than the drawing does. */
+@media (max-width: 359.98px) {
+  .flow__art {
+    display: none;
+  }
+
+  .flow--hero {
+    padding-right: 1rem;
+  }
+}
+
+/* --- sidebar layout: the layer is the sidebar's content -------------------- */
+@media (min-width: 720px), (min-width: 560px) and (max-height: 520px) {
+  #start {
+    right: auto;
+    display: flex;
+    flex-direction: column;
+    width: var(--sidebar-w);
+    padding-left: env(safe-area-inset-left);
+    border-right: 1px solid var(--border);
+    background: var(--bg);
+    box-shadow: 1px 0 12px rgb(20 40 42 / 0.08);
+    pointer-events: auto;
+  }
+
+  .start__brand {
+    position: static;
+    flex: none;
+    gap: 0.55rem;
+    height: var(--brand-h, 3.75rem);
+    padding: 0.25rem var(--gutter) 0;
+    border: none;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+
+  .start__mark {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+
+  .start__wordmark {
+    font-size: 1.3rem;
+  }
+
+  .start__tag {
+    display: block;
+  }
+
+  .start__sheet {
+    position: static;
+    flex: 1;
+    min-height: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+
+  .start__scroll {
+    padding: 0 var(--gutter) 0.75rem;
+  }
+
+  .start__safety {
+    padding: 0.55rem var(--gutter) 0.15rem;
+  }
+
+  .start__head {
+    margin-top: 0.4rem;
+  }
+
+  .start__maphint {
+    display: flex;
+  }
+
+  /* the wordmark row: "Forside" sits at its right end */
+  #brand {
+    width: 100%;
+  }
+
+  .brand-home {
+    margin-left: auto;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+  }
+
+  @media (hover: hover) {
+    #brand:hover .brand-home {
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+    }
+  }
+}
+
+@media (min-width: 720px) and (max-width: 1099.98px) {
+  .start__tag {
+    display: none;
+  }
+}
+
+/* Short landscape phones (sidebar layout without the wordmark row):
+   "Forside" rides the readout row, as on a phone. */
+@media (min-width: 560px) and (max-height: 520px) {
+  #sheet-header {
+    position: relative;
+  }
+
+  #brand {
+    position: absolute;
+    width: auto;
+    top: calc(var(--search-h) + var(--search-status-h) + 0.95rem);
+    right: var(--gutter);
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    height: 1.75rem;
+    padding: 0 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+  }
+
+  #brand .brand-mark,
+  #brand .brand-name {
+    display: none;
+  }
+
+  /* room for the "Forside" pill on the place line only, not the buttons */
+  #readout .tapcard__where {
+    padding-right: 8.75rem;
+  }
+
+  @media (pointer: coarse) {
+    #brand::after {
+      content: "";
+      position: absolute;
+      inset: -8px -4px;
+    }
+  }
+}
+
+/* Short landscape phones: no wordmark row; every line counts. */
+@media (min-width: 560px) and (max-height: 520px) {
+  .start__brand {
+    display: none;
+  }
+
+  .start__head {
+    margin-top: 0.6rem;
+  }
+
+  .start__title {
+    font-size: 1.25rem;
+  }
+
+  .flow--hero {
+    min-height: 4.25rem;
+  }
+
+  .flow__art {
+    width: 5.5rem;
+    height: 5.5rem;
+  }
+
+  .flow__sub {
+    font-size: 0.8rem;
+  }
+}
+
+/* --- coarse pointers: 44px targets ------------------------------------------ */
+@media (pointer: coarse) {
+  .start__guide {
+    min-height: 2.75rem;
+  }
+
+  .pick,
+  .place__option {
+    min-height: 3rem;
+  }
+}
+
+/* --- motion ------------------------------------------------------------------
+   Arriving from the main interface and leaving for it take a fifth of a
+   second: the layer fades (on a phone it also slides a little). Within the
+   layer, the content of a view rises in, lightly staggered. All of it is off
+   under prefers-reduced-motion (start.ts then never marks the states). */
+#app[data-start-leaving] #start,
+#app[data-start-leaving] #start * {
+  pointer-events: none !important;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #app[data-start-entering] #start {
+    animation: start-fade-in 0.2s var(--ease-out) both;
+  }
+
+  #app[data-start-leaving] #start {
+    animation: start-fade-out 0.2s var(--ease-out) both;
+  }
+
+  #app[data-start] .start__view > *,
+  #app[data-start] .start__flow {
+    animation: start-rise 0.3s var(--ease-out) both;
+  }
+
+  .start__view > :nth-child(2),
+  .start__flow:nth-child(2) {
+    animation-delay: 30ms;
+  }
+
+  .start__view > :nth-child(3),
+  .start__flow:nth-child(3) {
+    animation-delay: 60ms;
+  }
+
+  .start__view > :nth-child(n + 4) {
+    animation-delay: 90ms;
+  }
+
+  /* the list itself does not move twice: its cards do */
+  #app[data-start] .start__view > .start__flows {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) and (max-width: 559.98px),
+  (prefers-reduced-motion: no-preference) and (max-width: 719.98px) and (min-height: 520.02px) {
+  #app[data-start-entering] #start {
+    animation-name: start-slide-in;
+  }
+
+  #app[data-start-leaving] #start {
+    animation-name: start-slide-out;
+  }
+}
+
+@keyframes start-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes start-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes start-slide-in {
+  from {
+    opacity: 0;
+    translate: 0 1.25rem;
+  }
+}
+
+@keyframes start-slide-out {
+  to {
+    opacity: 0;
+    translate: 0 1.25rem;
+  }
+}
+
+@keyframes start-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes start-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow,
+  .place__option,
+  .start__skip svg {
+    transition: none;
+  }
+
+  .flow:hover,
+  .flow:active,
+  .place__option:active {
+    transform: none;
+  }
+
+  /* a spinner that does not spin still says "busy" */
+  .place__spinner {
+    animation: none;
+    border-right-color: currentColor;
+    opacity: 0.6;
+  }
+}
