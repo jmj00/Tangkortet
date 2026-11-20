@@ -27,7 +27,10 @@ registerServiceWorker();
 // answer sets the pin unless the user has chosen a spot of their own since.
 const locateGate = createLocateGate();
 
-const mapReady: Promise<MapBundle> = createMap("map", { onLocateAsk: () => locateGate.asked() });
+const mapReady: Promise<MapBundle> = createMap("map", {
+  onLocateAsk: () => locateGate.asked(),
+  onAbout: () => openAbout(manifest),
+});
 const readout = document.getElementById("readout") as HTMLParagraphElement;
 const appRoot = document.getElementById("app") as HTMLElement;
 const panelEl = document.getElementById("panel") as HTMLElement;

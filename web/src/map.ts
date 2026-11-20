@@ -1,5 +1,5 @@
 // Ported from Svampekortet (0024b43): OSM base + the Skærmkort WMS when a key is set.
-import type { Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
+import type { IControl, Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
 import { LocateControl } from "./locatecontrol";
 
 const OSM_STYLE: StyleSpecification = {
@@ -77,6 +77,31 @@ function addSdfiBasemap(map: MapLibreMap): void {
   map.on("error", onError);
 }
 
+/** "Om Tangkortet og data" as a map button. On the phone it stands in for the
+ * panel's footer link, which the sheet has no room for (shell.css hides it in
+ * the sidebar layout, where the footer shows). */
+function aboutControl(onClick: () => void): IControl {
+  let container: HTMLElement | null = null;
+  return {
+    onAdd() {
+      container = document.createElement("div");
+      container.className = "maplibregl-ctrl maplibregl-ctrl-group about-ctrl";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "about-ctrl__button";
+      button.title = "Om Tangkortet og data";
+      button.setAttribute("aria-label", "Om Tangkortet og data");
+      button.textContent = "?";
+      button.addEventListener("click", onClick);
+      container.append(button);
+      return container;
+    },
+    onRemove() {
+      container?.remove();
+    },
+  };
+}
+
 export interface MapBundle {
   map: MapLibreMap;
   geolocate: LocateControl;
@@ -96,7 +121,7 @@ export interface MapBundle {
  */
 export async function createMap(
   container: string,
-  options: { onLocateAsk?: () => void } = {},
+  options: { onLocateAsk?: () => void; onAbout?: () => void } = {},
 ): Promise<MapBundle> {
   const maplibregl = await import("maplibre-gl");
   await import("maplibre-gl/dist/maplibre-gl.css");
@@ -118,6 +143,7 @@ export async function createMap(
   });
 
   map.addControl(new maplibregl.NavigationControl(), "top-right");
+  if (options.onAbout) map.addControl(aboutControl(options.onAbout), "top-right");
   map.addControl(geolocate, "top-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
 

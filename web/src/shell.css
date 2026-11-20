@@ -256,7 +256,7 @@
   font-size: 0.92rem;
   font-weight: 600;
   line-height: 1.15;
-  white-space: nowrap;
+  text-align: center;
   cursor: pointer;
 }
 
@@ -353,8 +353,8 @@
 
 .map-status__close {
   flex: none;
-  width: 2.75rem;
-  height: 2.75rem;
+  width: 44px;
+  height: 44px;
   margin: -0.5rem 0;
   border: none;
   border-radius: 50%;
@@ -442,8 +442,8 @@
   }
 
   #map .maplibregl-ctrl-group button {
-    width: 2.75rem;
-    height: 2.75rem;
+    width: 44px;
+    height: 44px;
   }
 
   #map .maplibregl-ctrl-compass {
@@ -451,11 +451,36 @@
   }
 }
 
+/* "?" (about) on the map: phone only; the sidebar has the footer link. */
+#map .about-ctrl__button {
+  font: inherit;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+@media (max-width: 559.98px), (max-width: 719.98px) and (min-height: 520.02px) {
+  #panel footer {
+    display: none;
+  }
+
+  /* no footer: the last of the content clears the home indicator itself */
+  .tab {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  }
+}
+
+@media (min-width: 720px), (min-width: 560px) and (max-height: 520px) {
+  #map .about-ctrl {
+    display: none;
+  }
+}
+
 /* 44px targets for the remaining controls on any touch screen */
 @media (pointer: coarse) {
   #map .maplibregl-ctrl-group button {
-    width: 2.75rem;
-    height: 2.75rem;
+    width: 44px;
+    height: 44px;
   }
 }
 
