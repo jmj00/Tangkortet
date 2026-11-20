@@ -101,8 +101,44 @@ Third-party data keeps its own licence and is not restricted further.
 | Klimadatastyrelsen: Danske Stednavne and DAGI (via Svampekortet's generated list) | towns and postal districts in the place search | **CC BY 4.0**, credit "Indeholder data fra Klimadatastyrelsen"; **add the credit line to the About dialog** | `web/src/data/places.json` |
 | iNaturalist photos (Research-Grade observations, picked via GBIF by `scripts/pull_species_images.py`) | species photos: list thumbnails, start-screen tiles, the species page and its viewer | **CC BY 4.0** or **CC0** only, per photo; each shown with photographer, licence and a link to the iNaturalist observation (CC BY attribution). Hotlinked from `inaturalist-open-data.s3.amazonaws.com`, not copied; the service worker keeps up to 120 seen photos for offline use. Marked "not reviewed" in the app until the expert has checked the identification | `data/images/<slug>.json` (links and credits only) |
 | OpenStreetMap | basemap | ODbL, credit "© OpenStreetMap-bidragydere" | nothing stored |
+| OpenStreetMap, Geofabrik's Denmark extract (`denmark-latest.osm.pbf`, refreshed weekly in the deploy) | "Kysten her": beaches (with `surface`), sand by the shore, salt marsh, tidal flats, harbours, marinas, piers, groynes, breakwaters, cliffs and the coastline, around the pin and on the map from zoom 13 (`pipeline/ingest/coast.py`) | **ODbL 1.0**, credit "© OpenStreetMap-bidragydere" (in the manifest attribution, so "Om Tangkortet" shows it). **Share-alike:** the coast cells are a *derivative database* of OSM and stay under the ODbL, unlike the project's own CC BY-NC data; anyone may reuse them under the ODbL, and a public derivative of them must be offered under the ODbL too. They are kept as separate files (a "collective database" with the rest of the payload), so the ODbL does not reach the other data. Mapping is volunteer work and uneven: shown as "OpenStreetMap – kan være ufuldstændigt" | dev sample `web/public/data/coast/` (Aarhus Bugt, Mols, Djursland and a piece of the Wadden Sea around Mandø) |
 | Literature (Holdt et al. and others) | accumulation proposals; kainic acid in søl (Jørgensen & Olesen 2018, doi:10.1080/19393210.2018.1462258) | cited by DOI; only short facts and numbers are reproduced | `docs/literature-accumulation.md` |
 | badevand.dk (DHI) | — | reCAPTCHA-protected, **not used**; the app only links to it | nothing stored |
+
+### OpenStreetMap coast features (2026-11-20 extract)
+
+| Feature | In the extract | Kept |
+|---|---|---|
+| `natural=beach` | 1,556 (ways, multipolygons, 10 nodes); 252 named; `surface` on about a third: sand 443, pebblestone 44, gravel 26, boulders 4, … | 1,470 within 1 km of the coastline (90 lake beaches dropped: Furesø, Silkeborg Langsø, Skanderborg Sø …) |
+| `natural=sand` | 4,073 | 590 within 500 m of the coastline (the rest are sand pits and inland dunes) |
+| `wetland=saltmarsh` / `tidalflat` (with `natural=wetland`) | 572 / 99 | 574 / 74 parts within 1 km of the coastline |
+| `landuse=harbour`, `industrial=port` (Aarhus's terminals), `harbour=yes` or `seamark:type=harbour`; `leisure=marina` | 114 objects; 554 | 113; 522 within 1 km of the coastline (`leisure=marina` wins when both are set; 32 lake marinas dropped) |
+| `man_made=pier` | 10,581 | 7,540 within 500 m of the coastline (the rest are mostly lake jetties). Bathing jetties are not tagged apart; a name with "badebro" (8) or `leisure=bathing_place` marks one |
+| `man_made=groyne` / `breakwater` | 3,163 / 1,440 | 3,124 / 1,417 (within 500 m) |
+| `natural=cliff` | 1,508 | 1,025 (within 500 m; inland ones are mostly gravel-pit edges). Shown as "Skrænt", or "Klint" when the name says so |
+| `natural=coastline` | 2,236 ways | 2,235 (land on the left, so the app can tell land from water). The 1,011 closed ones (islands, islets) are simplified as rings that keep their area and never cross themselves; one speck under a metre is dropped |
+
+"Near the coastline" means any vertex, or any point along an edge, within
+reach of a coastline segment. **Known loss:** OSM maps Ringkøbing Fjord (and
+a few other lagoons) without a coastline, so its marinas and beaches more
+than 1 km from the sea are dropped with the lake ones. The app also shows no
+nearby features at all when no coastline is within 1 km of the pin.
+
+`pipeline/ingest/coast.py` reads it with pyosmium's C++ tag filter and area
+assembler: **about 25 s to read, 28 s in all** on a desktop (2026-11-20, about
+1 GB peak memory), then simplifies with Douglas-Peucker (8 m for areas,
+coastline and cliffs; 3-4 m for piers, groynes and breakwaters; a thin beach
+strip or an islet keeps its shape) and splits into the risk cells' 0.2° grid
+with integer, delta-encoded coordinates: **2.4 MB for all of Denmark in 208
+cells**, about 200 kB for the committed sample. Check of the land/water side:
+of 1,063 sea pins 40-150 m off an islet, none read as land.
+
+**Deploy:** `scripts/fetch_osm_extract.sh` downloads the extract once per ISO
+week to a `.part` file, checks it against Geofabrik's `.md5` and only then
+moves it into place. If Geofabrik is down, last week's cached extract is used
+(`restore-keys`); with none at all the build keeps the committed coast index
+(the dev sample), so "Kysten her" shows only inside that area and the card is
+hidden elsewhere.
 
 Raw source dumps are never committed: `build/` is git-ignored, and the repo
 holds only the small dev sample and the derived risk cells.

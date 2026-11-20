@@ -4,7 +4,18 @@
 // and the list of factors -- nearest first, each with its source -- as the
 // reasoning behind it.
 
-import { loadRiskCell } from "./data";
+import "./coast.css";
+import {
+  cellsFor,
+  COAST_RADIUS_M,
+  metres,
+  NONE_TEXT,
+  shownName,
+  summarize,
+  waterText,
+  type CoastSummary,
+} from "./coast";
+import { loadCoastCell, loadRiskCell } from "./data";
 import { h, extLink } from "./dom";
 import { bboxAround, cellKeys, formatDistance } from "./geo";
 import { riskColor } from "./layers";
@@ -42,6 +53,9 @@ import {
 
 export const RADII_M = [1000, 2000, 5000] as const;
 
+/** "Kysten her" rows shown before "+ N flere". */
+export const COAST_ROWS = 4;
+
 export const DISCLAIMER =
   "Kort og varslinger er værktøjer til at identificere potentielle risici – ikke en garanti for, at en lokalitet eller den indsamlede tang er fri for forurening.";
 
@@ -51,7 +65,14 @@ export interface RiskPanelHooks {
   /** The traffic light for `pin` each time the panel draws it ("pending"
    * until its inputs have answered); the pin's card (tapcard.ts) shows it. */
   onVerdict?(pin: [number, number], level: Level | "pending"): void;
+  /** "Kysten her" for `pin` as it arrives (null: no coast data for this
+   * area); the pin's card shows a line of it. */
+  onCoast?(pin: [number, number], coast: CoastState): void;
 }
+
+/** The coast at the pin (coast.ts): null when the payload has no coast data
+ * for the area (an old payload, or outside the dev sample). */
+export type CoastState = CoastSummary | null | "loading" | "error";
 
 type Pending<T> = T | "loading" | "error";
 
@@ -69,6 +90,11 @@ export class RiskPanel {
   private namedStreams: Pending<unknown | null> = "loading";
   private smallStreams: Pending<unknown | null> = "loading";
   private protectedAreas: Pending<LiveResult<ProtectedArea>> = "loading";
+  private coast: CoastState = "loading";
+  /** "+ N flere" opened, kept across redraws for the same pin. */
+  private coastMoreOpen = false;
+  /** "Prøv igen" was pressed: the coast card keeps the focus until it answers. */
+  private focusCoast = false;
   private abort: AbortController | null = null;
   /** The traffic light last reported through onVerdict, and for which pin. */
   private reported: { pin: [number, number]; level: Level | "pending" } | null = null;
@@ -92,6 +118,7 @@ export class RiskPanel {
     this.abort = new AbortController();
     const signal = this.abort.signal;
     this.items = this.rain = this.wind = this.water = this.soil = this.protectedAreas = "loading";
+    this.coastMoreOpen = this.focusCoast = false;
     this.namedStreams = this.smallStreams = "loading";
     this.render();
 
@@ -127,6 +154,25 @@ export class RiskPanel {
     void queryNamedStreams(pin, signal).then(done((r) => (this.namedStreams = r)));
     void querySmallStreams(pin, signal).then(done((r) => (this.smallStreams = r)));
     void queryProtected(pin, signal).then(done((r) => (this.protectedAreas = r)));
+    this.fetchCoast(pin, signal);
+  }
+
+  /** "Kysten her": the coast cells round the pin (fetched once each). */
+  private fetchCoast(pin: [number, number], signal: AbortSignal): void {
+    const set = (state: CoastState): void => {
+      if (signal.aborted) return;
+      this.coast = state;
+      this.hooks.onCoast?.(pin, state);
+      this.render();
+    };
+    set("loading");
+    const index = this.manifest.coast;
+    const keys = index ? cellsFor(index, pin) : null;
+    if (!keys) return set(null);
+    Promise.all(keys.map(loadCoastCell)).then(
+      (cells) => set(summarize(cells, pin)),
+      () => set("error"),
+    );
   }
 
   private async loadItems(pin: [number, number]): Promise<RiskItem[]> {
@@ -164,9 +210,15 @@ export class RiskPanel {
       );
       return;
     }
+    const coast = this.coastCard();
+    // Each redraw replaces the card: a focus on it (or on its "Prøv igen")
+    // goes to the new card.
+    const keepFocus = this.focusCoast || document.activeElement?.closest?.("#coast-card") != null;
+    if (this.focusCoast && this.coast !== "loading") this.focusCoast = false;
     this.root.replaceChildren(
       this.verdictCard(),
       h("p", { class: "disclaimer" }, DISCLAIMER),
+      ...(coast ? [coast] : []),
       this.rainCard(),
       this.windCard(),
       this.waterCard(),
@@ -192,6 +244,7 @@ export class RiskPanel {
       this.soilCard(),
       this.linksCard(),
     );
+    if (keepFocus && coast) coast.focus({ preventScroll: true });
   }
 
   /** Watercourses known so far; null if the named query failed. Small streams
@@ -295,6 +348,95 @@ export class RiskPanel {
             "Udkast – reglerne er endnu ikke godkendt af en fagperson",
           )
         : h("p", { class: "note" }, "Reglerne er gennemgået af en fagperson (november 2026)."),
+    );
+  }
+
+  /** What the shore is like and how far the water is (OpenStreetMap). Only
+   * how it is mapped: never whether the place is good or safe to collect. */
+  private coastCard(): HTMLElement | null {
+    const card = this.coastBody();
+    if (card) {
+      card.id = "coast-card";
+      card.tabIndex = -1;
+      card.classList.add("coast");
+    }
+    return card;
+  }
+
+  private coastBody(): HTMLElement | null {
+    const title = "Kysten her";
+    const c = this.coast;
+    if (c === null) return null;
+    const source = h("p", { class: "note" }, "OpenStreetMap – kan være ufuldstændigt.");
+    if (c === "loading") return this.card(title, h("p", { class: "loading" }, "Henter…"));
+    if (c === "error") {
+      const pin = this.pin;
+      return this.card(
+        title,
+        h("p", { class: "error" }, "Kunne ikke hentes lige nu."),
+        pin
+          ? h(
+              "button",
+              {
+                type: "button",
+                class: "retry",
+                onclick: () => {
+                  // the button is about to go: the focus moves to its card
+                  this.focusCoast = true;
+                  this.fetchCoast(pin, this.abort?.signal ?? new AbortController().signal);
+                },
+              },
+              "Prøv igen",
+            )
+          : null,
+      );
+    }
+    if (!c.water && c.nearby.length === 0)
+      return this.card(title, h("p", { class: "coast__water" }, `${NONE_TEXT}.`), source);
+    const row = (n: CoastSummary["nearby"][number]): HTMLElement => {
+      const name = shownName(n.feature);
+      return h(
+        "li",
+        {},
+        h("span", { class: "coast__kind" }, n.label),
+        name ? h("span", { class: "coast__name" }, ` – ${name}`) : null,
+        h("span", { class: "coast__dist" }, n.distanceM < 15 ? "ved nålen" : metres(n.distanceM)),
+      );
+    };
+    // The first few, the rest folded, so the risk factors below stay near.
+    // never fold a single row: "+ 1 mere" hiding one line saves nothing
+    const fold = c.nearby.length > COAST_ROWS + 1;
+    const shown = fold ? c.nearby.slice(0, COAST_ROWS) : c.nearby.slice(0, COAST_ROWS + 1);
+    const more = fold ? c.nearby.slice(COAST_ROWS, 8) : [];
+    const folded = more.length
+      ? h(
+          "details",
+          {
+            class: "coast__more",
+            open: this.coastMoreOpen,
+            ontoggle: (e: Event) => (this.coastMoreOpen = (e.target as HTMLDetailsElement).open),
+          },
+          h(
+            "summary",
+            {},
+            h("span", { class: "coast__more-closed" }, `+ ${more.length} flere`),
+            h("span", { class: "coast__more-open" }, "Vis færre"),
+          ),
+          h("ul", { class: "coast__list" }, ...more.map(row)),
+        )
+      : null;
+    return this.card(
+      title,
+      c.water ? h("p", { class: "coast__water" }, h("strong", {}, waterText(c.water))) : null,
+      shown.length
+        ? h("ul", { class: "coast__list" }, ...shown.map(row))
+        : h(
+            "p",
+            {},
+            `Ingen strande, havne, broer eller skrænter kortlagt inden for ${COAST_RADIUS_M / 1000} km.`,
+          ),
+      folded,
+      source,
     );
   }
 

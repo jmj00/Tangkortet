@@ -12,6 +12,8 @@ export interface Attribution {
   weather: string;
   /** Since the species photos (2026-11); absent in older payloads. */
   photos?: string;
+  /** The OpenStreetMap coast cells (ODbL); absent in older payloads. */
+  coast?: string;
 }
 
 export interface SpeciesSummary {
@@ -63,6 +65,46 @@ export interface Manifest {
   attribution: Attribution;
   species: SpeciesSummary[];
   risk: RiskIndex | null;
+  /** Absent in payloads from before the coast cells. */
+  coast?: CoastIndex | null;
+}
+
+/** The OpenStreetMap coast cells (pipeline/ingest/coast.py). ODbL. */
+export interface CoastIndex {
+  cell_deg: number;
+  /** Cell keys that have a file, as for the risk cells. */
+  cells: string[];
+  /** The cells the data was cut to (the dev sample), or null for Denmark. */
+  coverage: string[] | null;
+  source: string;
+  license: string;
+  /** https://opendatacommons.org/licenses/odbl/1-0/ */
+  license_url?: string;
+  osm_timestamp?: string | null;
+}
+
+export type CoastKind =
+  | "beach"
+  | "sand"
+  | "saltmarsh"
+  | "tidalflat"
+  | "harbour"
+  | "marina"
+  | "pier"
+  | "groyne"
+  | "breakwater"
+  | "cliff"
+  | "coastline";
+
+/** `[id, kind, type, deltas, name?, detail?]`: type "p" point, "l" line, "a"
+ * area (outer ring); deltas `[x0, y0, dx1, dy1, ...]` in 1e-5 degrees; detail
+ * a beach's surface or "bade" for a bathing jetty. */
+export type CoastRow = [string, CoastKind, "p" | "l" | "a", number[], (string | null)?, string?];
+
+/** One coast cell file. */
+export interface CoastCell {
+  coastline: number[][];
+  features: CoastRow[];
 }
 
 /** [lon, lat, year|null, attachment index, depth_m|null, dataset index] */

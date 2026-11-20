@@ -43,3 +43,10 @@ The project's own texts and derived data are licensed
 [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/). Third-party
 data keeps its own licence: see
 [`docs/data-sources.md`](docs/data-sources.md#licences).
+
+**Exception: the coast cells** (`coast/*.json` in the published payload, and
+the sample in `web/public/data/coast/`) are a derivative database of
+OpenStreetMap and are licensed under the
+[Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/1-0/),
+© OpenStreetMap-bidragydere, not CC BY-NC. They are kept as separate files so
+the ODbL covers only them.

@@ -27,7 +27,12 @@ export function openAbout(manifest: Manifest | null): void {
       "ul",
       { class: "plain" },
       ...(manifest
-        ? Object.values(manifest.attribution).map((a) => h("li", {}, a))
+        ? Object.entries(manifest.attribution).map(([key, a]) =>
+            // the coast cells are ODbL: name the licence and link it
+            key === "coast" && manifest.coast?.license_url
+              ? h("li", {}, `${a} (`, extLink(manifest.coast.license_url, "licensen"), ")")
+              : h("li", {}, a),
+          )
         : [h("li", {}, "Henter…")]),
       h(
         "li",

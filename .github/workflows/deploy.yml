@@ -28,8 +28,43 @@ jobs:
           python-version: "3.12"
       - run: pip install -e .
 
-      - name: Build the payload (GBIF + MiljøGIS)
-        run: python -m pipeline.build --out web/public/data
+      # The coast cells come from Geofabrik's OpenStreetMap extract for
+      # Denmark (~500 MB, ODbL), downloaded once per ISO week and kept in the
+      # Actions cache; with a warm cache the coast adds about half a minute.
+      # Geofabrik down: last week's cached extract is used (restore-keys);
+      # with no extract at all the build keeps the committed coast index
+      # (the dev sample), and the app shows "Kysten her" only inside it.
+      - name: Week of the OpenStreetMap extract
+        id: osm-week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+      - name: Restore the OpenStreetMap extract
+        id: osm-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/osm/denmark-latest.osm.pbf
+          key: osm-denmark-${{ steps.osm-week.outputs.week }}
+          restore-keys: osm-denmark-
+      - name: Download this week's OpenStreetMap extract (Geofabrik)
+        id: osm-download
+        if: steps.osm-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        run: scripts/fetch_osm_extract.sh build/osm/denmark-latest.osm.pbf
+      - name: Save the OpenStreetMap extract
+        if: steps.osm-download.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: build/osm/denmark-latest.osm.pbf
+          key: osm-denmark-${{ steps.osm-week.outputs.week }}
+
+      - name: Build the payload (GBIF + MiljøGIS + OpenStreetMap coast)
+        run: |
+          pbf=build/osm/denmark-latest.osm.pbf
+          if [ -s "$pbf" ]; then
+            python -m pipeline.build --out web/public/data --coast "$pbf"
+          else
+            echo "::warning::No OpenStreetMap extract; keeping the committed coast index"
+            python -m pipeline.build --out web/public/data
+          fi
 
       - uses: actions/setup-node@v4
         with:

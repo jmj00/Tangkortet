@@ -13,10 +13,12 @@
 // Screen readers hear a new pin's place once, the traffic light once it has
 // settled (and again only if it changes level), not every redraw.
 
+import { summaryLine } from "./coast";
 import { formatDistance } from "./geo";
 import { loadPlaceIndex, loadedPlaceIndex, nearestPlace, type NearestPlace } from "./placeindex";
 import { findsNear, NEAR_PIN_M } from "./species";
 import type { SpeciesDoc } from "./types";
+import type { CoastState } from "./riskpanel";
 import { LEVEL_TEXT, type Level } from "./verdict";
 
 export type VerdictState = Level | "pending";
@@ -114,6 +116,17 @@ export function splitText(finds: FindsSummary): string {
   return parts.length ? `${where}: ${parts.join(", ")}` : where;
 }
 
+/** The coast in one line (the sidebar shows it under the buttons; on a
+ * phone the sheet's peek has no room, and the Risiko tab has it in full).
+ * null: nothing to say (no coast data for the area). */
+export function coastText(coast: CoastState): string | null {
+  if (coast === null) return null;
+  if (coast === "loading") return "Kysten: henter…";
+  if (coast === "error") return "Kysten: kunne ikke hentes";
+  const line = summaryLine(coast);
+  return coast.water || coast.nearby.length ? `Kysten: ${line}` : line;
+}
+
 const same = (a: [number, number] | null, b: [number, number]): boolean =>
   a !== null && a[0] === b[0] && a[1] === b[1];
 
@@ -134,6 +147,7 @@ export class TapCard {
   private place: NearestPlace | null = null;
   private verdict: VerdictState = "pending";
   private finds: FindsSummary | "loading" | "error" = "loading";
+  private coast: CoastState = "loading";
   private focusText: string | null = null;
   /** The level last announced for this pin, so a redraw is not repeated. */
   private announcedLevel: Level | null = null;
@@ -151,6 +165,7 @@ export class TapCard {
   private readonly findsLabel: HTMLSpanElement;
   private readonly findsNear: HTMLSpanElement;
   private readonly findsSplit: HTMLSpanElement;
+  private readonly coastEl: HTMLParagraphElement;
   private readonly live: HTMLParagraphElement;
 
   constructor(
@@ -199,10 +214,12 @@ export class TapCard {
     this.actions = el("div", "tapcard__actions");
     this.actions.append(this.riskButton, this.findsButton);
 
+    this.coastEl = el("p", "tapcard__coast");
+
     this.live = el("p", "sr-only");
     this.live.setAttribute("role", "status");
 
-    root.replaceChildren(this.where, this.actions, this.live);
+    root.replaceChildren(this.where, this.actions, this.coastEl, this.live);
     this.render();
   }
 
@@ -213,6 +230,7 @@ export class TapCard {
     this.place = null;
     this.verdict = "pending";
     this.finds = "loading";
+    this.coast = "loading";
     this.focusText = null;
     this.announcedLevel = null;
     this.placeAnnounced = false;
@@ -263,6 +281,12 @@ export class TapCard {
     this.render();
   }
 
+  setCoast(pin: [number, number], coast: CoastState): void {
+    if (!same(this.pin, pin)) return;
+    this.coast = coast;
+    this.render();
+  }
+
   /** A risk item chosen in the list: said in place of the place until the
    * next pin. */
   setFocus(text: string): void {
@@ -307,6 +331,10 @@ export class TapCard {
     const pin = this.pin;
     this.root.dataset.state = pin ? "pin" : "empty";
     this.actions.hidden = !pin;
+    const coast = pin ? coastText(this.coast) : null;
+    this.coastEl.hidden = coast === null;
+    this.coastEl.textContent = coast ?? "";
+    this.coastEl.dataset.state = typeof this.coast === "string" ? this.coast : "done";
     if (!pin) {
       this.placeEl.textContent = EMPTY_TEXT;
       this.coordsEl.textContent = "";

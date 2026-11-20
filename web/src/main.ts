@@ -7,6 +7,7 @@ import { flyCamera, fitCamera, mapInsets, popupAnchor, ringBounds } from "./came
 import { loadAllSpecies, loadManifest, loadSpecies } from "./data";
 import { formatDistance } from "./geo";
 import { renderGuide } from "./guide";
+import { initCoastMap } from "./coastmap";
 import { formatHash, parseHash, type Tab } from "./hash";
 import { findCard, type FindProps } from "./findcard";
 import {
@@ -335,6 +336,8 @@ manifestReady
         }
       },
     });
+    // the coast (OpenStreetMap) under everything else, from zoom 13
+    onMap((map) => initCoastMap(map, m.coast));
     if (initial.species) speciesPanel.selectBySlug(initial.species);
     resolvePanel(speciesPanel);
     riskPanel = new RiskPanel(document.getElementById("tab-risiko") as HTMLElement, m, {
@@ -351,6 +354,7 @@ manifestReady
         void flyTo([item.lon, item.lat], 15);
       },
       onVerdict: (p, level) => tapCard.setVerdict(p, level),
+      onCoast: (p, coast) => tapCard.setCoast(p, coast),
     });
     if (pin) applyPin(pin);
   })

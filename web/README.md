@@ -16,7 +16,11 @@ Mobile-first PWA: a MapLibre map of the Danish coast with three tabs.
   the expert's freshness check for drift tang); the coastal water body's status;
   mapped sources within 1/2/5 km from the precomputed grid cells
   (`src/risk.ts`); soil contamination V1/V2 within 1 km; Natura 2000 /
-  fredninger.
+  fredninger. Under the traffic light, "Kysten her": the distance to the
+  water and the nearest beach (sand/gravel/stone only when OSM says so),
+  harbour, marina, pier, groyne, breakwater, cliff, salt marsh or tidal flat
+  within 1 km (`src/coast.ts`, from the OpenStreetMap coast cells, ODbL). It
+  says how the shore is mapped, never that a place is good to collect at.
 - **Råd og regler**: the expert's checklist and advice, verbatim from the brief.
 
 Shareable links: `#pin=<lat>,<lon>&tab=<arter|risiko|guide>&art=<slug>`. A visit
@@ -38,7 +42,13 @@ npm run lint && npm run format:check && npm run test && npm run build
 
 `public/data/` is a committed dev payload: every species, plus risk cells
 around Aarhus Bugt, Mols and Djursland only (`py -m pipeline.build --out
-web/public/data --sample`). Try `#pin=56.15100,10.21900&tab=risiko`.
+web/public/data --sample`). Try `#pin=56.15100,10.21900&tab=risiko`. The
+coast cells (`public/data/coast/`, ODbL) cover the same area plus Mandø in
+the Wadden Sea (`py -m pipeline.build --out web/public/data --sample --coast
+<denmark-latest.osm.pbf> --coast-only`); try `#pin=55.28000,8.53000&tab=risiko`.
+From zoom 13 the map draws them too (`src/coastmap.ts`), under the finds and
+the risk markers. The sidebar card has a one-line summary; a phone shows the
+coast only in the Risiko tab, so the sheet's peek stays as it was.
 
 Without `VITE_DATAFORDELER_API_KEY` (see `.env.example`) the map uses
 OpenStreetMap and the search box finds towns, postal districts and coastal
