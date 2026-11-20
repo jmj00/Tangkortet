@@ -10,6 +10,8 @@ export interface Attribution {
   basemap: string;
   risk: string;
   weather: string;
+  /** Since the species photos (2026-11); absent in older payloads. */
+  photos?: string;
 }
 
 export interface SpeciesSummary {
@@ -21,6 +23,8 @@ export interface SpeciesSummary {
   observation_count: number;
   attachment_counts: Record<Attachment, number>;
   file: string;
+  /** A small rendition of the first photo (iNaturalist `small`), or null. */
+  thumbnail?: string | null;
 }
 
 export interface RiskLayerInfo {
@@ -57,6 +61,18 @@ export interface ExpertFields {
   accumulation: ("jod" | "arsen" | "cadmium")[] | null;
 }
 
+/** A CC0 / CC BY photo hotlinked from iNaturalist (data/images/README.md). */
+export interface SpeciesImage {
+  /** The `large` rendition; thumb.ts derives the others from it. */
+  url: string;
+  credit: string;
+  license: string;
+  photo_url: string | null;
+  observation_url: string | null;
+  /** False until the expert has confirmed the identification. */
+  reviewed: boolean;
+}
+
 export interface SpeciesDoc {
   slug: string;
   /** "" when the national species checklist has no Danish name. */
@@ -76,6 +92,8 @@ export interface SpeciesDoc {
   observation_count: number;
   datasets: { title: string; license: string }[];
   observations: ObservationRow[];
+  /** Absent in payloads from before the photos. */
+  images?: SpeciesImage[];
 }
 
 /** One risk cell file: layer key -> rows (`RiskLayerInfo.fields`). */

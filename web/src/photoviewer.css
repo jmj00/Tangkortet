@@ -1,0 +1,147 @@
+/* Full-screen photo viewer (photoviewer.ts), a modal <dialog> on <body>.
+   From Svampekortet 624fb8b (detail.css). Dark in both colour schemes, as
+   photo viewers are: white text on near-black. */
+.photo-viewer {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: rgb(12 17 18);
+  color: #fff;
+}
+
+.photo-viewer[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.photo-viewer::backdrop {
+  background: rgb(0 0 0 / 0.6);
+}
+
+.photo-viewer__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(0.6rem + env(safe-area-inset-top)) calc(0.8rem + env(safe-area-inset-right)) 0.5rem
+    calc(1rem + env(safe-area-inset-left));
+}
+
+.photo-viewer__count {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.photo-viewer__stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.photo-viewer__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.photo-viewer__img[hidden] {
+  display: none;
+}
+
+.photo-viewer__status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 1rem;
+  color: rgb(255 255 255 / 0.85);
+  text-align: center;
+  pointer-events: none;
+}
+
+.photo-viewer__status[hidden] {
+  display: none;
+}
+
+.photo-viewer__btn {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(40 50 51 / 0.88);
+  color: #fff;
+  cursor: pointer;
+}
+
+.photo-viewer__btn:hover {
+  background: rgb(70 84 85 / 0.95);
+}
+
+.photo-viewer__btn:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+.photo-viewer__prev,
+.photo-viewer__next {
+  position: absolute;
+  top: 50%;
+  margin-top: -1.375rem;
+}
+
+.photo-viewer__prev {
+  left: calc(0.6rem + env(safe-area-inset-left));
+}
+
+.photo-viewer__next {
+  right: calc(0.6rem + env(safe-area-inset-right));
+}
+
+.photo-viewer__foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.7rem 1rem calc(0.9rem + env(safe-area-inset-bottom));
+  text-align: center;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.photo-viewer__foot p {
+  margin: 0;
+}
+
+.photo-viewer__caption {
+  color: rgb(255 255 255 / 0.85);
+}
+
+.photo-viewer__caption a {
+  color: #fff;
+}
+
+@media (pointer: coarse) {
+  .photo-viewer__caption a {
+    display: inline-block;
+    padding-block: 0.7rem;
+    margin-block: -0.7rem;
+  }
+}
+
+.photo-viewer__note {
+  max-width: 34rem;
+  color: #fff;
+  font-weight: 600;
+}

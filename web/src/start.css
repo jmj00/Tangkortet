@@ -858,49 +858,72 @@
   font-weight: 400;
 }
 
+/* Photo tiles (thumb.ts), as Svampekortet's picker (624fb8b, start.css .tile):
+   a fixed 4:3 photo box, the name under it. Two tiles a row on a phone and in
+   the sidebar, more where there is room. */
 .picker__list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
-  gap: 0.4rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 8.5rem), 1fr));
+  gap: 0.8rem 0.6rem;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .pick {
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: 0.6rem;
+  flex-direction: column;
+  gap: 0.35rem;
   width: 100%;
   height: 100%;
-  min-height: 3rem;
-  padding: 0.45rem 0.75rem;
-  border: 1px solid var(--border);
+  min-height: 2.75rem;
+  padding: 0;
+  border: none;
   border-radius: 10px;
-  background: var(--surface);
+  background: none;
   color: var(--ink);
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
 
-@media (hover: hover) {
-  .pick:hover {
-    border-color: var(--border-strong);
-    box-shadow: var(--elev-1);
-  }
+.pick:focus-visible {
+  outline-offset: 3px;
 }
 
-.pick .spp-dot {
-  width: 0.75rem;
-  height: 0.75rem;
+/* and a white-and-dark ring on the photo itself, visible on pale and dark
+   photos alike */
+.pick:focus-visible .pick__photo::after {
+  box-shadow:
+    inset 0 0 0 2px #0d1a1b,
+    inset 0 0 0 5px #fff,
+    inset 0 0 0 7px #0d1a1b;
+}
+
+.pick__photo {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  transition: box-shadow 0.16s ease;
+}
+
+.pick__photo .sp-thumb__icon {
+  width: 34%;
+  height: 34%;
+}
+
+@media (hover: hover) {
+  .pick:hover .pick__photo {
+    box-shadow: 0 0 0 2px var(--accent);
+  }
 }
 
 .pick__text {
   display: flex;
-  flex: 1;
   flex-direction: column;
   min-width: 0;
+  padding: 0 0.1rem;
 }
 
 .pick__name {
@@ -920,8 +943,19 @@
   line-height: 1.3;
 }
 
+/* on the corner of the photo, a solid pill */
 .pick .spp-tag {
-  flex: none;
+  position: absolute;
+  z-index: 2;
+  top: 0.4rem;
+  left: 0.4rem;
+  background: var(--surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pick__photo {
+    transition: none;
+  }
 }
 
 .picker__status {
