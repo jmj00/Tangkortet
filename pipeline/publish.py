@@ -150,6 +150,7 @@ def species_doc(sp: Species, obs: list[Observation]) -> dict[str, Any]:
         "invasive": sp["invasive"],
         "lookalikes": sp["lookalikes"],
         "warnings": sp["warnings"],
+        "toxins": sp["toxins"],
         "scientific_name": sp["scientific_name"],
         "group": sp["group"],
         "gbif_usage_key": sp["gbif_usage_key"],
@@ -190,6 +191,7 @@ def species_summary(doc: dict[str, Any]) -> dict[str, Any]:
         "season_months": doc["expert"]["season_months"],
         # for the list's species-level risk badges (web/src/season.ts riskFlags)
         "accumulation": doc["expert"]["accumulation"],
+        "toxins": doc.get("toxins", []),
         "warnings": doc["warnings"],
         "expert_verified": doc["expert"]["verified"],
         "file": f"species/{doc['slug']}.json",

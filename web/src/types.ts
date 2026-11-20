@@ -35,6 +35,8 @@ export interface SpeciesSummary {
    * the list's species-level risk badges (season.ts riskFlags). */
   accumulation?: ExpertFields["accumulation"];
   warnings?: string[];
+  /** Natural toxins a warning names, e.g. "kainsyre" (pipeline/species.py). */
+  toxins?: string[];
   expert_verified?: boolean;
 }
 
@@ -144,6 +146,8 @@ export interface SpeciesDoc {
   lookalikes: string[];
   /** Danish advice shown prominently (official recommendations, via the expert). */
   warnings: string[];
+  /** Natural toxins a warning names, e.g. "kainsyre". */
+  toxins?: string[];
   expert: ExpertFields;
   observed_depth: { n: number; p10: number; median: number; p90: number } | null;
   attachment_counts: Record<Attachment, number>;

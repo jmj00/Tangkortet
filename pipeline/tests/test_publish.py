@@ -168,3 +168,13 @@ def test_summary_carries_the_species_risk_fields(tmp_path):
     assert summary["warnings"] == sp["warnings"]
     assert summary["expert_verified"] is sp["expert_verified"]
     assert summary["season_months"] is None or isinstance(summary["season_months"], list)
+
+
+def test_toxins_are_explicit_and_named_in_a_warning():
+    from pipeline.species import TARGET_SPECIES
+
+    for sp in TARGET_SPECIES:
+        for toxin in sp["toxins"]:
+            assert any(toxin in w.lower() for w in sp["warnings"]), sp["scientific_name"]
+    palmaria = next(s for s in TARGET_SPECIES if s["scientific_name"] == "Palmaria palmata")
+    assert palmaria["toxins"] == ["kainsyre"]

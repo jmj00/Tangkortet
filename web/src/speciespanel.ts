@@ -626,7 +626,7 @@ export class SpeciesPanel {
    * nothing like the traffic light. On the second line, so the row keeps its
    * height and width. */
   private rowFlags(s: SpeciesSummary): HTMLElement | null {
-    const risks = riskFlags(s.accumulation, s.warnings);
+    const risks = riskFlags(s.accumulation, s.warnings, s.toxins);
     const cue = seasonCue(s.season_months, s.expert_verified);
     if (!s.invasive && risks.length === 0 && !cue) return null;
     const said = [
@@ -1143,7 +1143,7 @@ export class SpeciesPanel {
           h("span", { class: "spp-risk__text" }, text, link ? " " : null, link),
         ),
       );
-    for (const f of riskFlags(doc.expert.accumulation, doc.warnings)) {
+    for (const f of riskFlags(doc.expert.accumulation, doc.warnings, doc.toxins)) {
       item(
         this.riskBadge(f),
         f.inWarning ? "Nævnt under Vigtigt." : `Kan ophobe ${f.label.toLowerCase()}.`,
