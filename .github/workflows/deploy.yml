@@ -7,7 +7,9 @@ name: deploy
 #
 # Needs the same CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID secrets as
 # deploy-review.yml. Optional: VITE_DATAFORDELER_API_KEY (Tangkortet's own key)
-# for the Skærmkort basemap and address search.
+# for the Skærmkort basemap and address search, and DATAFORDELER_CLIENT_ID /
+# DATAFORDELER_CLIENT_SECRET (Tangkortet's own IT system) for the official
+# coastal place names.
 
 on:
   workflow_dispatch: {}
@@ -56,15 +58,68 @@ jobs:
           path: build/osm/denmark-latest.osm.pbf
           key: osm-denmark-${{ steps.osm-week.outputs.week }}
 
-      - name: Build the payload (GBIF + MiljøGIS + OpenStreetMap coast)
+      # Official coastal place names (Danske Stednavne, Klimadatastyrelsen,
+      # CC BY 4.0) need Tangkortet's own Datafordeler IT system; the secrets
+      # reach only the fetch step. The register has been frozen since 2025-09,
+      # so the fetched file is cached per month and any older month's file is
+      # used when this month's fetch fails. No secrets, a failing service and
+      # no cached file at all: the build keeps the committed names index (the
+      # dev sample), so the official names show only inside it.
+      - name: Month of the place names
+        id: sn-month
+        run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+      - name: Restore the place names
+        id: sn-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/stednavne/stednavne.json
+          key: stednavne-v1-${{ steps.sn-month.outputs.month }}
+          restore-keys: stednavne-v1-
+      - name: Fetch the place names (Danske Stednavne)
+        id: sn-fetch
+        if: steps.sn-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        env:
+          DATAFORDELER_CLIENT_ID: ${{ secrets.DATAFORDELER_CLIENT_ID }}
+          DATAFORDELER_CLIENT_SECRET: ${{ secrets.DATAFORDELER_CLIENT_SECRET }}
         run: |
+          if [ -z "$DATAFORDELER_CLIENT_ID" ] || [ -z "$DATAFORDELER_CLIENT_SECRET" ]; then
+            echo "::warning::No Datafordeler secrets; keeping the cached or committed place names"
+            exit 0
+          fi
           pbf=build/osm/denmark-latest.osm.pbf
           if [ -s "$pbf" ]; then
-            python -m pipeline.build --out web/public/data --coast "$pbf"
+            python -m pipeline.ingest.stednavne --coast-pbf "$pbf"
+          else
+            python -m pipeline.ingest.stednavne
+          fi
+          echo "fetched=true" >> "$GITHUB_OUTPUT"
+      - name: Warn when the place names could not be fetched
+        if: steps.sn-fetch.outcome == 'failure'
+        run: echo "::warning::Danske Stednavne failed; keeping the cached or committed place names"
+      - name: Save the place names
+        if: steps.sn-fetch.outputs.fetched == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/stednavne/stednavne.json
+          key: stednavne-v1-${{ steps.sn-month.outputs.month }}
+
+      - name: Build the payload (GBIF + MiljøGIS + OpenStreetMap coast + Stednavne)
+        run: |
+          pbf=build/osm/denmark-latest.osm.pbf
+          names=build/stednavne/stednavne.json
+          args=(--out web/public/data)
+          if [ -s "$pbf" ]; then
+            args+=(--coast "$pbf")
           else
             echo "::warning::No OpenStreetMap extract; keeping the committed coast index"
-            python -m pipeline.build --out web/public/data
           fi
+          if [ -s "$names" ]; then
+            args+=(--names "$names")
+          else
+            echo "::warning::No place names file; keeping the committed names index"
+          fi
+          python -m pipeline.build "${args[@]}"
 
       - uses: actions/setup-node@v4
         with:

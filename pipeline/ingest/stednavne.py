@@ -19,20 +19,20 @@ the names a forager says about the shore and the water:
 
 Landforms, beaches, harbours and the rest are kept only within
 :data:`NEAR_WATER_M` of the sea: many landform types (næs, pynt, ø) also name
-places on lakes (Skanderborg Sø, Silkeborg Langsø). "The sea" is the
-OpenStreetMap coastline (``--coast-pbf``, the extract the coast cells come
-from) or a named water. The waters alone are not enough: the register has no
-Kattegat or Skagerrak, and its bays stop short of the open coast (Blokhus
-Strand, Hirtshals Havn and Anholt Havn are more than 1 km from any of them);
-the coastline alone misses the lagoons OpenStreetMap maps without one
-(Ringkøbing Fjord). Without the extract only the waters are used, with a
-warning. Waters, shallow stones and sea baths are kept as they are.
+places on lakes (Skanderborg Sø, Silkeborg Langsø). "The sea" is a named
+water (the register's waters, Kattegat and Nordsøen included, reach the
+shore) or the OpenStreetMap coastline (``--coast-pbf``, the extract the coast
+cells come from), which keeps a feature by a water the register lacks; on the
+2026-11-20 data the two together keep one dune and one islet more than the
+waters alone. Without the extract only the waters are used, with a warning.
+Waters, shallow stones and sea baths are kept as they are.
 
 Service: Datafordeler's WFS ``Stednavn/STEDNAVNE_BEARBEJDET_GML3SFP``, with an
 OAuth bearer token (pipeline/datafordeler.py). ``propertyName`` gives HTTP
 400, so whole features are fetched; ``cql_filter`` selects the types. The
 ``urn:ogc:def:crs:EPSG::4326`` responses are in **lat, lon** order and are
-swapped here. The name is the primary one, ``navn_1.skrivemaade``. The GML
+swapped here. The name is the primary one (``brugsprioritet`` primær,
+usually ``navn_1.skrivemaade``). The GML
 parsing is adapted from Svampekortet 624fb8b (pipeline/ingest/stednavne.py).
 
 Licence: Klimadatastyrelsen's free data, **CC BY 4.0**, credit "Indeholder
@@ -180,7 +180,22 @@ class NameFeature:
 # --- GML (regexes, as Svampekortet: one feature shape, no XML library) ---
 
 _ID_RE = re.compile(r"<sn:id\.lokalId>([^<]+)</sn:id\.lokalId>")
-_NAME_RE = re.compile(r"<sn:navn_1\.skrivemaade>([^<]+)</sn:navn_1\.skrivemaade>")
+_NAME_RE = re.compile(r"<sn:navn_(\d+)\.skrivemaade>([^<]+)</sn:navn_\1\.skrivemaade>")
+_PRIORITY_RE = re.compile(r"<sn:navn_(\d+)\.brugsprioritet>([^<]+)</sn:navn_\1\.brugsprioritet>")
+
+
+def primary_name(member: str) -> str | None:
+    """The name whose ``brugsprioritet`` is ``primær`` (usually navn_1, but
+    some waters have only a navn_2, e.g. Løgstør Bredning), else the first."""
+    names = {int(n): html.unescape(v) for n, v in _NAME_RE.findall(member)}
+    if not names:
+        return None
+    for n, priority in _PRIORITY_RE.findall(member):
+        if html.unescape(priority).strip() == "primær" and int(n) in names:
+            return names[int(n)]
+    return names[min(names)]
+
+
 _POSLIST_RE = re.compile(r"<gml:posList[^>]*>([^<]+)</gml:posList>")
 _POS_RE = re.compile(r"<gml:pos[^L>]*>([^<]+)</gml:pos>")
 _POLYGON_RE = re.compile(r"<gml:Polygon\b.*?</gml:Polygon>", re.DOTALL)
@@ -216,8 +231,8 @@ def parse_page(xml_text: str, query: Query) -> tuple[int, list[RawFeature]]:
     members = member_re.findall(xml_text)
     out: list[RawFeature] = []
     for m in members:
-        id_m, name_m, type_m = _ID_RE.search(m), _NAME_RE.search(m), type_re.search(m)
-        if not (id_m and name_m and type_m):
+        id_m, raw_name, type_m = _ID_RE.search(m), primary_name(m), type_re.search(m)
+        if not (id_m and raw_name and type_m):
             continue
         value = html.unescape(type_m.group(1)).strip()
         if value not in query.values:
@@ -246,7 +261,7 @@ def parse_page(xml_text: str, query: Query) -> tuple[int, list[RawFeature]]:
         ]
         if not (polygons or lines or points):
             continue
-        name = re.sub(r"\s+", " ", html.unescape(name_m.group(1))).strip()
+        name = re.sub(r"\s+", " ", raw_name).strip()
         out.append(
             RawFeature(id_m.group(1), kind_of(query.typename, value), name, polygons, lines, points)
         )

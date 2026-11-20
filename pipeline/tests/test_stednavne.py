@@ -183,3 +183,16 @@ def test_no_secret_in_the_published_files(tmp_path):
     extract = sn.prepare(raw_features())
     doc = json.dumps(sn.to_json(extract))
     assert not re.search(r"(?i)secret|token|bearer", doc)
+
+
+def test_the_primary_name_may_be_navn_2():
+    member = (
+        "<sn:navn_1.skrivemaade>Gammelt</sn:navn_1.skrivemaade>"
+        "<sn:navn_1.brugsprioritet>sekundær</sn:navn_1.brugsprioritet>"
+        "<sn:navn_2.skrivemaade>Løgstør Bredning</sn:navn_2.skrivemaade>"
+        "<sn:navn_2.brugsprioritet>primær</sn:navn_2.brugsprioritet>"
+    )
+    assert sn.primary_name(member) == "Løgstør Bredning"
+    assert sn.primary_name(member.replace("primær", "x")) == "Gammelt"  # else the first
+    assert sn.primary_name("<sn:navn_2.skrivemaade>Kun To</sn:navn_2.skrivemaade>") == "Kun To"
+    assert sn.primary_name("") is None
