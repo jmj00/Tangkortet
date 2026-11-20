@@ -1,4 +1,4 @@
-import type { Manifest, RiskCell, SpeciesDoc } from "./types";
+import type { CoastCell, Manifest, RiskCell, SpeciesDoc } from "./types";
 
 // In dev this resolves to web/public/data/. In production it points at wherever
 // the pipeline publishes its payload (set VITE_DATA_BASE at build time).
@@ -56,6 +56,19 @@ export function loadRiskCell(key: string): Promise<RiskCell> {
     pending = getJson<RiskCell>(`risk/${key}.json`);
     pending.catch(() => cellCache.delete(key));
     cellCache.set(key, pending);
+  }
+  return pending;
+}
+
+const coastCache = new Map<string, Promise<CoastCell>>();
+
+/** One OpenStreetMap coast cell (coast.ts); a failed fetch is retried next time. */
+export function loadCoastCell(key: string): Promise<CoastCell> {
+  let pending = coastCache.get(key);
+  if (!pending) {
+    pending = getJson<CoastCell>(`coast/${key}.json`);
+    pending.catch(() => coastCache.delete(key));
+    coastCache.set(key, pending);
   }
   return pending;
 }

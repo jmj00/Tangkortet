@@ -34,9 +34,21 @@ export interface LegendRisk {
   groups: { key: GroupKey; label: string; color: string }[];
 }
 
+/** One row of the coast section (coastmap.ts legendItems). */
+export interface LegendCoastItem {
+  key: string;
+  label: string;
+  color: string;
+  /** The fill's edge colour, for a "fill" swatch. */
+  edge?: string;
+  style: "fill" | "line" | "dash" | "dots";
+}
+
 interface LegendState {
   finds: LegendFinds | null;
   risk: LegendRisk | null;
+  /** The coast kinds drawn in view (zoom 13 and closer), or null. */
+  coast: LegendCoastItem[] | null;
   /** The pin's colour, when a pin is set. */
   pin: string | null;
 }
@@ -92,18 +104,30 @@ function riskMark(color: string): HTMLElement {
   return mark;
 }
 
+function coastMark(item: LegendCoastItem): HTMLElement {
+  const mark = el("span", `map-key__coast map-key__coast--${item.style}`);
+  mark.style.setProperty("--c", item.color);
+  if (item.edge) mark.style.setProperty("--edge", item.edge);
+  mark.setAttribute("aria-hidden", "true");
+  return mark;
+}
+
 const km = (m: number): string => `${String(m / 1000).replace(".", ",")} km`;
 
 /** Pure: the closed key's one-line description, for its accessible name. */
-export function legendSummary(state: Pick<LegendState, "finds" | "risk">): string {
+export function legendSummary(
+  state: Pick<LegendState, "finds" | "risk"> & { coast?: LegendCoastItem[] | null },
+): string {
   const parts: string[] = [];
   if (state.finds) parts.push(`fund af ${state.finds.name}`);
   if (state.risk) parts.push(`mulige kilder inden for ${km(state.risk.radiusM)}`);
+  if (state.coast?.length) parts.push("kysten");
+  if (parts.length > 2) return `${parts.slice(0, -1).join(", ")} og ${parts[parts.length - 1]}`;
   return parts.join(" og ");
 }
 
 export class MapLegend {
-  private state: LegendState = { finds: null, risk: null, pin: null };
+  private state: LegendState = { finds: null, risk: null, coast: null, pin: null };
   private readonly root: HTMLDivElement;
   private readonly toggle: HTMLButtonElement;
   private readonly summary: HTMLSpanElement;
@@ -235,9 +259,9 @@ export class MapLegend {
   }
 
   private render(): void {
-    const { finds, risk, pin } = this.state;
+    const { finds, risk, coast, pin } = this.state;
     // The pin alone needs no key.
-    this.root.hidden = !finds && !risk;
+    this.root.hidden = !finds && !risk && !coast?.length;
     this.panel.replaceChildren();
     this.summary.replaceChildren();
     if (this.root.hidden) return;
@@ -264,6 +288,13 @@ export class MapLegend {
       this.summary.append(group);
     } else if (pin) {
       this.panel.append(this.pinSection(pin));
+    }
+    if (coast?.length) {
+      this.panel.append(this.coastSection(coast));
+      const group = el("span", "map-key__summary-group");
+      for (const item of coast.slice(0, 3)) group.append(coastMark(item));
+      group.append(el("span", undefined, "kyst"));
+      this.summary.append(group);
     }
     this.toggle.setAttribute("aria-label", `Signaturforklaring: ${legendSummary(this.state)}`);
   }
@@ -311,6 +342,19 @@ export class MapLegend {
     ring.append(ringMark, el("span", undefined, `Søgeradius, ${km(risk.radiusM)}`));
     around.append(ring);
     section.append(list, around);
+    return section;
+  }
+
+  private coastSection(items: LegendCoastItem[]): HTMLElement {
+    const section = el("section", "map-key__section");
+    section.append(el("h3", "map-key__title", "Kysten"));
+    const list = el("ul", "map-key__list");
+    for (const item of items) {
+      const row = el("li", "map-key__row");
+      row.append(coastMark(item), el("span", undefined, item.label));
+      list.append(row);
+    }
+    section.append(list, el("p", "map-key__hint", "OpenStreetMap – kan være ufuldstændigt."));
     return section;
   }
 

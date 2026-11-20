@@ -4,7 +4,17 @@
 // and the list of factors -- nearest first, each with its source -- as the
 // reasoning behind it.
 
-import { loadRiskCell } from "./data";
+import "./coast.css";
+import {
+  cellsFor,
+  COAST_RADIUS_M,
+  metres,
+  shownName,
+  summarize,
+  waterText,
+  type CoastSummary,
+} from "./coast";
+import { loadCoastCell, loadRiskCell } from "./data";
 import { h, extLink } from "./dom";
 import { bboxAround, cellKeys, formatDistance } from "./geo";
 import { riskColor } from "./layers";
@@ -51,7 +61,14 @@ export interface RiskPanelHooks {
   /** The traffic light for `pin` each time the panel draws it ("pending"
    * until its inputs have answered); the pin's card (tapcard.ts) shows it. */
   onVerdict?(pin: [number, number], level: Level | "pending"): void;
+  /** "Kysten her" for `pin` as it arrives (null: no coast data for this
+   * area); the pin's card shows a line of it. */
+  onCoast?(pin: [number, number], coast: CoastState): void;
 }
+
+/** The coast at the pin (coast.ts): null when the payload has no coast data
+ * for the area (an old payload, or outside the dev sample). */
+export type CoastState = CoastSummary | null | "loading" | "error";
 
 type Pending<T> = T | "loading" | "error";
 
@@ -69,6 +86,7 @@ export class RiskPanel {
   private namedStreams: Pending<unknown | null> = "loading";
   private smallStreams: Pending<unknown | null> = "loading";
   private protectedAreas: Pending<LiveResult<ProtectedArea>> = "loading";
+  private coast: CoastState = "loading";
   private abort: AbortController | null = null;
   /** The traffic light last reported through onVerdict, and for which pin. */
   private reported: { pin: [number, number]; level: Level | "pending" } | null = null;
@@ -127,6 +145,25 @@ export class RiskPanel {
     void queryNamedStreams(pin, signal).then(done((r) => (this.namedStreams = r)));
     void querySmallStreams(pin, signal).then(done((r) => (this.smallStreams = r)));
     void queryProtected(pin, signal).then(done((r) => (this.protectedAreas = r)));
+    this.fetchCoast(pin, signal);
+  }
+
+  /** "Kysten her": the coast cells round the pin (fetched once each). */
+  private fetchCoast(pin: [number, number], signal: AbortSignal): void {
+    const set = (state: CoastState): void => {
+      if (signal.aborted) return;
+      this.coast = state;
+      this.hooks.onCoast?.(pin, state);
+      this.render();
+    };
+    set("loading");
+    const index = this.manifest.coast;
+    const keys = index ? cellsFor(index, pin) : null;
+    if (!keys) return set(null);
+    Promise.all(keys.map(loadCoastCell)).then(
+      (cells) => set(summarize(cells, pin)),
+      () => set("error"),
+    );
   }
 
   private async loadItems(pin: [number, number]): Promise<RiskItem[]> {
@@ -164,9 +201,11 @@ export class RiskPanel {
       );
       return;
     }
+    const coast = this.coastCard();
     this.root.replaceChildren(
       this.verdictCard(),
       h("p", { class: "disclaimer" }, DISCLAIMER),
+      ...(coast ? [coast] : []),
       this.rainCard(),
       this.windCard(),
       this.waterCard(),
@@ -295,6 +334,78 @@ export class RiskPanel {
             "Udkast – reglerne er endnu ikke godkendt af en fagperson",
           )
         : h("p", { class: "note" }, "Reglerne er gennemgået af en fagperson (november 2026)."),
+    );
+  }
+
+  /** What the shore is like and how far the water is (OpenStreetMap). Only
+   * how it is mapped: never whether the place is good or safe to collect. */
+  private coastCard(): HTMLElement | null {
+    const card = this.coastBody();
+    if (card) {
+      card.id = "coast-card";
+      card.tabIndex = -1;
+      card.classList.add("coast");
+    }
+    return card;
+  }
+
+  private coastBody(): HTMLElement | null {
+    const title = "Kysten her";
+    const c = this.coast;
+    if (c === null) return null;
+    const source = h("p", { class: "note" }, "OpenStreetMap – kan være ufuldstændigt.");
+    if (c === "loading") return this.card(title, h("p", { class: "loading" }, "Henter…"));
+    if (c === "error") {
+      const pin = this.pin;
+      return this.card(
+        title,
+        h("p", { class: "error" }, "Kunne ikke hentes lige nu."),
+        pin
+          ? h(
+              "button",
+              {
+                type: "button",
+                class: "retry",
+                onclick: () => {
+                  this.fetchCoast(pin, this.abort?.signal ?? new AbortController().signal);
+                  // the button is gone: keep the focus on the card it was in
+                  this.root.querySelector<HTMLElement>("#coast-card")?.focus();
+                },
+              },
+              "Prøv igen",
+            )
+          : null,
+      );
+    }
+    const km = `${COAST_RADIUS_M / 1000} km`;
+    const water = c.water
+      ? h("p", { class: "coast__water" }, h("strong", {}, waterText(c.water)))
+      : h("p", { class: "coast__water" }, `Ingen kystlinje inden for ${km}.`);
+    const list = c.nearby.slice(0, 6);
+    return this.card(
+      title,
+      water,
+      list.length
+        ? h(
+            "ul",
+            { class: "coast__list" },
+            ...list.map((n) => {
+              const name = shownName(n.feature);
+              return h(
+                "li",
+                {},
+                h("span", { class: "coast__kind" }, n.label),
+                name ? h("span", { class: "coast__name" }, ` – ${name}`) : null,
+                h(
+                  "span",
+                  { class: "coast__dist" },
+                  n.distanceM < 15 ? "ved nålen" : metres(n.distanceM),
+                ),
+              );
+            }),
+          )
+        : h("p", {}, `Ingen strande, havne, broer eller klinter kortlagt inden for ${km}.`),
+      source,
     );
   }
 
