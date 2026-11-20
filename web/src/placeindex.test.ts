@@ -96,8 +96,9 @@ describe("matchPlaces on the real list", () => {
     expect(matchPlaces(real, "xqzvw")).toEqual([]);
   });
 
-  it("forgives one slip in a beach name", () => {
+  it("forgives one slip in a beach name, only when no town matches", () => {
     expect(first("Vemmetofte strnd")).toMatchObject({ text: "Vemmetofte Strand", kind: "coast" });
+    expect(texts("Rørvig").filter((t) => t.startsWith("Rødvig"))).toEqual([]);
   });
 
   it("knows Kbh, and æ, ø, å typed as a, o", () => {
@@ -106,6 +107,9 @@ describe("matchPlaces on the real list", () => {
     expect(first("Fano").text).toBe("6720 Fanø");
     expect(first("Romo").text).toBe("6792 Rømø");
     expect(first("Naestved").text).toBe("Næstved");
+    expect(first("Aero").text).toBe("Ærøskøbing");
+    expect(first("Arhus").text).toBe("Aarhus");
+    expect(first("Aarhus").text).toBe("Aarhus");
   });
 
   it("takes a postal number before or after the town, with or without a space", () => {
@@ -202,6 +206,8 @@ describe("helpers", () => {
   it("folds æ, ø, å and finds a beach one slip off", () => {
     expect(foldLetters("rømø")).toBe(foldLetters("romo"));
     expect(foldLetters("næstved")).toBe(foldLetters("naestved"));
+    expect(foldLetters("ærø")).not.toBe(foldLetters("årø"));
+    expect(foldLetters("ærø", true)).toBe(foldLetters("årø", true));
     expect(coastSlip("vemmetofte strand", "vemmetofte strnd")).toBe(0);
     expect(coastSlip("vemmetofte strand øst", "vemmetofte strnd")).toBe(1);
     expect(coastSlip("vemmetofte strand", "skagen")).toBe(-1);

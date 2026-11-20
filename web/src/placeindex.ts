@@ -518,14 +518,19 @@ export function matchPlaces(index: PlaceIndex, query: string): PlaceSuggestion[]
 
   const found = matchName(index, key);
   if (found.length > 0) return found;
-  // "Fano", "Romo", "Kobenhavn": æ, ø and å typed as plain letters
-  const plain = foldLetters(key);
-  const names = [
-    ...index.names.filter((n) => foldLetters(n) === plain),
-    ...index.names.filter((n) => foldLetters(n).startsWith(plain) && foldLetters(n) !== plain),
-    ...index.coast.filter((c) => foldLetters(c.key).startsWith(plain)).map((c) => c.key),
-  ];
-  return names.length > 0 ? matchName(index, names[0]) : [];
+  // "Fano", "Romo", "Kobenhavn": æ, ø and å typed as plain letters. First
+  // with æ as "ae" ("Aero" is Ærø, not Årø), then with æ as "a" too.
+  for (const loose of [false, true]) {
+    const plain = foldLetters(key, loose);
+    const fold = (n: string): string => foldLetters(n, loose);
+    const names = [
+      ...index.names.filter((n) => fold(n) === plain),
+      ...index.names.filter((n) => fold(n).startsWith(plain) && fold(n) !== plain),
+      ...index.coast.filter((c) => fold(c.key).startsWith(plain)).map((c) => c.key),
+    ];
+    if (names.length > 0) return matchName(index, names[0]);
+  }
+  return [];
 }
 
 /** From this many letters a name is searched by its beginning; below it only
@@ -544,8 +549,10 @@ function aliasOf(key: string): string {
 }
 
 /** æ, ø and å as a keyboard without them writes them: "fano", "romo", "arhus". */
-export function foldLetters(key: string): string {
-  return key.replace(/æ|ae/g, "a").replace(/ø/g, "o").replace(/å/g, "a");
+export function foldLetters(key: string, loose = false): string {
+  const strict = key.replace(/æ/g, "ae").replace(/ø/g, "o").replace(/å/g, "a");
+  // loose: æ typed as a plain "a" as well ("Nastved")
+  return loose ? strict.replace(/ae/g, "a") : strict;
 }
 
 /** The places whose name is just `key`: towns (the one it means), postal
@@ -629,7 +636,8 @@ function matchName(index: PlaceIndex, key: string): PlaceSuggestion[] {
     coast.push({ s: coastSuggestion(index, site, rank), tier: 1, size: -site.name.length });
   }
   // a beach name one slip off ("Vemmetofte strnd"), when none has what is typed
-  if (coast.length === 0 && key.length >= 5) {
+  // (and no town has it either: "Rørvig" is not "Rødvig Øst")
+  if (coast.length === 0 && (slipped || keptTowns.length === 0) && key.length >= 5) {
     for (const site of index.coast) {
       const rank = coastSlip(site.key, key);
       if (rank >= 0)
@@ -669,32 +677,92 @@ function uniqueTexts(list: Candidate[]): Candidate[] {
   });
 }
 
-let loaded: PlaceIndex | null = null;
-let loading: Promise<PlaceIndex> | null = null;
+/** How long the place list may take before a search gives up on it. */
+export const LOAD_TIMEOUT_MS = 10_000;
+
+/** Fetches the raw list; aborts when the signal does. */
+export type FetchPlaces = (signal: AbortSignal) => Promise<RawPlaces>;
+
+const fetchPlaces: FetchPlaces = async (signal) => {
+  const res = await fetch(placesUrl, { signal });
+  if (!res.ok) throw new Error(`places.json: HTTP ${res.status}`);
+  return (await res.json()) as RawPlaces;
+};
+
+export interface PlaceLoader {
+  /** The list if it has arrived. */
+  loaded(): PlaceIndex | null;
+  /** The list, fetched once. A fetch that fails, or takes longer than `ms`,
+   * is dropped (and aborted), so the next call fetches afresh; a late answer
+   * from a dropped fetch is ignored. */
+  load(ms?: number): Promise<PlaceIndex>;
+}
+
+export function createPlaceLoader(fetchRaw: FetchPlaces = fetchPlaces): PlaceLoader {
+  let loaded: PlaceIndex | null = null;
+  let current: { id: number; abort: AbortController; promise: Promise<PlaceIndex> } | null = null;
+  let attempts = 0;
+
+  const drop = (id: number): void => {
+    if (current?.id !== id) return; // a newer fetch: leave it be
+    current.abort.abort();
+    current = null;
+  };
+
+  function start(): NonNullable<typeof current> {
+    const id = ++attempts;
+    const abort = new AbortController();
+    const promise = fetchRaw(abort.signal).then(
+      (raw) => {
+        if (current?.id !== id) throw new Error("place list fetch was dropped");
+        loaded = buildPlaceIndex(raw);
+        return loaded;
+      },
+      (err: unknown) => {
+        drop(id);
+        throw err;
+      },
+    );
+    promise.catch(() => {}); // a caller that timed out no longer listens
+    return { id, abort, promise };
+  }
+
+  return {
+    loaded: () => loaded,
+    load(ms = LOAD_TIMEOUT_MS): Promise<PlaceIndex> {
+      if (loaded) return Promise.resolve(loaded);
+      current ??= start();
+      const { id, promise } = current;
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          drop(id);
+          reject(new Error("place list timed out"));
+        }, ms);
+        promise.then(
+          (index) => {
+            clearTimeout(timer);
+            resolve(index);
+          },
+          (err: unknown) => {
+            clearTimeout(timer);
+            reject(err);
+          },
+        );
+      });
+    },
+  };
+}
+
+/** The app's own list (an asset of its build, cached offline by the service
+ * worker like the rest of it). */
+const placeLoader = createPlaceLoader();
 
 /** The list if it has arrived. */
 export function loadedPlaceIndex(): PlaceIndex | null {
-  return loaded;
+  return placeLoader.loaded();
 }
 
-/** The list, fetched once (an asset of the app's own build, cached offline by
- * the service worker like the rest of it). A failed fetch is tried again on
- * the next call. */
+/** The list, or a rejection after LOAD_TIMEOUT_MS; a retry fetches afresh. */
 export function loadPlaceIndex(): Promise<PlaceIndex> {
-  if (!loading) {
-    loading = fetch(placesUrl)
-      .then((res) => {
-        if (!res.ok) throw new Error(`places.json: HTTP ${res.status}`);
-        return res.json() as Promise<RawPlaces>;
-      })
-      .then((raw) => {
-        loaded = buildPlaceIndex(raw);
-        return loaded;
-      })
-      .catch((err: unknown) => {
-        loading = null;
-        throw err;
-      });
-  }
-  return loading;
+  return placeLoader.load();
 }

@@ -12,7 +12,6 @@ import {
   loadedPlaceIndex,
   loadPlaceIndex,
   matchPlaces,
-  type PlaceIndex,
   type PlaceSuggestion,
 } from "./placeindex";
 
@@ -56,14 +55,24 @@ export type SearchState = "idle" | "loading" | "short" | "results" | "empty" | "
  * digits: postal numbers). Fewer letters find only a name that is just them. */
 export const MIN_QUERY = 3;
 
-/** How long the place list may take before the search says it is offline. */
-export const LOAD_TIMEOUT_MS = 10_000;
-
 /** What the field is called, with and without addresses. */
-export function searchWords(addresses: boolean): { placeholder: string; label: string } {
+export function searchWords(addresses: boolean): {
+  placeholder: string;
+  /** For a field too narrow for the whole placeholder (large text, small phone). */
+  short: string;
+  label: string;
+} {
   return addresses
-    ? { placeholder: "Søg by, strand eller adresse…", label: "Søg by, strand eller adresse" }
-    : { placeholder: "Søg by, postnummer eller strand…", label: "Søg by, postnummer eller strand" };
+    ? {
+        placeholder: "Søg by, strand eller adresse…",
+        short: "Søg by eller adresse…",
+        label: "Søg by, strand eller adresse",
+      }
+    : {
+        placeholder: "Søg by, postnummer eller strand…",
+        short: "Søg by eller strand…",
+        label: "Søg by, postnummer eller strand",
+      };
 }
 
 /**
@@ -100,6 +109,9 @@ export function searchMessage(
         : `Adressesøgningen svarer ikke lige nu. Tjek forbindelsen og prøv igen – eller ${verb} på kortet.`;
     case "offline":
       return `Listen over byer og strande kunne ikke hentes. Tjek forbindelsen og prøv igen – eller ${verb} på kortet.`;
+    case "results":
+      // said, not shown: the list is there to see
+      return outcome.shown === 1 ? "1 forslag" : `${outcome.shown} forslag`;
     default:
       return "";
   }
@@ -122,27 +134,6 @@ const placeItem = (s: PlaceSuggestion): ComboItem => ({
   zoom: s.zoom,
 });
 
-/** The place list, or a rejection after `ms` (the fetch goes on: a later
- * search may still get it). */
-export function placeIndexWithin(
-  ms: number,
-  load: () => Promise<PlaceIndex> = loadPlaceIndex,
-): Promise<PlaceIndex> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("place list timed out")), ms);
-    load().then(
-      (index) => {
-        clearTimeout(timer);
-        resolve(index);
-      },
-      (err: unknown) => {
-        clearTimeout(timer);
-        reject(err);
-      },
-    );
-  });
-}
-
 /**
  * The places for what is typed, then (with a key) the addresses. `loading`
  * is told when the search has to wait for the place list.
@@ -161,7 +152,7 @@ export async function search(
   let offline = false;
   try {
     if (!loadedPlaceIndex()) loading();
-    const index = await placeIndexWithin(LOAD_TIMEOUT_MS);
+    const index = await loadPlaceIndex(); // gives up after LOAD_TIMEOUT_MS
     places = matchPlaces(index, query).map(placeItem);
   } catch {
     offline = true;
@@ -221,6 +212,17 @@ export function initPlaceSearch(onPlace: (place: ChosenPlace) => void): void {
   const finePointer = window.matchMedia("(hover: hover) and (pointer: fine)");
   const words = searchWords(ADDRESSES_ENABLED);
 
+  // the whole placeholder where it fits, else the short one (the field's
+  // label keeps the whole description for screen readers)
+  const fitPlaceholder = (): void => {
+    const style = getComputedStyle(input);
+    const room = input.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const ctx = document.createElement("canvas").getContext("2d");
+    if (!ctx || room <= 0) return;
+    ctx.font = style.font || `${style.fontSize} ${style.fontFamily}`;
+    input.placeholder =
+      ctx.measureText(words.placeholder).width <= room ? words.placeholder : words.short;
+  };
   input.placeholder = words.placeholder;
   input.setAttribute("aria-label", words.label);
   listbox.setAttribute(
@@ -228,6 +230,8 @@ export function initPlaceSearch(onPlace: (place: ChosenPlace) => void): void {
     ADDRESSES_ENABLED ? "Forslag til byer, strande og adresser" : "Forslag til byer og strande",
   );
   form.hidden = false;
+  fitPlaceholder();
+  if ("ResizeObserver" in window) new ResizeObserver(fitPlaceholder).observe(input);
   form.addEventListener("submit", (e) => e.preventDefault());
 
   let last: SearchOutcome<SearchState | "chosen"> = { state: "idle", query: "", shown: 0 };
@@ -240,7 +244,8 @@ export function initPlaceSearch(onPlace: (place: ChosenPlace) => void): void {
     // the region stays in the page (a live region added and filled at once
     // may go unread); only its text changes, and it is out of sight when empty
     if (statusText.textContent !== text) statusText.textContent = text;
-    status.classList.toggle("is-empty", text === "");
+    // a result count is for screen readers only
+    status.classList.toggle("is-empty", text === "" || last.state === "results");
     status.dataset.state = last.state;
     retry.hidden = !RETRY.has(last.state);
   };

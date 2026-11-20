@@ -75,6 +75,17 @@ interface LookupResponse {
   husnumre: LookupItem[];
 }
 
+/** How long the address service may take, all requests of one search together. */
+export const ADDRESS_TIMEOUT_MS = 10_000;
+
+/** `signal`, also aborted after `ms` (where the browser can combine signals). */
+export function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal | undefined {
+  if (typeof AbortSignal.timeout !== "function") return signal;
+  const timeout = AbortSignal.timeout(ms);
+  if (!signal) return timeout;
+  return typeof AbortSignal.any === "function" ? AbortSignal.any([signal, timeout]) : signal;
+}
+
 /** The addresses behind the ids, in one request, in the order given. */
 async function lookup(ids: string[], signal?: AbortSignal): Promise<AddressSuggestion[]> {
   if (ids.length === 0) return [];
@@ -160,9 +171,11 @@ export interface AddressResult {
  * name asks nothing: the service would only answer with streets that sound
  * alike. Only the typed text goes to the service. Without a key: nothing.
  */
-export async function searchAddresses(query: string, signal?: AbortSignal): Promise<AddressResult> {
+export async function searchAddresses(query: string, caller?: AbortSignal): Promise<AddressResult> {
   const q = query.trim();
   if (q.length < 3 || !TOKEN) return { addresses: [] };
+  // a service that never answers fails (as "TimeoutError") instead of hanging
+  const signal = withTimeout(caller, ADDRESS_TIMEOUT_MS);
 
   const index = await loadPlaceIndex().catch(() => null); // without it: the query as typed
   if (index && isPlaceName(index, q)) return { addresses: [] };

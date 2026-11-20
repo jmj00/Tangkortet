@@ -1,16 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { mergeHits, preferHits } from "./addresses";
+import { mergeHits, preferHits, withTimeout } from "./addresses";
 import { step } from "./addresscombo";
-import {
-  LOAD_TIMEOUT_MS,
-  missedText,
-  placeIndexWithin,
-  searchMessage,
-  searchWords,
-  type SearchState,
-} from "./placesearch";
-import type { PlaceIndex } from "./placeindex";
+import { missedText, searchMessage, searchWords, type SearchState } from "./placesearch";
+import { createPlaceLoader, LOAD_TIMEOUT_MS, type RawPlaces } from "./placeindex";
 
 const said = (
   state: SearchState | "chosen",
@@ -54,8 +47,9 @@ describe("searchMessage", () => {
     expect(said("loading", "Skagen")).toBe("Henter byer og strande…");
   });
 
-  it("says nothing with results or after a choice", () => {
-    expect(said("results", "Skagen", 3)).toBe("");
+  it("counts the suggestions, and says nothing after a choice", () => {
+    expect(said("results", "Skagen", 3)).toBe("3 forslag");
+    expect(said("results", "Ry", 1)).toBe("1 forslag");
     expect(said("chosen", "Skagen")).toBe("");
   });
 });
@@ -103,20 +97,63 @@ describe("helpers", () => {
   });
 });
 
-describe("placeIndexWithin", () => {
+describe("createPlaceLoader", () => {
   afterEach(() => vi.useRealTimers());
+  const raw: RawPlaces = {
+    postal: [["8600", "Silkeborg", 9.4, 56.1, 9.7, 56.3]],
+    towns: [],
+    coast: [],
+  };
 
-  it("gives up after the timeout, into the offline state", async () => {
+  it("drops a stalled fetch after the timeout, and a retry fetches afresh", async () => {
     vi.useFakeTimers();
-    const never = () => new Promise<PlaceIndex>(() => {});
-    const result = placeIndexWithin(LOAD_TIMEOUT_MS, never);
-    const caught = result.catch((e: Error) => e.message);
+    let resolveFirst: (r: RawPlaces) => void = () => {};
+    const signals: AbortSignal[] = [];
+    let calls = 0;
+    const loader = createPlaceLoader((signal) => {
+      signals.push(signal);
+      calls++;
+      return calls === 1
+        ? new Promise<RawPlaces>((res) => (resolveFirst = res)) // hangs
+        : Promise.resolve(raw);
+    });
+    const first = loader.load(LOAD_TIMEOUT_MS).catch((e: Error) => e.message);
     vi.advanceTimersByTime(LOAD_TIMEOUT_MS);
-    expect(await caught).toBe("place list timed out");
+    expect(await first).toBe("place list timed out");
+    expect(signals[0].aborted).toBe(true);
+    // "Prøv igen"
+    const index = await loader.load(LOAD_TIMEOUT_MS);
+    expect(calls).toBe(2);
+    expect(index.postal[0].postnr).toBe("8600");
+    // the stalled fetch answering late changes nothing
+    resolveFirst({ postal: [["1050", "København K", 12, 55, 13, 56]], towns: [] });
+    await Promise.resolve();
+    expect(loader.loaded()?.postal[0].postnr).toBe("8600");
+    expect(await loader.load()).toBe(index);
+    expect(calls).toBe(2);
   });
 
-  it("passes the list on when it comes in time", async () => {
-    const index = { towns: [] } as unknown as PlaceIndex;
-    await expect(placeIndexWithin(1000, () => Promise.resolve(index))).resolves.toBe(index);
+  it("fetches again after a failure, but only once while one is on its way", async () => {
+    let calls = 0;
+    const loader = createPlaceLoader(() =>
+      ++calls === 1 ? Promise.reject(new Error("offline")) : Promise.resolve(raw),
+    );
+    await expect(loader.load()).rejects.toThrow("offline");
+    const [a, b] = await Promise.all([loader.load(), loader.load()]);
+    expect(a).toBe(b);
+    expect(calls).toBe(2);
+  });
+});
+
+describe("withTimeout", () => {
+  it("gives up on a silent address service, and still follows the caller", async () => {
+    const timed = withTimeout(undefined, 5) as AbortSignal;
+    await new Promise((r) => setTimeout(r, 30));
+    expect(timed.aborted).toBe(true);
+    expect((timed.reason as Error).name).toBe("TimeoutError");
+    const caller = new AbortController();
+    const both = withTimeout(caller.signal, 60_000) as AbortSignal;
+    caller.abort();
+    expect(both.aborted).toBe(true);
   });
 });
