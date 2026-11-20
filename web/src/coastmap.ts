@@ -71,7 +71,7 @@ export const COAST_PALETTE: Record<"light" | "dark", Palette> = {
     pier: "#d8d8e0",
     groyne: "#d9a877",
     cliff: "#ef8f6a",
-    sandOpacity: 0.28,
+    sandOpacity: 0.22,
     wetOpacity: 0.22,
   },
 };

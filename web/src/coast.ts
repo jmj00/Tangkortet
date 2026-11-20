@@ -234,29 +234,32 @@ export function waterText(w: Water): string {
   return `Vandet ${metres(w.distanceM)} væk`;
 }
 
+const info = (f: CoastFeature): number => (f.name ? 2 : 0) + (f.detail ? 1 : 0);
+
 export interface Nearby {
   feature: CoastFeature;
   distanceM: number;
   label: string;
 }
 
-/** The nearest feature of each label within `radiusM`, nearest first. Sand
- * says little where a beach is mapped, so it is left out then. */
+/** The nearest feature of each kind within `radiusM`, nearest first (one
+ * beach, whatever its surface; one pier, bathing jetty or not). Sand says
+ * little where a beach is mapped, so it is left out then. */
 export function nearbyFeatures(
   features: readonly CoastFeature[],
   pin: LonLat,
   radiusM = COAST_RADIUS_M,
 ): Nearby[] {
-  const best = new Map<string, Nearby>();
+  const best = new Map<CoastKind, Nearby>();
   for (const f of features) {
     if (f.kind === "coastline") continue;
     const d = featureDistance(f, pin);
     if (d > radiusM) continue;
-    const label = kindLabel(f);
-    const known = best.get(label);
-    // equally near: the named one (a beach's name is worth more)
-    if (!known || d < known.distanceM || (d === known.distanceM && !known.feature.name && f.name))
-      best.set(label, { feature: f, distanceM: d, label });
+    const known = best.get(f.kind);
+    // as near (both under the pin): the one that says more, a name or a surface
+    const better =
+      !known || d < known.distanceM || (d === known.distanceM && info(f) > info(known.feature));
+    if (better) best.set(f.kind, { feature: f, distanceM: d, label: kindLabel(f) });
   }
   let list = [...best.values()];
   if (list.some((n) => n.feature.kind === "beach"))

@@ -9,6 +9,7 @@ import {
   cellsFor,
   COAST_RADIUS_M,
   metres,
+  NONE_TEXT,
   shownName,
   summarize,
   waterText,
@@ -378,6 +379,8 @@ export class RiskPanel {
       );
     }
     const km = `${COAST_RADIUS_M / 1000} km`;
+    if (!c.water && c.nearby.length === 0)
+      return this.card(title, h("p", { class: "coast__water" }, `${NONE_TEXT}.`), source);
     const water = c.water
       ? h("p", { class: "coast__water" }, h("strong", {}, waterText(c.water)))
       : h("p", { class: "coast__water" }, `Ingen kystlinje inden for ${km}.`);
