@@ -217,6 +217,44 @@ export async function querySmallStreams(
   }
 }
 
+/** Which way is the sea? 16 points 1 km from the pin (index 0 = north,
+ * clockwise in 22.5° steps), each tested against the coastal water bodies.
+ * Used to count only onshore wind (wind.ts). null = the query failed. */
+export async function querySeaDirections(
+  pin: [number, number],
+  signal?: AbortSignal,
+): Promise<boolean[] | null> {
+  const [x, y] = wgs84ToUtm32n(...pin);
+  const one = async (i: number) => {
+    const a = (i * 22.5 * Math.PI) / 180;
+    const px = x + SEA_PROBE_M * Math.sin(a);
+    const py = y + SEA_PROBE_M * Math.cos(a);
+    const params = new URLSearchParams({
+      service: "WFS",
+      version: "2.0.0",
+      request: "GetFeature",
+      typeNames: "vp3_2endelig2025:vp3_2e2025_marin_samlet",
+      resultType: "hits",
+      CQL_FILTER: `INTERSECTS(wkb_geometry,POINT(${px.toFixed(1)} ${py.toFixed(1)}))`,
+    });
+    const res = await fetch(`${MILJOEGIS}?${params}`, { signal: withTimeout(signal, TIMEOUT_MS) });
+    if (!res.ok) throw new Error(`${res.status}`);
+    return isHit(await res.text());
+  };
+  try {
+    return await Promise.all(Array.from({ length: 16 }, (_, i) => one(i)));
+  } catch (err) {
+    if ((err as Error).name !== "AbortError") console.warn("sea direction query failed", err);
+    return null;
+  }
+}
+
+/** A WFS hits response: true if any feature matched. */
+export function isHit(xml: string): boolean {
+  const m = xml.match(/numberMatched="(\d+)"/);
+  return m !== null && Number(m[1]) > 0;
+}
+
 export function queryWaterBodies(
   pin: [number, number],
   signal?: AbortSignal,
@@ -260,3 +298,4 @@ export function querySoil(
 
 export const SOIL_RADIUS_M = NEAR_M.soil;
 export const STREAM_RADIUS_M = NEAR_M.stream;
+const SEA_PROBE_M = 1000;

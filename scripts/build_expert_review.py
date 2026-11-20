@@ -189,8 +189,8 @@ def _followup2() -> str:
   kainsyre i søl; arsen i butblæret sargassotang; Ulva fenestrata (Almindelig søsalat) i
   stedet for Ulva lactuca; fem nye arter (kortene ligger nederst); risikofaktorerne sorteret
   efter din vægtning; trafiklysets regler justeret, og din regel om å-udløb inden for 200 m
-  tilføjet; Fødevarestyrelsens råd og regler i "Før du går"; og en velkomstbesked. Vinden
-  (kun pålandsvind, frisk i ca. 1 døgn) er på vej.</p>
+  tilføjet; Fødevarestyrelsens råd og regler i "Før du går"; og en velkomstbesked. Vinden:
+  kun pålandsvind tæller nu, og opskyllet tang regnes som frisk i ca. 1 døgn efter blæsten.</p>
 
 <section class="card q" data-group="q2.sargassum">
   <h3>Butblæret sargassotang</h3>

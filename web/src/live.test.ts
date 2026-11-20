@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseProtected, parseSoil, parseStreams, parseWaterBodies } from "./live";
+import { isHit, parseProtected, parseSoil, parseStreams, parseWaterBodies } from "./live";
 
 describe("live parsers", () => {
   it("reads Natura 2000 and fredning names", () => {
@@ -79,5 +79,11 @@ describe("live parsers", () => {
       names: ["Giberå", "Lille Fulden Bæk"],
       unnamed: 0,
     });
+  });
+
+  it("reads WFS hit counts", () => {
+    expect(isHit('<wfs:FeatureCollection numberMatched="1" numberReturned="0"/>')).toBe(true);
+    expect(isHit('<wfs:FeatureCollection numberMatched="0" numberReturned="0"/>')).toBe(false);
+    expect(isHit("<ows:ExceptionReport/>")).toBe(false);
   });
 });

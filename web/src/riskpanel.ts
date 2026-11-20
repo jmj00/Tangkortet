@@ -13,6 +13,7 @@ import {
   querySoil,
   parseStreams,
   queryNamedStreams,
+  querySeaDirections,
   querySmallStreams,
   queryWaterBodies,
   SOIL_RADIUS_M,
@@ -27,7 +28,17 @@ import { fetchRain, type RainSummary } from "./rain";
 import { groupNearby, riskItems, type RiskItem } from "./risk";
 import type { Manifest } from "./types";
 import { evaluate, LEVEL_TEXT, RULES } from "./verdict";
-import { compass, daysAgo, fetchWind, STRONG_WIND_MS, WINDOW_DAYS, type WindSummary } from "./wind";
+import {
+  compass,
+  daysAgo,
+  describeSea,
+  fetchWind,
+  onshoreFrom,
+  stillFresh,
+  STRONG_WIND_MS,
+  WINDOW_DAYS,
+  type WindSummary,
+} from "./wind";
 
 export const RADII_M = [1000, 2000, 5000] as const;
 
@@ -47,6 +58,8 @@ export class RiskPanel {
   private items: RiskItem[] | "loading" | "error" = "loading";
   private rain: Pending<RainSummary | null> = "loading";
   private wind: Pending<WindSummary | null> = "loading";
+  /** 16 sea/land samples around the pin, or null if that query failed. */
+  private sea: boolean[] | null = null;
   private water: Pending<LiveResult<WaterBody>> = "loading";
   private soil: Pending<LiveResult<SoilSite>> = "loading";
   /** Raw answers of the two watercourse queries (see live.ts). */
@@ -90,10 +103,15 @@ export class RiskPanel {
       done((r) => (this.rain = r)),
       done(() => (this.rain = "error")),
     );
-    void fetchWind(pin, signal).then(
-      done((w) => (this.wind = w)),
-      done(() => (this.wind = "error")),
-    );
+    void querySeaDirections(pin, signal)
+      .then((sea) => {
+        this.sea = sea;
+        return fetchWind(pin, signal, sea ? onshoreFrom(sea) : undefined);
+      })
+      .then(
+        done((w) => (this.wind = w)),
+        done(() => (this.wind = "error")),
+      );
     void queryWaterBodies(pin, signal).then(done((r) => (this.water = r)));
     void querySoil(pin, signal).then(done((r) => (this.soil = r)));
     void queryNamedStreams(pin, signal).then(done((r) => (this.namedStreams = r)));
@@ -266,26 +284,53 @@ export class RiskPanel {
     const advice = h(
       "p",
       { class: "note" },
-      "Opskyllet tang er sandsynligvis kommet op ved sidste kraftige blæst og kan være drevet langvejs fra. Vurder friskheden grundigt (lugt, udseende, konsistens) – det er på eget ansvar.",
+      "Vurder altid friskheden grundigt (lugt, udseende, konsistens), og husk at opskyllet tang kan være drevet langvejs fra – det er på eget ansvar.",
     );
     if (!summary) return this.card(title, h("p", {}, "Ingen DMI-vindmåling i nærheden."), advice);
     const strong = summary.lastStrong;
     const ms = (v: number) => `${String(Math.round(v * 10) / 10).replace(".", ",")} m/s`;
+    const sea = this.sea ? describeSea(this.sea) : null;
+    const kind = this.sea ? "hård pålandsvind" : "hård vind";
+    const seaLine =
+      sea === null
+        ? h(
+            "p",
+            { class: "note" },
+            "Kunne ikke afgøre, hvilken vej havet ligger – al vind er medtaget.",
+          )
+        : sea === ""
+          ? h(
+              "p",
+              { class: "note" },
+              "Nålen ligger ikke ved kysten, så ingen vind tæller som pålandsvind.",
+            )
+          : h("p", { class: "note" }, `Havet ligger mod ${sea}; kun vind derfra tæller.`);
+    const now = new Date();
     return this.card(
       title,
       strong
         ? h(
             "p",
             {},
-            `Sidste hårde vind (mindst ${ms(STRONG_WIND_MS)}): `,
-            h("strong", {}, daysAgo(strong.at, new Date())),
+            `Sidste ${kind} (mindst ${ms(STRONG_WIND_MS)}): `,
+            h("strong", {}, daysAgo(strong.at, now)),
             `, op til ${ms(strong.peakMs)}${strong.fromDeg !== null ? ` fra ${compass(strong.fromDeg)}` : ""}.`,
           )
         : h(
             "p",
             {},
-            `Ingen hård vind (mindst ${ms(STRONG_WIND_MS)}) de seneste ${WINDOW_DAYS} dage – opskyllet tang kan være ældre end det.`,
+            `Ingen ${kind} (mindst ${ms(STRONG_WIND_MS)}) de seneste ${WINDOW_DAYS} dage – opskyllet tang her kan være ældre end det.`,
           ),
+      strong
+        ? h(
+            "p",
+            {},
+            stillFresh(strong.at, now)
+              ? "Tang, der er skyllet op ved denne blæst, kan stadig være frisk (ca. 1 døgn)."
+              : "Tang, der er skyllet op ved denne blæst, er sandsynligvis ikke frisk længere (ca. 1 døgn).",
+          )
+        : null,
+      seaLine,
       h(
         "p",
         { class: "note" },

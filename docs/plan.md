@@ -250,5 +250,6 @@ compressa*, and the invasive *Gracilaria vermiculophylla* and *Sargassum
 muticum*); risk factors ordered by the expert's weights; traffic-light rules
 reviewed and the stream-mouth rule added; Fødevarestyrelsen's advice and rules in
 the guide; a first-visit welcome. Follow-up questions are on the review page
-(Sargassum wording, two names, what "large amounts" means). Next: onshore wind
-only, with drift tang fresh for about a day.
+(Sargassum wording, two names, what "large amounts" means). Onshore wind only (sea
+directions from 16 coastal-water probes 1 km out) and drift tang fresh for
+about a day followed in PR 3.
