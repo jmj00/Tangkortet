@@ -57,9 +57,37 @@ export function beyond(pad: Padding, base: Padding): Padding {
  * and everything placed over the map asks here. On the desktop layout the
  * map is a column of its own beside the sidebar and nothing covers it.
  */
-export function mapInsets(map: maplibregl.Map): Padding {
+export function mapInsets(map: maplibregl.Map, options: { controls?: boolean } = {}): Padding {
   const live = getComputedStyle(map.getContainer()).getPropertyValue("--map-inset-bottom");
-  return insetsFrom(map.getPadding(), live);
+  const pad = insetsFrom(map.getPadding(), live);
+  if (options.controls) pad.right = Math.max(pad.right, controlColumn(map));
+  return pad;
+}
+
+/** Width of the column of map buttons along the right edge (zoom, locate,
+ * "?"), with a little room; 0 when none is shown. Popups and frames that must
+ * stay clear of the buttons ask for it with `mapInsets(map, { controls: true })`. */
+export function controlColumn(map: maplibregl.Map): number {
+  const container = map.getContainer();
+  const column = container.querySelector(".maplibregl-ctrl-top-right");
+  if (!column) return 0;
+  const box = column.getBoundingClientRect();
+  if (box.width === 0 || box.height === 0) return 0;
+  return Math.max(0, Math.round(container.getBoundingClientRect().right - box.left + 4));
+}
+
+/** Pure: a box around a circle of `radiusM` metres at `center` ([lng, lat]),
+ * as [[west, south], [east, north]]. */
+export function ringBounds(
+  center: [number, number],
+  radiusM: number,
+): [[number, number], [number, number]] {
+  const dLat = radiusM / 111_320;
+  const dLng = radiusM / (111_320 * Math.cos((center[1] * Math.PI) / 180));
+  return [
+    [center[0] - dLng, center[1] - dLat],
+    [center[0] + dLng, center[1] + dLat],
+  ];
 }
 
 /** Pure: is screen point (x, y) inside the uncovered part of a w×h map? */
@@ -91,20 +119,32 @@ export function visibleCenter(
   return [lng, lat];
 }
 
+/** A MapLibre popup anchor: the side of the popup that touches the point. */
+export type PopupAnchor =
+  "top" | "bottom" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
 /**
- * Pure: which side of a point a popup should open on so it stays in the
- * uncovered map. Below the point when there is room above the sheet for it,
- * otherwise above. `popupHeight` is a generous estimate.
+ * Pure: where a popup at screen point (x, y) of a w×h map should open so it
+ * stays in the uncovered map: below the point when there is room above the
+ * sheet for it, otherwise above; and near a side edge (or the button column)
+ * towards the middle, as MapLibre's own edge avoidance would, which a fixed
+ * anchor switches off. `size` is a generous estimate of the popup.
  */
 export function popupAnchor(
+  x: number,
   y: number,
+  w: number,
   h: number,
   pad: Padding,
-  popupHeight = 90,
-): "top" | "bottom" {
+  size: { width: number; height: number } = { width: 240, height: 90 },
+): PopupAnchor {
   const roomBelow = h - pad.bottom - y;
   const roomAbove = y - pad.top;
-  return roomBelow >= popupHeight || roomBelow >= roomAbove ? "top" : "bottom";
+  const vertical = roomBelow >= size.height || roomBelow >= roomAbove ? "top" : "bottom";
+  const half = size.width / 2;
+  if (x - pad.left < half) return `${vertical}-left`;
+  if (w - pad.right - x < half) return `${vertical}-right`;
+  return vertical;
 }
 
 /**
@@ -117,7 +157,7 @@ export function fitCamera(
   map: maplibregl.Map,
   bounds: [[number, number], [number, number]],
   options: { maxZoom?: number; margin?: number; padding?: Padding; instant?: boolean } = {},
-): void {
+): Promise<void> {
   const pad = options.padding ?? mapInsets(map);
   // Breathing room around the bounds, shrunk when the free area is small so
   // the margin never eats the space it is meant to frame.
@@ -139,9 +179,12 @@ export function fitCamera(
   if (options.instant || prefersReducedMotion()) {
     const camera = map.cameraForBounds(bounds, opts);
     if (camera) map.jumpTo(camera);
-  } else {
-    map.fitBounds(bounds, { ...opts, duration: 600 });
+    return Promise.resolve();
   }
+  return new Promise<void>((resolve) => {
+    map.once("moveend", () => resolve());
+    map.fitBounds(bounds, { ...opts, duration: 600 });
+  });
 }
 
 /**

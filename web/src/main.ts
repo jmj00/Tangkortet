@@ -4,7 +4,7 @@ import "./shell.css";
 import { openAbout } from "./about";
 import { maybeWelcome } from "./welcome";
 import { searchAddresses, type AddressSuggestion } from "./addresses";
-import { flyCamera, fitCamera, mapInsets, popupAnchor } from "./camera";
+import { flyCamera, fitCamera, mapInsets, popupAnchor, ringBounds, visibleTest } from "./camera";
 import { loadAllSpecies, loadManifest, loadSpecies } from "./data";
 import { formatDistance } from "./geo";
 import { renderGuide } from "./guide";
@@ -43,6 +43,8 @@ let riskPanel: RiskPanel | null = null;
 let pin: [number, number] | null = null;
 let marker: maplibregl.Marker | null = null;
 let framedSlug: string | null = null;
+/** The Risiko tab's search radius, as it last reported it (riskpanel.ts). */
+let riskRadiusM = 2000;
 /** Resolves when a startup flight (from a shared link) has landed. */
 let cameraSettled: Promise<void> = Promise.resolve();
 /** The browser history (nav.ts); set up below, once the panels can answer. */
@@ -75,7 +77,12 @@ const sheet = initSheet({
 let appliedPadding = { top: -1, bottom: -1 };
 function applyMapPadding(map: maplibregl.Map): void {
   const searchShown = !searchForm.hidden && sheet.isActive();
-  const top = searchShown ? Math.round(searchForm.getBoundingClientRect().bottom + 8) : 0;
+  const status = document.getElementById("search-status");
+  const statusBottom =
+    status && !status.hidden && status.offsetHeight > 0 ? status.getBoundingClientRect().bottom : 0;
+  const top = searchShown
+    ? Math.round(Math.max(searchForm.getBoundingClientRect().bottom, statusBottom) + 8)
+    : 0;
   const bottom = sheet.halfHeight();
   appRoot.style.setProperty("--map-inset-top", `${top}px`);
   const unchanged =
@@ -101,9 +108,51 @@ const shellReady: Promise<MapBundle> = mapReady.then((bundle) => {
     applyMapPadding(map);
     map.resize();
   };
-  if (!initial.pin) fitCamera(map, DENMARK_BOUNDS, { margin: 8, instant: true });
+  // Clear of the button column too, or Bornholm lands under the locate button.
+  if (!initial.pin) {
+    void fitCamera(map, DENMARK_BOUNDS, {
+      margin: 16,
+      instant: true,
+      padding: mapInsets(map, { controls: true }),
+    });
+  }
   return bundle;
 });
+
+/** The address search can appear late, grow a status line ("Prøv igen") or
+ * change height; the sheet's full snap, the map's padding and the sidebar's
+ * room for the status line all follow it. The search area owns
+ * #search-status (right after the form, role=status); this only measures it. */
+function measureSearch(): void {
+  const status = document.getElementById("search-status");
+  const statusH = status && !status.hidden && status.offsetHeight > 0 ? status.offsetHeight + 6 : 0;
+  appRoot.style.setProperty("--search-status-h", `${statusH}px`);
+  const fieldH = searchForm.hidden ? 0 : (searchForm.querySelector("input")?.offsetHeight ?? 0);
+  if (fieldH > 0) appRoot.style.setProperty("--search-h", `${fieldH}px`);
+  sheet.relayout();
+  onShellLayout();
+}
+{
+  let watchedStatus: HTMLElement | null = null;
+  const resized = "ResizeObserver" in window ? new ResizeObserver(() => measureSearch()) : null;
+  const changed = new MutationObserver(() => {
+    watchStatus();
+    measureSearch();
+  });
+  // Only the search's own nodes: the panels change constantly.
+  const watchStatus = (): void => {
+    const status = document.getElementById("search-status");
+    if (!status || status === watchedStatus) return;
+    watchedStatus = status;
+    resized?.observe(status);
+    changed.observe(status, { attributes: true, attributeFilter: ["hidden"] });
+  };
+  resized?.observe(searchForm);
+  changed.observe(searchForm, { attributes: true, attributeFilter: ["hidden"], childList: true });
+  changed.observe(appRoot, { childList: true }); // #search-status added after the form
+  watchStatus();
+  measureSearch();
+}
 
 // --- tabs: Arter / Risiko / Før du går (a WAI-ARIA tablist) ---
 
@@ -152,6 +201,8 @@ for (const button of tabButtons) {
               : -1;
     if (to < 0) return;
     e.preventDefault();
+    // Home/End on the tab already chosen: a click would fold the sheet.
+    if (to === i) return;
     tabButtons[to].focus();
     tabButtons[to].click();
   });
@@ -220,7 +271,12 @@ loadManifest()
     resolvePanel(speciesPanel);
     riskPanel = new RiskPanel(document.getElementById("tab-risiko") as HTMLElement, m, {
       onItems: (p, radiusM, items) => {
-        if (appRoot.dataset.tab === "risiko") onMap((map) => showRisk(map, p, radiusM, items));
+        const resized = radiusM !== riskRadiusM;
+        riskRadiusM = radiusM;
+        if (appRoot.dataset.tab !== "risiko") return;
+        onMap((map) => showRisk(map, p, radiusM, items));
+        // 1/2/5 km chosen: keep the whole ring in view.
+        if (resized) void frameRing(p);
       },
       onFocus: (item) => {
         readout.textContent = `${item.title} – ${formatDistance(item.distanceM)} fra nålen`;
@@ -267,20 +323,46 @@ function flyTo(center: [number, number], zoom: number): Promise<void> {
   return shellReady.then(({ map }) => flyCamera(map, center, zoom));
 }
 
+/** Fit the risk ring (the Risiko tab's radius around the pin) into the
+ * uncovered map, clear of the map buttons. */
+function frameRing(center: [number, number]): Promise<void> {
+  sheet.atMost("half");
+  return shellReady.then(({ map }) =>
+    fitCamera(map, ringBounds(center, riskRadiusM), {
+      maxZoom: 15,
+      margin: 16,
+      padding: mapInsets(map, { controls: true }),
+    }),
+  );
+}
+
+/** Take the camera to a new pin: on Risiko the whole ring around it must
+ * show; elsewhere a plain flight to `zoom` (still into the uncovered map). */
+function framePin(center: [number, number], zoom: number): Promise<void> {
+  return appRoot.dataset.tab === "risiko" ? frameRing(center) : flyTo(center, zoom);
+}
+
 // --- messages over the map (the locate button's refusals) ---
 let statusTimer: number | undefined;
+const mapStatusText = mapStatus.querySelector(".map-status__text") as HTMLElement;
+const mapStatusClose = mapStatus.querySelector(".map-status__close") as HTMLButtonElement;
 function showMapStatus(text: string): void {
   window.clearTimeout(statusTimer);
-  const message = mapStatus.querySelector(".map-status__text") as HTMLElement;
-  message.textContent = text;
-  mapStatus.hidden = false;
+  // The role=status line stays rendered (only visually hidden while empty), so
+  // a screen reader hears the text change; only the box and its button show.
+  mapStatusText.textContent = text;
+  mapStatus.dataset.open = "";
+  mapStatusClose.hidden = false;
   statusTimer = window.setTimeout(hideMapStatus, 9000);
 }
 function hideMapStatus(): void {
   window.clearTimeout(statusTimer);
-  mapStatus.hidden = true;
+  if (mapStatus.dataset.open === undefined) return;
+  delete mapStatus.dataset.open;
+  mapStatusText.textContent = "";
+  mapStatusClose.hidden = true;
 }
-mapStatus.querySelector("button")?.addEventListener("click", hideMapStatus);
+mapStatusClose.addEventListener("click", hideMapStatus);
 
 // --- map interaction: tap = pin, tap on a find = its details ---
 const ATTACHMENT_TEXT: Record<string, string> = {
@@ -304,7 +386,9 @@ mapReady
           typeof p.depth === "number" ? `${String(p.depth).replace(".", ",")} m dybde` : null,
         ].filter(Boolean);
         // Open towards the uncovered map, never down under the sheet.
-        const anchor = popupAnchor(e.point.y, map.getContainer().clientHeight, mapInsets(map));
+        const { clientWidth: w, clientHeight: h } = map.getContainer();
+        const pad = mapInsets(map, { controls: true });
+        const anchor = popupAnchor(e.point.x, e.point.y, w, h, pad);
         new maplibregl.Popup({ closeButton: false, anchor, offset: 10 })
           .setLngLat(e.lngLat)
           .setText(parts.join(" · "))
@@ -314,6 +398,13 @@ mapReady
       locateGate.superseded(); // the user picked a spot; a late position must not undo it
       const { lng, lat } = e.lngLat;
       setPin([lng, lat], pinLabel([lng, lat]));
+      // On Risiko the ring around the new pin should show whole; the map
+      // moves only when it does not already.
+      if (appRoot.dataset.tab === "risiko") {
+        const [[west, south], [east, north]] = ringBounds([lng, lat], riskRadiusM);
+        const inView = visibleTest(map, mapInsets(map, { controls: true }));
+        if (!inView([west, south]) || !inView([east, north])) void frameRing([lng, lat]);
+      }
     });
     map.on("mouseenter", "observations", () => (map.getCanvas().style.cursor = "pointer"));
     map.on("mouseleave", "observations", () => (map.getCanvas().style.cursor = ""));
@@ -324,7 +415,7 @@ mapReady
       const { longitude, latitude } = (e as GeolocationPosition).coords;
       const here: [number, number] = [longitude, latitude];
       setPin(here, `Min placering – ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
-      void flyTo(here, Math.max(map.getZoom(), 13));
+      void framePin(here, Math.max(map.getZoom(), 13));
     });
     geolocate.on("error", (e) => {
       // A refusal is always said; a failed fix only while it is still wanted.
@@ -341,7 +432,7 @@ mapReady
 if (initial.pin) {
   const p = initial.pin;
   setPin(p, pinLabel(p));
-  cameraSettled = flyTo(p, 12);
+  cameraSettled = framePin(p, 12);
 }
 
 // A link pasted into an already-open tab only changes the hash; follow it.
@@ -360,7 +451,7 @@ window.addEventListener("hashchange", () => {
     const p = next.pin;
     locateGate.superseded();
     setPin(p, pinLabel(p));
-    cameraSettled = flyTo(p, 12);
+    cameraSettled = framePin(p, 12);
   }
   if (next.species && next.species !== speciesPanel?.selectedSlug) {
     speciesPanel?.selectBySlug(next.species);
@@ -375,11 +466,12 @@ function navSnapshot(): Snapshot {
   return { detail: speciesPanel?.selectedSlug ?? null, ...(dialog ? { dialog } : {}) };
 }
 
-/** Close the open species sheet. SpeciesPanel keeps its "← Alle arter"
- * handler private; a public closeDetail(), when there is one, is preferred. */
+/** Close the open species sheet with the species branch's public
+ * closeDetail(). TODO(after merging ui/species): call panel.closeDetail()
+ * directly and delete this cast and the private back() fallback. */
 function closeSpecies(panel: SpeciesPanel): void {
   const p = panel as unknown as { closeDetail?: () => void; back?: () => void };
-  if (p.closeDetail) p.closeDetail();
+  if (typeof p.closeDetail === "function") p.closeDetail();
   else p.back?.();
 }
 
@@ -403,8 +495,15 @@ async function applyNavSnapshot(snap: Snapshot): Promise<void> {
   const panel = await panelReady;
   if (!panel || panel.selectedSlug === snap.detail) return;
   const hadFocus = panelEl.contains(document.activeElement);
-  if (snap.detail === null) closeSpecies(panel);
-  else {
+  if (snap.detail === null) {
+    // Back must visibly do something: a species closed behind another tab
+    // would change nothing on screen, so the list it returns to is shown.
+    if (appRoot.dataset.tab !== "arter") {
+      setTab("arter");
+      writeHash();
+    }
+    closeSpecies(panel);
+  } else {
     if (appRoot.dataset.tab !== "arter") setTab("arter");
     await openSpecies(panel, snap.detail);
   }
@@ -419,7 +518,10 @@ navigation = initNavigation({ current: navSnapshot, apply: applyNavSnapshot });
 // A modal dialog opening or closing, by any route (its button, Escape, a
 // phone's own Back), is a change Back follows. showModal() sets the open
 // attribute and close() removes it.
-new MutationObserver(() => navigation?.record()).observe(document.body, {
+new MutationObserver((records) => {
+  // <details> toggles the same attribute; only dialogs are history.
+  if (records.some((r) => r.target instanceof HTMLDialogElement)) navigation?.record();
+}).observe(document.body, {
   subtree: true,
   attributes: true,
   attributeFilter: ["open"],
@@ -450,7 +552,7 @@ function selectSuggestion(item: AddressSuggestion): void {
   const target: [number, number] = [a.x, a.y];
   locateGate.superseded(); // the user picked a place; a late position must not undo it
   setPin(target, item.tekst);
-  void flyTo(target, 14);
+  void framePin(target, 14);
   input.value = item.tekst;
   closeResults();
 }

@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { beyond, centreOffset, insetsFrom, insideVisible, popupAnchor, px } from "./camera";
+import {
+  beyond,
+  centreOffset,
+  insetsFrom,
+  insideVisible,
+  popupAnchor,
+  px,
+  ringBounds,
+} from "./camera";
 
 const padding = { top: 60, right: 0, bottom: 450, left: 0 };
 
@@ -60,12 +68,31 @@ describe("insideVisible", () => {
 });
 
 describe("popupAnchor", () => {
-  const pad = { top: 60, right: 0, bottom: 400, left: 0 };
+  const pad = { top: 60, right: 56, bottom: 400, left: 0 };
   it("opens below a point with room above the sheet", () => {
-    expect(popupAnchor(150, 844, pad)).toBe("top");
+    expect(popupAnchor(170, 150, 390, 844, pad)).toBe("top");
   });
 
   it("opens above a point close to the sheet's edge", () => {
-    expect(popupAnchor(420, 844, pad)).toBe("bottom");
+    expect(popupAnchor(170, 420, 390, 844, pad)).toBe("bottom");
+  });
+
+  it("opens towards the middle near the left edge", () => {
+    expect(popupAnchor(40, 150, 390, 844, pad)).toBe("top-left");
+    expect(popupAnchor(40, 420, 390, 844, pad)).toBe("bottom-left");
+  });
+
+  it("keeps clear of the button column on the right", () => {
+    // 300 px is 34 px from the column (390 - 56): too close for half a popup
+    expect(popupAnchor(300, 150, 390, 844, pad)).toBe("top-right");
+  });
+});
+
+describe("ringBounds", () => {
+  it("spans the radius each way, wider in longitude at Danish latitudes", () => {
+    const [[w, s], [e, n]] = ringBounds([10, 56], 2000);
+    expect(n - s).toBeCloseTo((2 * 2000) / 111_320, 6);
+    expect(e - w).toBeCloseTo((n - s) / Math.cos((56 * Math.PI) / 180), 6);
+    expect((w + e) / 2).toBeCloseTo(10, 9);
   });
 });

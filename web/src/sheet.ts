@@ -31,6 +31,8 @@ export interface Sheet {
   atMost(snap: Snap): void;
   /** Visible height of the sheet at the half snap, in px (0 on desktop). */
   halfHeight(): number;
+  /** Re-measure on the next frame (something outside the sheet moved it). */
+  relayout(): void;
 }
 
 interface SheetOptions {
@@ -416,7 +418,13 @@ export function initSheet(opts: SheetOptions): Sheet {
   };
   window.addEventListener("resize", relayout);
   phone.addEventListener("change", relayout);
-  if ("ResizeObserver" in window) new ResizeObserver(relayout).observe(header);
+  if ("ResizeObserver" in window) {
+    // The header (the readout wraps) and the sheet itself (its top follows
+    // the address search, which can appear or grow late).
+    const resized = new ResizeObserver(relayout);
+    resized.observe(header);
+    resized.observe(sheet, { box: "border-box" }); // not its padding (--sheet-hidden)
+  }
   layout();
 
   const rank = (s: Snap): number => ORDER.indexOf(s);
@@ -431,5 +439,6 @@ export function initSheet(opts: SheetOptions): Sheet {
       if (active && rank(current) > rank(s)) snapTo(s, true, "peek");
     },
     halfHeight: () => (active ? heights.half : 0),
+    relayout,
   };
 }
