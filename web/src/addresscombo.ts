@@ -58,6 +58,10 @@ export function attachCombobox<S extends string>(opts: {
 }): Combobox {
   const { input, listbox } = opts;
   let debounce: number | undefined;
+  /** A search is waiting out the debounce. */
+  let pending = false;
+  /** The search on its way, if any. */
+  let running: Promise<void> | null = null;
   let inFlight: AbortController | null = null;
   let items: ComboItem[] = [];
   let activeIndex = -1;
@@ -73,6 +77,7 @@ export function attachCombobox<S extends string>(opts: {
   function select(item: ComboItem | undefined): void {
     if (!item) return;
     window.clearTimeout(debounce);
+    pending = false;
     inFlight?.abort();
     input.value = item.text;
     closeResults();
@@ -147,7 +152,17 @@ export function attachCombobox<S extends string>(opts: {
     input.setAttribute("aria-expanded", String(items.length > 0));
   }
 
-  async function runSearch(): Promise<void> {
+  function runSearch(): Promise<void> {
+    window.clearTimeout(debounce);
+    pending = false;
+    const done = search().finally(() => {
+      if (running === done) running = null;
+    });
+    running = done;
+    return done;
+  }
+
+  async function search(): Promise<void> {
     inFlight?.abort();
     const request = new AbortController();
     inFlight = request;
@@ -172,8 +187,21 @@ export function attachCombobox<S extends string>(opts: {
   input.addEventListener("input", () => {
     window.clearTimeout(debounce);
     // An emptied field answers at once; typing waits for a pause.
+    pending = true;
     debounce = window.setTimeout(() => void runSearch(), input.value.trim() ? 200 : 0);
   });
+
+  /** Enter before the suggestions are in: search now (or wait for the search
+   * on its way) and take the first, if the field still says the same. */
+  function enterEarly(): void {
+    const query = input.value.trim();
+    if (!query) return;
+    const waiting = pending ? runSearch() : running;
+    if (!waiting) return;
+    void waiting.then(() => {
+      if (input.value.trim() === query && !pending && activeIndex < 0) select(items[0]);
+    });
+  }
 
   input.addEventListener("keydown", (e) => {
     const count = items.length;
@@ -187,6 +215,7 @@ export function attachCombobox<S extends string>(opts: {
       // never submit the form (it would reload the page)
       e.preventDefault();
       if (activeIndex >= 0) select(items[activeIndex]);
+      else if (opts.enterPicksFirst && (pending || running)) enterEarly();
       else if (opts.enterPicksFirst && count > 0) select(items[0]);
     } else if (e.key === "Escape" && count > 0) {
       // Escape closes the suggestions first; only the next one reaches
@@ -201,11 +230,11 @@ export function attachCombobox<S extends string>(opts: {
 
   return {
     refresh(): void {
-      window.clearTimeout(debounce);
       void runSearch();
     },
     close(): void {
       window.clearTimeout(debounce);
+      pending = false;
       inFlight?.abort();
       closeResults();
     },

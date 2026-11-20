@@ -2,7 +2,7 @@ import type maplibregl from "maplibre-gl";
 import "./style.css";
 import { openAbout } from "./about";
 import { maybeWelcome } from "./welcome";
-import { initPlaceSearch } from "./placesearch";
+import { initPlaceSearch, type ChosenPlace } from "./placesearch";
 import { loadAllSpecies, loadManifest, loadSpecies } from "./data";
 import { formatDistance } from "./geo";
 import { renderGuide } from "./guide";
@@ -213,10 +213,12 @@ window.addEventListener("hashchange", () => {
 
 // --- place search (placesearch.ts): towns, postal districts, bathing sites
 // and, with a key, addresses. A chosen place becomes the pin.
-initPlaceSearch(({ lngLat, label, zoom }) => {
+function onPlaceChosen({ lngLat, label, zoom }: ChosenPlace): void {
+  // shell: call locateGate.superseded() here
   void mapReady.then(({ geolocate }) => {
     if (geolocateActive) geolocate.trigger(); // the user picked a spot; stop following
   });
   setPin(lngLat, label);
   void flyTo(lngLat, zoom);
-});
+}
+initPlaceSearch(onPlaceChosen);

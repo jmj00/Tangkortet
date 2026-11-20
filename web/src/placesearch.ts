@@ -7,7 +7,14 @@
 import "./search.css";
 import { ADDRESSES_ENABLED, searchAddresses } from "./addresses";
 import { attachCombobox, type ComboItem, type SearchOutcome } from "./addresscombo";
-import { LIMITS, loadPlaceIndex, matchPlaces, type PlaceSuggestion } from "./placeindex";
+import {
+  LIMITS,
+  loadedPlaceIndex,
+  loadPlaceIndex,
+  matchPlaces,
+  type PlaceIndex,
+  type PlaceSuggestion,
+} from "./placeindex";
 
 /** What was chosen: where, what to call the pin, how close to fly. */
 export interface ChosenPlace {
@@ -40,13 +47,17 @@ const ICONS: Record<PlaceSuggestion["kind"], string> = {
   coast: ICON_COAST,
 };
 
-/** idle: nothing typed; short: too little typed; results; empty: nothing
- * matched; failed: the address service could not be reached; offline: the
- * place list could not be fetched. */
-export type SearchState = "idle" | "short" | "results" | "empty" | "failed" | "offline";
+/** idle: nothing typed; loading: the place list is on its way; short: too
+ * little typed; results; empty: nothing matched; failed: the address service
+ * could not be reached; offline: the place list could not be fetched. */
+export type SearchState = "idle" | "loading" | "short" | "results" | "empty" | "failed" | "offline";
 
-/** From this many characters a name is searched (three digits: postal numbers). */
+/** From this many characters a name is searched by its beginning (three
+ * digits: postal numbers). Fewer letters find only a name that is just them. */
 export const MIN_QUERY = 3;
+
+/** How long the place list may take before the search says it is offline. */
+export const LOAD_TIMEOUT_MS = 10_000;
 
 /** What the field is called, with and without addresses. */
 export function searchWords(addresses: boolean): { placeholder: string; label: string } {
@@ -73,6 +84,8 @@ export function searchMessage(
       return addresses
         ? "Skriv en by, et postnummer, en badestrand eller en adresse – fx „Skagen“, „6857“ eller „Vestergade 10, Silkeborg“."
         : "Skriv en by, et postnummer eller en badestrand – fx „Skagen“, „6857“ eller „Vemmetofte Strand“.";
+    case "loading":
+      return "Henter byer og strande…";
     case "short":
       return /^\d+$/.test(q)
         ? "Skriv mindst 3 cifre af postnummeret."
@@ -109,25 +122,54 @@ const placeItem = (s: PlaceSuggestion): ComboItem => ({
   zoom: s.zoom,
 });
 
-/** The places for what is typed, then (with a key) the addresses. */
-async function search(
+/** The place list, or a rejection after `ms` (the fetch goes on: a later
+ * search may still get it). */
+export function placeIndexWithin(
+  ms: number,
+  load: () => Promise<PlaceIndex> = loadPlaceIndex,
+): Promise<PlaceIndex> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("place list timed out")), ms);
+    load().then(
+      (index) => {
+        clearTimeout(timer);
+        resolve(index);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
+/**
+ * The places for what is typed, then (with a key) the addresses. `loading`
+ * is told when the search has to wait for the place list.
+ */
+export async function search(
   query: string,
   signal: AbortSignal,
   show: (items: ComboItem[], note?: string) => void,
+  loading: () => void = () => {},
 ): Promise<SearchState> {
   if (!query) return "idle";
-  if (query.length < MIN_QUERY) return "short";
+  const short = query.length < MIN_QUERY;
+  if (short && /d/.test(query)) return "short";
 
   let places: ComboItem[] = [];
   let offline = false;
   try {
-    const index = await loadPlaceIndex();
+    if (!loadedPlaceIndex()) loading();
+    const index = await placeIndexWithin(LOAD_TIMEOUT_MS);
     places = matchPlaces(index, query).map(placeItem);
   } catch {
     offline = true;
   }
   if (signal.aborted) return "idle";
   if (places.length > 0) show(places);
+  // one or two letters: a place of just that name, else "type more"
+  if (short) return offline ? "offline" : places.length > 0 ? "results" : "short";
   if (!ADDRESSES_ENABLED) {
     if (offline) return "offline";
     return places.length > 0 ? "results" : "empty";
@@ -195,8 +237,10 @@ export function initPlaceSearch(onPlace: (place: ChosenPlace) => void): void {
       focused || last.state !== "idle"
         ? searchMessage(last, finePointer.matches ? "klik" : "tryk", ADDRESSES_ENABLED, focused)
         : "";
+    // the region stays in the page (a live region added and filled at once
+    // may go unread); only its text changes, and it is out of sight when empty
     if (statusText.textContent !== text) statusText.textContent = text;
-    status.hidden = text === "";
+    status.classList.toggle("is-empty", text === "");
     status.dataset.state = last.state;
     retry.hidden = !RETRY.has(last.state);
   };
@@ -204,7 +248,11 @@ export function initPlaceSearch(onPlace: (place: ChosenPlace) => void): void {
   const combobox = attachCombobox<SearchState>({
     input,
     listbox,
-    search,
+    search: (query, signal, show) =>
+      search(query, signal, show, () => {
+        last = { state: "loading", query, shown: 0 };
+        say();
+      }),
     enterPicksFirst: true,
     onOutcome: (outcome) => {
       last = outcome;
@@ -212,8 +260,15 @@ export function initPlaceSearch(onPlace: (place: ChosenPlace) => void): void {
     },
     onSelect: (item) => {
       onPlace({ lngLat: item.target, label: item.text, zoom: item.zoom ?? ADDRESS_ZOOM });
-      // On a phone the keyboard would cover the map that is about to move.
-      if (!finePointer.matches) input.blur();
+      // On a phone the keyboard would cover the map that is about to move: on
+      // to the pin's label (read out as it changes), not to nowhere.
+      if (!finePointer.matches) {
+        const readout = document.getElementById("readout");
+        if (readout) {
+          if (!readout.hasAttribute("tabindex")) readout.tabIndex = -1;
+          readout.focus({ preventScroll: true });
+        }
+      }
     },
   });
 
@@ -245,12 +300,15 @@ export function initPlaceSearch(onPlace: (place: ChosenPlace) => void): void {
       if (here === input || status.contains(here)) return; // came straight back
       if (!input.value.trim()) last = { state: "idle", query: "", shown: 0 };
       statusText.textContent = "";
-      status.hidden = true;
+      status.classList.add("is-empty");
     }, 150),
   );
   retry.addEventListener("blur", () =>
     window.setTimeout(() => {
-      if (document.activeElement !== input) status.hidden = true;
+      if (document.activeElement !== input) {
+        statusText.textContent = "";
+        status.classList.add("is-empty");
+      }
     }, 150),
   );
 }

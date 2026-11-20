@@ -1,8 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { mergeHits, preferHits } from "./addresses";
 import { step } from "./addresscombo";
-import { missedText, searchMessage, searchWords, type SearchState } from "./placesearch";
+import {
+  LOAD_TIMEOUT_MS,
+  missedText,
+  placeIndexWithin,
+  searchMessage,
+  searchWords,
+  type SearchState,
+} from "./placesearch";
+import type { PlaceIndex } from "./placeindex";
 
 const said = (
   state: SearchState | "chosen",
@@ -40,6 +48,10 @@ describe("searchMessage", () => {
     );
     expect(said("failed", "Vestergade", 0, true)).toContain("svarer ikke");
     expect(said("offline", "Skagen")).toContain("kunne ikke hentes");
+  });
+
+  it("says the list is on its way", () => {
+    expect(said("loading", "Skagen")).toBe("Henter byer og strande…");
   });
 
   it("says nothing with results or after a choice", () => {
@@ -88,5 +100,23 @@ describe("helpers", () => {
     expect(missedText("Hovedgaden 1", "Rold")).toBe(
       "Ingen Hovedgaden 1 i Rold – adresser andre steder:",
     );
+  });
+});
+
+describe("placeIndexWithin", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("gives up after the timeout, into the offline state", async () => {
+    vi.useFakeTimers();
+    const never = () => new Promise<PlaceIndex>(() => {});
+    const result = placeIndexWithin(LOAD_TIMEOUT_MS, never);
+    const caught = result.catch((e: Error) => e.message);
+    vi.advanceTimersByTime(LOAD_TIMEOUT_MS);
+    expect(await caught).toBe("place list timed out");
+  });
+
+  it("passes the list on when it comes in time", async () => {
+    const index = { towns: [] } as unknown as PlaceIndex;
+    await expect(placeIndexWithin(1000, () => Promise.resolve(index))).resolves.toBe(index);
   });
 });

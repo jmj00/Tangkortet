@@ -8,6 +8,8 @@
   padding: 0.6rem 0.85rem 0.6rem 2.6rem;
   font-size: 1rem; /* 16px or more: below this iOS zooms the page on focus */
   line-height: 1.3;
+  /* a placeholder too long for large text ends in "…", not mid-word */
+  text-overflow: ellipsis;
   background: var(--surface)
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235b6b6c' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5l5 5'/%3E%3C/svg%3E")
     no-repeat 0.8rem 50% / 1.15rem;
@@ -22,6 +24,7 @@
 #q::placeholder {
   color: var(--muted);
   opacity: 1;
+  text-overflow: ellipsis;
 }
 
 #q:focus-visible {
@@ -126,9 +129,23 @@
   box-shadow: 0 2px 10px rgb(0 0 0 / 0.12);
 }
 
-.search-status[hidden],
 .search-status__retry[hidden] {
   display: none;
+}
+
+/* Empty: out of sight but still in the page, so the screen reader keeps
+   listening to it (a live region shown and filled at once may go unread). */
+.search-status.is-empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+  box-shadow: none;
+  white-space: nowrap;
 }
 
 .search-status__text {

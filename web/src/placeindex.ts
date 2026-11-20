@@ -22,6 +22,7 @@
 // 155 kB gzipped) the first time the search field is focused.
 
 import placesUrl from "./data/places.json?url";
+import { distanceM } from "./geo";
 
 export interface Town {
   name: string;
@@ -447,6 +448,16 @@ export function nameRank(name: string, key: string): number {
   return name.includes(key) ? 2 : -1;
 }
 
+/** A beach name one slip from what is typed: 0 the whole name ("vemmetofte
+ * strnd"), 1 its beginning ("vemmetofte strnd" for a longer name), -1 not. */
+export function coastSlip(name: string, key: string): number {
+  if (oneSlipApart(name, key)) return 0;
+  for (let len = key.length - 1; len <= key.length + 1; len++) {
+    if (len < name.length && oneSlipApart(name.slice(0, len), key)) return 1;
+  }
+  return -1;
+}
+
 /** At most this many of each kind, and in all. */
 export const LIMITS = { towns: 4, coast: 4, total: 6 };
 
@@ -467,31 +478,94 @@ interface Candidate {
  * from four letters): the town or district the name means first, then
  * bathing sites, then other towns (a part of a town, a hamlet of the same
  * name, a holiday-home area). So "Skagen" lists the town before "Skagen
- * Søndre Strand", and "Vemmetofte Strand" the beach before the holiday-home
- * area of that name. A town name one slip off counts when nothing begins with
- * what is typed. Nothing under three characters: that is where most names
- * begin.
+ * Søndre Strand", and "Vemmetofte Strand" the beach without the holiday-home
+ * area of that name beside it. A name one slip off counts when nothing begins
+ * with what is typed, and then one with æ, ø, å typed as a, o ("Fano"). One or
+ * two letters find only a name that is just that ("Ry", "Å"). A postal number
+ * before or after a town ("Silkeborg 8600") gives the district.
  */
 export function matchPlaces(index: PlaceIndex, query: string): PlaceSuggestion[] {
   const typed = query.trim();
-  const number = /^(\d{3,4})(?:\s*,?\s+(.*))?$/.exec(typed);
-  if (number) {
-    const digits = number[1];
+  // "8600 Silkeborg", "8600Silkeborg", "Silkeborg 8600", "Silkeborg, 8600"
+  const lead = /^(\d{3,4})(?:\s*,?\s*(\D.*))?$/.exec(typed);
+  const trail = lead ? null : /^(\D+?)\s*,?\s*(\d{4})$/.exec(typed);
+  const digits = lead ? lead[1] : trail?.[2];
+  if (digits) {
+    const named = lead ? lead[2] : trail?.[1];
     if (digits.length === 4) {
       const district = index.byPostnr.get(digits);
-      return district ? [districtSuggestion(index, district, 0)] : [];
+      if (!district) return [];
+      // the town of that name in the district first, when one is named
+      const towns = named
+        ? townsFor(index, named).filter((t) => index.postal[t.postal] === district)
+        : [];
+      return [
+        ...towns.slice(0, 1).map((t) => townSuggestion(index, t, 0)),
+        districtSuggestion(index, district, 0),
+      ];
     }
-    if (number[2]) return [];
+    if (named) return [];
     return index.postal
       .filter((p) => p.postnr.startsWith(digits))
       .filter((p, i, all) => all.findIndex((o) => o.name === p.name) === i) // København K once
       .slice(0, LIMITS.total)
       .map((p) => districtSuggestion(index, p, 1));
   }
-  const key = normalizeName(typed);
-  // three letters as typed ("Aar" is "år" once normalised)
-  if (typed.replace(/\s/g, "").length < 3 || /\d/.test(key)) return [];
+  const key = aliasOf(normalizeName(typed));
+  if (!key || /\d/.test(key)) return [];
+  // one or two letters ("Ry", "Ø", "Å"): only a name that is just that
+  if (typed.replace(/\s/g, "").length < MIN_LETTERS) return exactPlaces(index, key);
 
+  const found = matchName(index, key);
+  if (found.length > 0) return found;
+  // "Fano", "Romo", "Kobenhavn": æ, ø and å typed as plain letters
+  const plain = foldLetters(key);
+  const names = [
+    ...index.names.filter((n) => foldLetters(n) === plain),
+    ...index.names.filter((n) => foldLetters(n).startsWith(plain) && foldLetters(n) !== plain),
+    ...index.coast.filter((c) => foldLetters(c.key).startsWith(plain)).map((c) => c.key),
+  ];
+  return names.length > 0 ? matchName(index, names[0]) : [];
+}
+
+/** From this many letters a name is searched by its beginning; below it only
+ * a name that is just what is typed ("Ry", "Ho", "Å"). */
+export const MIN_LETTERS = 3;
+
+/** Short names people type for a place. */
+const ALIASES: Record<string, string> = {
+  kbh: "københavn",
+  cph: "københavn",
+  kbhvn: "københavn",
+};
+
+function aliasOf(key: string): string {
+  return ALIASES[key] ?? key;
+}
+
+/** æ, ø and å as a keyboard without them writes them: "fano", "romo", "arhus". */
+export function foldLetters(key: string): string {
+  return key.replace(/æ|ae/g, "a").replace(/ø/g, "o").replace(/å/g, "a");
+}
+
+/** The places whose name is just `key`: towns (the one it means), postal
+ * districts and bathing sites. For one or two letters, where a prefix would
+ * match half the country. */
+export function exactPlaces(index: PlaceIndex, key: string): PlaceSuggestion[] {
+  const out: PlaceSuggestion[] = [];
+  const towns = index.townsByName.get(key) ?? [];
+  out.push(...towns.slice(0, 2).map((t) => townSuggestion(index, t, 0)));
+  if (!towns.some((t) => knownBy(index.postal, t))) {
+    for (const district of index.postalByName.get(key) ?? [])
+      out.push(districtSuggestion(index, district, 0));
+  }
+  for (const site of index.coast) {
+    if (site.key === key) out.push(coastSuggestion(index, site, 0));
+  }
+  return out.slice(0, LIMITS.total);
+}
+
+function matchName(index: PlaceIndex, key: string): PlaceSuggestion[] {
   const towns: Candidate[] = [];
   // names that are, or begin with, what is typed (binary search for the start)
   let lo = 0;
@@ -554,11 +628,28 @@ export function matchPlaces(index: PlaceIndex, query: string): PlaceSuggestion[]
     if (rank < 0 || (rank === 2 && key.length < 4)) continue;
     coast.push({ s: coastSuggestion(index, site, rank), tier: 1, size: -site.name.length });
   }
+  // a beach name one slip off ("Vemmetofte strnd"), when none has what is typed
+  if (coast.length === 0 && key.length >= 5) {
+    for (const site of index.coast) {
+      const rank = coastSlip(site.key, key);
+      if (rank >= 0)
+        coast.push({ s: coastSuggestion(index, site, rank), tier: 1, size: -site.name.length });
+    }
+  }
+  // a town or holiday-home area named after the beach beside it: the beach is
+  // what was meant ("Vemmetofte Strand")
+  const beside = (c: Candidate): boolean =>
+    c.s.kind === "town" &&
+    coast.some(
+      (b) =>
+        normalizeName(b.s.text) === normalizeName(c.s.text) &&
+        distanceM(b.s.target, c.s.target) <= 1000,
+    );
 
   const order = (a: Candidate, b: Candidate): number =>
     a.s.rank - b.s.rank || a.tier - b.tier || b.size - a.size;
   const picked = [
-    ...uniqueTexts(keptTowns.sort(order)).slice(0, LIMITS.towns),
+    ...uniqueTexts(keptTowns.filter((c) => !beside(c)).sort(order)).slice(0, LIMITS.towns),
     ...uniqueTexts(coast.sort(order)).slice(0, LIMITS.coast),
   ];
   return picked

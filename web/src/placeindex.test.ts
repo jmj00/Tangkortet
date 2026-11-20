@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildPlaceIndex,
+  coastSlip,
+  foldLetters,
   matchPlaces,
   nameRank,
   normalizeName,
@@ -76,9 +78,48 @@ describe("matchPlaces on the real list", () => {
     expect(first("Silkebrog").text).toBe("Silkeborg");
   });
 
-  it("finds nothing under three letters, or for nonsense", () => {
-    expect(matchPlaces(real, "Aa")).toEqual([]);
+  it("finds a place of one or two letters by that name alone", () => {
+    for (const name of ["Ho", "Ry", "Rø", "Eg", "Em", "Øm", "Ås", "Å"]) {
+      const found = matchPlaces(real, name);
+      expect(found.length, name).toBeGreaterThan(0);
+      expect(
+        found.every((s) => normalizeName(s.text.replace(/^d{4} /, "")) === normalizeName(name)),
+        name,
+      ).toBe(true);
+    }
+    expect(first("Aa").text).toBe("Å"); // "aa" is "å"
+    expect(matchPlaces(real, "Qz")).toEqual([]);
+    expect(matchPlaces(real, "S")).toEqual([]);
+  });
+
+  it("finds nothing for nonsense", () => {
     expect(matchPlaces(real, "xqzvw")).toEqual([]);
+  });
+
+  it("forgives one slip in a beach name", () => {
+    expect(first("Vemmetofte strnd")).toMatchObject({ text: "Vemmetofte Strand", kind: "coast" });
+  });
+
+  it("knows Kbh, and æ, ø, å typed as a, o", () => {
+    expect(first("Kbh").text).toBe("København");
+    expect(first("cph").text).toBe("København");
+    expect(first("Fano").text).toBe("6720 Fanø");
+    expect(first("Romo").text).toBe("6792 Rømø");
+    expect(first("Naestved").text).toBe("Næstved");
+  });
+
+  it("takes a postal number before or after the town, with or without a space", () => {
+    for (const q of ["Silkeborg 8600", "Silkeborg, 8600", "8600Silkeborg", "8600 Silkeborg"]) {
+      expect(texts(q), q).toEqual(["Silkeborg", "8600 Silkeborg"]);
+    }
+    expect(texts("8600")).toEqual(["8600 Silkeborg"]);
+  });
+
+  it("drops a holiday-home area named after the beach beside it", () => {
+    const found = matchPlaces(real, "Vemmetofte Strand");
+    expect(found.filter((s) => s.text === "Vemmetofte Strand").map((s) => s.kind)).toEqual([
+      "coast",
+    ]);
   });
 
   it("never lists one suggestion twice", () => {
@@ -156,6 +197,14 @@ describe("helpers", () => {
     expect(nameRank("vemmetofte strand", "strand")).toBe(1);
     expect(nameRank("faxe strand", "rand")).toBe(2);
     expect(nameRank("faxe", "rold")).toBe(-1);
+  });
+
+  it("folds æ, ø, å and finds a beach one slip off", () => {
+    expect(foldLetters("rømø")).toBe(foldLetters("romo"));
+    expect(foldLetters("næstved")).toBe(foldLetters("naestved"));
+    expect(coastSlip("vemmetofte strand", "vemmetofte strnd")).toBe(0);
+    expect(coastSlip("vemmetofte strand øst", "vemmetofte strnd")).toBe(1);
+    expect(coastSlip("vemmetofte strand", "skagen")).toBe(-1);
   });
 
   it("allows one slip", () => {
