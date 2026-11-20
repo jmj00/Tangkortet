@@ -22,11 +22,18 @@ the page carries a ``data-key``; checkbox groups store a list.
 
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import pathlib
+import re
+import sys
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+from pipeline.publish import IMAGES_DIR, slugify  # noqa: E402
+from pipeline.species import TARGET_SPECIES  # noqa: E402
+
 EVIDENCE = REPO_ROOT / "data" / "expert" / "species_evidence.json"
 # The app's traffic-light rules (ADR-0005); the same file web/src/verdict.ts reads.
 VERDICT_RULES = REPO_ROOT / "web" / "src" / "verdict-rules.json"
@@ -177,6 +184,72 @@ FOLLOWUP2_GRACILARIA = [
     ("begge", "Ja, men nævn også paryktang"),
     ("nej", "Nej (skriv hvorfor nedenfor)"),
 ]
+
+
+PHOTO_VERDICT = [("behold", "Behold"), ("afvis", "Afvis"), ("ved_ikke", "Ved ikke")]
+_PHOTO_ID = re.compile(r"/photos/(\d+)/")
+COUNTRY_NAME = {"DK": "Danmark", "SE": "Sverige", "NO": "Norge", "DE": "Tyskland",
+                "NL": "Holland", "GB": "Storbritannien", "IE": "Irland", "FR": "Frankrig",
+                "IS": "Island", "JE": "Jersey", "GG": "Guernsey", "BE": "Belgien",
+                "ES": "Spanien", "PT": "Portugal", "FO": "Færøerne", "CA": "Canada",
+                "US": "USA", "NZ": "New Zealand"}  # fmt: skip
+
+
+def photo_key(slug: str, url: str) -> str:
+    """The answer key of one photo: ``foto.<slug>.<iNaturalist photo id>``
+    (scripts/apply_photo_review.py reads it back)."""
+    match = _PHOTO_ID.search(url)
+    ident = match.group(1) if match else hashlib.sha1(url.encode()).hexdigest()[:10]
+    return f"foto.{slug}.{ident}"
+
+
+def _photo(slug: str, img: dict) -> str:
+    key = photo_key(slug, img["url"])
+    medium = img["url"].replace("/large.", "/medium.")
+    link = img.get("observation_url") or img.get("photo_url") or img["url"]
+    where = COUNTRY_NAME.get(img.get("country") or "", img.get("country") or "")
+    radios = "".join(
+        f'<label class="opt chip"><input type="radio" name="{_esc(key)}" '
+        f'data-key="{_esc(key)}" value="{v}"> {label}</label>'
+        for v, label in PHOTO_VERDICT
+    )
+    return f"""<figure class="photo">
+  <a href="{_esc(link)}" target="_blank" rel="noopener"><img src="{_esc(medium)}"
+    alt="Foto til vurdering" loading="lazy" width="240" height="180"></a>
+  <figcaption>{_esc(img["credit"])} · {_esc(img["license"])}{" · " + _esc(where) if where else ""}
+    · <a href="{_esc(link)}" target="_blank" rel="noopener">se fundet</a></figcaption>
+  <div class="opts row">{radios}</div>
+</figure>"""
+
+
+def _photos() -> str:
+    """One card per species: keep or reject each photo the app shows."""
+    cards = []
+    for sp in TARGET_SPECIES:
+        if sp["status"] != "published":
+            continue
+        slug = slugify(sp["scientific_name"])
+        path = IMAGES_DIR / f"{slug}.json"
+        images = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+        name = sp["danish_name"] or sp["scientific_name"]
+        grid = (
+            '<div class="photos">' + "".join(_photo(slug, i) for i in images) + "</div>"
+            if images
+            else "<p><i>Vi har ikke fundet et frit foto (CC0 / CC BY) af arten. Kender du et,"
+            " vi må bruge, så skriv det gerne her.</i></p>"
+        )
+        cards.append(f"""<section class="card q" data-group="foto.{slug}">
+  <h3>{_esc(name)} <span class="sci">{_esc(sp["scientific_name"])}</span></h3>
+  {grid}
+  {_text(f"foto.{slug}.kommentar", "Fx: ingen af dem er den rigtige art, eller et bedre foto", 2)}
+</section>""")
+    return f"""<h2>Fotos af arterne</h2>
+<p class="intro"><b>Nyt:</b> Appen viser nu fotos af hver art, hentet fra iNaturalist-fund
+  med en fri licens. Fotografen har bestemt arten, men ingen fagperson har kigget på dem.
+  Er det den rigtige art, og er det et godt billede at kende den på? Vælg “Behold” eller
+  “Afvis” for hvert foto – tryk på billedet for at se fundet. Afviste fotos fjernes fra
+  appen, og indtil du har set dem, står der i appen, at fotos ikke er gennemgået.</p>
+{"".join(cards)}"""
 
 
 def _followup2() -> str:
@@ -450,6 +523,14 @@ textarea:focus, input:focus { outline:2px solid var(--accent); outline-offset:1p
 .lvl--red { background:#c0392b; }
 .lvl--yellow { background:#b8860b; }
 .risk textarea { margin-top:.35rem; }
+.photos { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:.8rem;
+  margin:.4rem 0; }
+.photo { margin:0; display:flex; flex-direction:column; gap:.35rem; }
+.photo img { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:6px;
+  background:var(--bg); display:block; }
+.photo figcaption { font-size:.78rem; color:var(--muted); }
+.photo .opts.row { gap:.3rem; flex-wrap:nowrap; }
+.photo .chip { padding:.35rem .5rem; font-size:.88rem; white-space:nowrap; }
 """
 
 SCRIPT = """
@@ -583,6 +664,8 @@ def main() -> None:
   senere, også fra en anden enhed. Tallene under hver art er hentet fra GBIF (bl.a.
   herbariet på Statens Naturhistoriske Museum, arter.dk og iNaturalist) og er kun et
   udgangspunkt. Er noget uklart, så skriv det i feltet nederst på siden.</p>
+
+{_photos()}
 
 {followup}
 
