@@ -172,32 +172,47 @@ export function queryProtected(
   );
 }
 
-/** Watercourses within STREAM_RADIUS_M: at the coast that means a stream mouth
- * (expert, round 2; Fødevarestyrelsen also advises avoiding "åer"). */
-export async function queryStreams(
+// Watercourses within STREAM_RADIUS_M: at the coast that means a stream mouth
+// (expert, round 2; Fødevarestyrelsen also advises avoiding "åer").
+
+/** Named water-plan watercourses within STREAM_RADIUS_M (MiljøGIS, fast).
+ * null = the query failed. */
+export async function queryNamedStreams(
   pin: [number, number],
   signal?: AbortSignal,
-): Promise<Streams | null> {
+): Promise<unknown | null> {
   const xy = wgs84ToUtm32n(...pin);
   try {
-    const [named, small] = await Promise.all([
-      getJson(
-        wfsUrl(
-          MILJOEGIS,
-          "vp3_2endelig2025:vp3_2e2025_vandloeb_samlet",
-          ["ov_navn"],
-          dwithin("wkb_geometry", xy, NEAR_M.stream),
-        ),
-        signal,
+    return await getJson(
+      wfsUrl(
+        MILJOEGIS,
+        "vp3_2endelig2025:vp3_2e2025_vandloeb_samlet",
+        ["ov_navn"],
+        dwithin("wkb_geometry", xy, NEAR_M.stream),
       ),
-      getJson(
-        wfsUrl(MILJOEPORTAL, "dai:bes_vandloeb", ["Temanavn"], dwithin("Shape", xy, NEAR_M.stream)),
-        signal,
-      ),
-    ]);
-    return parseStreams(named, small);
+      signal,
+    );
   } catch (err) {
-    if ((err as Error).name !== "AbortError") console.warn("stream query failed", err);
+    if ((err as Error).name !== "AbortError") console.warn("named stream query failed", err);
+    return null;
+  }
+}
+
+/** Small protected watercourses within STREAM_RADIUS_M (Miljøportalen). This
+ * server often takes 3-12 s, so the traffic light does not wait for it: it is
+ * added when it arrives (riskpanel.ts). null = the query failed. */
+export async function querySmallStreams(
+  pin: [number, number],
+  signal?: AbortSignal,
+): Promise<unknown | null> {
+  const xy = wgs84ToUtm32n(...pin);
+  try {
+    return await getJson(
+      wfsUrl(MILJOEPORTAL, "dai:bes_vandloeb", ["Temanavn"], dwithin("Shape", xy, NEAR_M.stream)),
+      signal,
+    );
+  } catch (err) {
+    if ((err as Error).name !== "AbortError") console.warn("small stream query failed", err);
     return null;
   }
 }

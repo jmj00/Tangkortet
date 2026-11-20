@@ -74,5 +74,10 @@ describe("live parsers", () => {
     });
     expect(parseStreams({ features: [] }, small)).toEqual({ names: [], unnamed: 1 });
     expect(parseStreams({}, {})).toEqual({ names: [], unnamed: 0 });
+    // Small-stream query still pending (null): named streams only.
+    expect(parseStreams(named, null)).toEqual({
+      names: ["Giberå", "Lille Fulden Bæk"],
+      unnamed: 0,
+    });
   });
 });
