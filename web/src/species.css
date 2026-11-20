@@ -1119,10 +1119,7 @@
 
 .spp-list[data-density="compact"] .spp-sort-note {
   flex-basis: auto;
-}
-
-.spp-list[data-density="compact"] .spp-sort-note::before {
-  content: "· ";
+  margin-left: 0.35rem;
 }
 
 .spp-list[data-density="compact"] .spp-row,
