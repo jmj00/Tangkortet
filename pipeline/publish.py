@@ -182,6 +182,10 @@ def species_summary(doc: dict[str, Any]) -> dict[str, Any]:
         "attachment_counts": doc["attachment_counts"],
         "finds_by_month": doc.get("finds_by_month"),
         "season_months": doc["expert"]["season_months"],
+        # for the list's species-level risk badges (web/src/season.ts riskFlags)
+        "accumulation": doc["expert"]["accumulation"],
+        "warnings": doc["warnings"],
+        "expert_verified": doc["expert"]["verified"],
         "file": f"species/{doc['slug']}.json",
     }
 

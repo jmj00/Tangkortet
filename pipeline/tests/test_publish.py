@@ -159,3 +159,12 @@ def test_finds_by_month_counts_all_and_attached():
     out = finds_by_month([obs(), beach, undated, obs(key=4, month=13)])
     assert out["all"][5] == 1 and out["all"][7] == 1 and sum(out["all"]) == 2
     assert out["attached"][5] == 1 and sum(out["attached"]) == 1
+
+
+def test_summary_carries_the_species_risk_fields(tmp_path):
+    sp = next(s for s in TARGET_SPECIES if s["scientific_name"] == "Sargassum muticum")
+    (summary,) = publish_species(tmp_path, [species_doc(sp, [obs()])])
+    assert summary["accumulation"] == ["arsen"]
+    assert summary["warnings"] == sp["warnings"]
+    assert summary["expert_verified"] is sp["expert_verified"]
+    assert summary["season_months"] is None or isinstance(summary["season_months"], list)
