@@ -1,10 +1,14 @@
-// Ported from Svampekortet (0024b43): OSM base + the Skærmkort WMS when a key
-// is set. The Datafordeler layers (Skærmkort, and the aerial photo) load
-// through a retrying protocol (tileretry.ts).
+// Ported from Svampekortet (0024b43), then reworked: with a key the basemap is
+// the Skærmkort WMS (or the aerial photo) over a flat land/water background,
+// and OpenStreetMap's tiles come in only as the fallback when Datafordeler
+// fails for good; without a key OSM is the basemap. The Datafordeler layers
+// load through a retrying protocol (tileretry.ts).
 import type {
   IControl,
+  LayerSpecification,
   Map as MapLibreMap,
   RasterLayerSpecification,
+  RasterSourceSpecification,
   StyleSpecification,
 } from "maplibre-gl";
 import "./map.css";
@@ -31,8 +35,21 @@ type RasterPaint = NonNullable<RasterLayerSpecification["paint"]>;
  * than there: this is a coastal map, and water against land must stay
  * obvious, so some of OSM's blue is kept in both themes.
  */
-export function basemapPaint(dark: boolean, reducedMotion = false): RasterPaint {
+export function basemapPaint(dark: boolean, reducedMotion = false, muted = false): RasterPaint {
   const fade = reducedMotion ? 0 : 300;
+  // Skærmkort's own muted variant (dtk_skaermkort_daempet, `muted`) is pale
+  // already: in light mode it is only taken a touch off pure white. In dark
+  // mode it gets the same inversion as OSM, which on it gives neutral land
+  // and roads and keeps the water blue (the full-colour map went brown).
+  if (muted && !dark)
+    return {
+      "raster-brightness-min": 0,
+      "raster-brightness-max": 0.97,
+      "raster-hue-rotate": 0,
+      "raster-saturation": 0,
+      "raster-contrast": 0,
+      "raster-fade-duration": fade,
+    };
   return dark
     ? {
         "raster-brightness-min": 0.86,
@@ -70,47 +87,76 @@ export function photoPaint(dark: boolean, reducedMotion = false): RasterPaint {
   };
 }
 
-/** The raster layers that make up the basemap, bottom up: OSM (always, so a
- * missing tile is never blank), Skærmkort and the aerial photo. */
-const BASEMAP_LAYERS = ["osm", "sdfi", "orto"] as const;
+/** The layers that make up the basemap, bottom up: a flat background, OSM
+ * (without a key, or after Datafordeler failed), Skærmkort and the photo. */
+const BASEMAP_LAYERS = ["bg", "osm", "sdfi", "orto"] as const;
+
+/** Sampled from the painted tiles (Skærmkort's dtk_skaermkort_daempet with
+ * basemapPaint, and the photo's open sea with photoPaint), per theme. */
+const BG = {
+  land: "#f7f7f7",
+  landDark: "#232323",
+  photoWater: "#13384b",
+  photoWaterDark: "#0f2c3b",
+};
+
+/**
+ * The flat colour under the basemap tiles: what a tile that failed after its
+ * retries shows (the map's land tone), and, under the photo, the sea beyond
+ * the flown strips, whose white no-data is cleared (nodata.ts): a flat water
+ * tone close to the photo's own sea.
+ */
+export function backgroundColor(dark: boolean, photo: boolean): string {
+  if (photo) return dark ? BG.photoWaterDark : BG.photoWater;
+  return dark ? BG.landDark : BG.land;
+}
 
 /** Whether the aerial photo is the basemap now (Basemap.apply). */
 let photoShown = false;
 
 function applyBasemapTheme(map: MapLibreMap): void {
-  for (const id of BASEMAP_LAYERS) {
+  if (map.getLayer("bg"))
+    map.setPaintProperty("bg", "background-color", backgroundColor(prefersDark(), photoShown));
+  for (const id of ["osm", "sdfi", "orto"] as const) {
     if (!map.getLayer(id)) continue;
-    // Under the photo, OSM shows only where the photo has no data (out at
-    // sea): its dark paint is close to the photo's dark water in both themes.
     const paint =
       id === "orto"
         ? photoPaint(prefersDark(), reducedMotion())
-        : basemapPaint(prefersDark() || (id === "osm" && photoShown), reducedMotion());
+        : basemapPaint(prefersDark(), reducedMotion(), id === "sdfi");
     for (const [name, value] of Object.entries(paint)) {
       map.setPaintProperty(id, name, value);
     }
   }
 }
 
-const OSM_STYLE: StyleSpecification = {
-  version: 8,
-  sources: {
-    osm: {
-      type: "raster",
-      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-      tileSize: 256,
-      maxzoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    },
-  },
-  layers: [],
+const OSM_SOURCE: RasterSourceSpecification = {
+  type: "raster",
+  tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+  tileSize: 256,
+  maxzoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
 };
 
-/** The style with the basemap painted for the current theme. */
-function osmStyle(): StyleSpecification {
+/** The opening style: the flat background, plus OSM only when there is no
+ * key. With a key, OSM is never requested unless Datafordeler fails for good
+ * (Basemap.giveUp): no doubled traffic against the OSMF tile policy, and no
+ * OSM credit for a map that doesn't show it. */
+function baseStyle(withOsm: boolean): StyleSpecification {
+  const background: LayerSpecification = {
+    id: "bg",
+    type: "background",
+    paint: { "background-color": backgroundColor(prefersDark(), false) },
+  };
+  const osm: LayerSpecification = {
+    id: "osm",
+    type: "raster",
+    source: "osm",
+    paint: currentBasemapPaint(),
+  };
   return {
-    ...OSM_STYLE,
-    layers: [{ id: "osm", type: "raster", source: "osm", paint: currentBasemapPaint() }],
+    version: 8,
+    sources: withOsm ? { osm: OSM_SOURCE } : {},
+    layers: withOsm ? [background, osm] : [background],
   };
 }
 
@@ -159,8 +205,10 @@ interface WmsSpec {
  * Klimadatastyrelsen's WMS services on Datafordeler, both reprojected on the
  * fly to EPSG:3857 (confirmed in their GetCapabilities, 2026-11-20).
  *
- * - Skærmkort ("dtk_skaermkort"): the topographic screen map. Its WMTS is
- *   UTM32N-only, hence the WMS.
+ * - Skærmkort, muted ("dtk_skaermkort_daempet"): the topographic screen map
+ *   in pale colours, quieter under the app's marks and cleaner in dark mode
+ *   than the full-colour "dtk_skaermkort" ("dtk_skaermkort_graa" loses the
+ *   water). Its WMTS is UTM32N-only, hence the WMS.
  * - Ortofoto forår ("orto_foraar"): the newest spring aerial photo, JPEG.
  *
  * These WMS enforce the WMS 1.3.0 spelling of TRANSPARENT and reject
@@ -169,8 +217,9 @@ interface WmsSpec {
 const WMS: Record<WmsId, WmsSpec> = {
   sdfi: {
     path: "Dkskaermkort/topo_skaermkort/1.0.0/wms",
-    layers: "dtk_skaermkort",
-    format: "image/png",
+    layers: "dtk_skaermkort_daempet",
+    // opaque, so JPEG: ~10 kB a tile against ~75-105 kB as PNG
+    format: "image/jpeg",
     attribution: SDFI_ATTRIBUTION,
     name: "Skærmkort",
   },
@@ -214,6 +263,9 @@ const tracked = new Map<WmsId, Tracked>();
 
 let protocolAdded = false;
 
+/** Some Datafordeler tile has loaded this session (either layer). */
+let keyWorks = false;
+
 function addProtocolOnce(lib: typeof import("maplibre-gl")): void {
   if (protocolAdded) return;
   protocolAdded = true;
@@ -230,10 +282,15 @@ function addProtocolOnce(lib: typeof import("maplibre-gl")): void {
     if (r.attempts > 1) stats.retried += 1;
     if (r.attempts > 1 && r.result === "loaded") stats.recovered += 1;
     if (r.result !== "loaded") stats.failed += 1;
+    if (r.result === "loaded") keyWorks = true;
+    // Once any Datafordeler tile has loaded the key is good: a ServiceException
+    // on the other layer's first tile is a stray, one failed tile (tileretry.ts
+    // TileHealth), not a rejected key that would hide "Luftfoto".
+    const result = r.result === "invalid" && keyWorks ? "failed" : r.result;
     const t = tracked.get(id);
-    if (t && !t.done && t.health.record(r.result) === "give-up") {
+    if (t && !t.done && t.health.record(result) === "give-up") {
       t.done = true;
-      t.onGiveUp(r.result);
+      t.onGiveUp(result);
     }
     if (r.data) return { data: spec.whiteNoData ? await withoutWhite(r.data) : r.data };
     // no URL in the message: it carries the key
@@ -242,11 +299,13 @@ function addProtocolOnce(lib: typeof import("maplibre-gl")): void {
 }
 
 /**
- * The Datafordeler basemap over OSM: Skærmkort, or the aerial photo when the
- * user picks it (BasemapControl, remembered per device). OSM stays underneath
- * either way, so a tile that fails after its retries shows OSM, not a hole.
- * A layer is dropped only when the service clearly doesn't work: an invalid
- * key (a ServiceException), or no tile at all after several failed ones.
+ * The Datafordeler basemap: Skærmkort, or the aerial photo when the user
+ * picks it (BasemapControl, remembered per device), over a flat background in
+ * the theme's land or water tone, so a tile that fails after its retries
+ * leaves a quiet gap, not a hole. A layer is dropped only when the service
+ * clearly doesn't work: a ServiceException before any tile loaded (an invalid
+ * key), or no tile at all after several failed ones. Skærmkort dropped brings
+ * in OpenStreetMap; the photo dropped goes back to the map.
  */
 class Basemap {
   readonly control: BasemapControl;
@@ -271,8 +330,8 @@ class Basemap {
   /** Once the style is ready. */
   start(): void {
     addProtocolOnce(this.lib);
-    // A tile that fails after its retries is expected now and then (OSM
-    // shows through): keep it out of the console. With a listener MapLibre
+    // A tile that fails after its retries is expected now and then (the
+    // background shows through): keep it out of the console. With a listener MapLibre
     // no longer logs errors itself, so everything else is logged here.
     this.map.on("error", (e: { error?: unknown; sourceId?: string }) => {
       if (e.sourceId === "sdfi" || e.sourceId === "orto") return;
@@ -315,11 +374,29 @@ class Basemap {
     if (this.map.getSource(id)) this.map.removeSource(id);
   }
 
+  /** OpenStreetMap as the basemap, right above the background: only once
+   * Skærmkort has failed for good. */
+  private addOsm(): void {
+    if (this.map.getLayer("osm")) return;
+    this.map.addSource("osm", OSM_SOURCE);
+    this.map.addLayer(
+      { id: "osm", type: "raster", source: "osm", paint: currentBasemapPaint() },
+      this.map.getStyle().layers.find((l) => l.id !== "bg")?.id,
+    );
+  }
+
   private giveUp(id: WmsId, result: TileResult): void {
     const why = result === "invalid" ? "the key was rejected" : "no tile loaded";
-    console.warn(`${WMS[id].name} unavailable (${why}): falling back to OpenStreetMap`);
+    const instead = id === "orto" ? "showing the map" : "falling back to OpenStreetMap";
+    console.warn(`${WMS[id].name} unavailable (${why}): ${instead}`);
     this.remove(id);
-    if (id !== "orto") return;
+    // A rejected key fails the photo too: no button that cannot work.
+    if (result === "invalid") this.control.setAvailable(false);
+    if (id === "sdfi") {
+      this.addOsm();
+      this.apply();
+      return;
+    }
     // Back to the map, and remembered, so the next visit doesn't fail again;
     // pressing "Luftfoto" again is the retry.
     this.mode = "map";
@@ -335,11 +412,15 @@ class Basemap {
     if (photo && !this.map.getLayer("orto")) this.add("orto");
     if (this.map.getLayer("orto"))
       this.map.setLayoutProperty("orto", "visibility", photo ? "visible" : "none");
-    // hidden, Skærmkort fetches nothing
-    if (this.map.getLayer("sdfi"))
-      this.map.setLayoutProperty("sdfi", "visibility", photo ? "none" : "visible");
+    // Hidden, Skærmkort (or OSM after a fallback) fetches nothing, and the
+    // photo's cleared no-data shows the flat water background.
+    for (const id of ["sdfi", "osm"])
+      if (this.map.getLayer(id))
+        this.map.setLayoutProperty(id, "visibility", photo ? "none" : "visible");
     this.control.setPhoto(photo);
     photoShown = photo;
+    // the pin's halo on the photo (map.css)
+    this.map.getContainer().dataset.basemap = photo ? "photo" : "map";
     applyBasemapTheme(this.map);
     setPhotoBasemap(this.map, photo);
     repaintCoast(this.map);
@@ -402,7 +483,7 @@ export async function createMap(
 
   const map = new maplibregl.Map({
     container,
-    style: osmStyle(),
+    style: baseStyle(!DATAFORDELER_KEY),
     center: DENMARK_CENTER,
     zoom: 6.4,
     attributionControl: { compact: true },

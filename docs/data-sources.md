@@ -57,7 +57,7 @@ in Svampekortet). Checked with GetCapabilities and GetMap on 2026-11-20:
 
 | Service | URL (`wms.datafordeler.dk/…`) | Layer | Notes |
 |---|---|---|---|
-| Skærmkort (basemap) | `Dkskaermkort/topo_skaermkort/1.0.0/wms` | `dtk_skaermkort`, PNG | WMS 1.3.0, EPSG:3857 on the fly. Enforces the 1.3.0 spelling of `TRANSPARENT`, so the parameter is left out |
+| Skærmkort (basemap) | `Dkskaermkort/topo_skaermkort/1.0.0/wms` | `dtk_skaermkort_daempet` (the muted variant: cleaner under the app's marks and in dark mode; `dtk_skaermkort_graa` loses the water), JPEG (opaque; ~10 kB a tile against ~75-105 kB as PNG) | WMS 1.3.0, EPSG:3857 on the fly. Enforces the 1.3.0 spelling of `TRANSPARENT`, so the parameter is left out |
 | GeoDanmark Ortofoto forår (aerial photo, "Luftfoto" button) | `GeoDanmarkOrto/orto_foraar/1.0.0/WMS` | `orto_foraar` (the newest spring photo; per-year layers `geodanmark_<year>_12_5cm` / `_10cm`, CIR variants, `fotoindex`), JPEG | EPSG:3857 listed on the root layer. **No data is white** (beyond the flown strips, out at sea); `TRANSPARENT=TRUE` PNG fixes that but costs ~12x the bytes (722 kB vs 60 kB for five tiles), so the app fetches JPEG and clears the white in the browser (`web/src/nodata.ts`) |
 | Adressevælgeren (address search) | see `web/src/addresses.ts` | | |
 
@@ -70,8 +70,12 @@ the XML ServiceException at HTTP 200 seen earlier, so from the browser a bad
 key and a bad streak look the same. The app therefore fetches tiles through
 a retrying MapLibre protocol (`web/src/tileretry.ts`: 3 attempts on network
 errors, 401, 408, 429 and 5xx) and falls back to OpenStreetMap only on a
-ServiceException or when no tile has loaded and 4 have failed after their
-retries. Once tiles have loaded, a failed tile just shows OSM underneath.
+ServiceException before any tile has loaded, or when no tile has loaded and
+4 have failed after their retries. Once tiles have loaded, a failed tile (or
+a stray ServiceException) leaves a gap in a flat land tone; under the photo
+the cleared no-data is a flat water tone. OSM tiles are not requested at all
+while Datafordeler works (OSMF tile policy), so OSM is credited only after a
+fallback. A rejected key hides the "Luftfoto" button.
 
 Until then (and alongside it) the search box finds places from the app's own
 list, `web/src/data/places.json`, built by `py -m pipeline.places`
@@ -120,7 +124,7 @@ Third-party data keeps its own licence and is not restricted further.
 | DMI metObs | live rain and wind | open data, credit "Data fra DMI" | nothing stored |
 | Klimadatastyrelsen: Danske Stednavne and DAGI (via Svampekortet's generated list) | towns and postal districts in the place search | **CC BY 4.0**, credit "Indeholder data fra Klimadatastyrelsen"; **add the credit line to the About dialog** | `web/src/data/places.json` |
 | iNaturalist photos (Research-Grade observations, picked via GBIF by `scripts/pull_species_images.py`) | species photos: list thumbnails, start-screen tiles, the species page and its viewer | **CC BY 4.0** or **CC0** only, per photo; each shown with photographer, licence and a link to the iNaturalist observation (CC BY attribution). Hotlinked from `inaturalist-open-data.s3.amazonaws.com`, not copied; the service worker keeps up to 120 seen photos for offline use. Marked "not reviewed" in the app until the expert has checked the identification | `data/images/<slug>.json` (links and credits only) |
-| OpenStreetMap | basemap without a key, and under Skærmkort and the photo (gaps) | ODbL, credit "© OpenStreetMap-bidragydere" | nothing stored |
+| OpenStreetMap | basemap without a key, or after Skærmkort has failed for good | ODbL, credit "© OpenStreetMap-bidragydere" | nothing stored |
 | GeoDanmark Skærmkort (Klimadatastyrelsen), via Datafordeler | basemap | **CC BY 4.0** (Klimadatastyrelsen's terms for free data), credit on the map "Kort: GeoDanmark (CC BY 4.0), Datafordeler" | nothing stored |
 | GeoDanmark Ortofoto forår (Klimadatastyrelsen), via Datafordeler | aerial photo ("Luftfoto") | **CC BY 4.0**: Arealdata (Danmarks Miljøportal) lists GeoDanmark / Klimadatastyrelsen as owner and the licence as CC BY 4.0; Klimadatastyrelsen's own terms page could not be read by a script (2026-11-20), **confirm the wording before launch**. Credit on the map "Luftfoto: GeoDanmark (CC BY 4.0), Datafordeler"; "Om Tangkortet" names Ortofoto forår and Klimadatastyrelsen | nothing stored |
 | OpenStreetMap, Geofabrik's Denmark extract (`denmark-latest.osm.pbf`, refreshed weekly in the deploy) | "Kysten her": beaches (with `surface`), sand by the shore, salt marsh, tidal flats, harbours, marinas, piers, groynes, breakwaters, cliffs and the coastline, around the pin and on the map from zoom 13 (`pipeline/ingest/coast.py`) | **ODbL 1.0**, credit "© OpenStreetMap-bidragydere" (in the manifest attribution, so "Om Tangkortet" shows it). **Share-alike:** the coast cells are a *derivative database* of OSM and stay under the ODbL, unlike the project's own CC BY-NC data; anyone may reuse them under the ODbL, and a public derivative of them must be offered under the ODbL too. They are kept as separate files (a "collective database" with the rest of the payload), so the ODbL does not reach the other data. Mapping is volunteer work and uneven: shown as "OpenStreetMap – kan være ufuldstændigt" | dev sample `web/public/data/coast/` (Aarhus Bugt, Mols, Djursland and a piece of the Wadden Sea around Mandø) |

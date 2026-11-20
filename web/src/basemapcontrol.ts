@@ -71,6 +71,12 @@ export class BasemapControl implements IControl {
     this.button = null;
   }
 
+  /** Hidden for good when the key is rejected (map.ts): the photo comes from
+   * the same service and cannot load either. */
+  setAvailable(available: boolean): void {
+    if (this.container) this.container.style.display = available ? "" : "none";
+  }
+
   setPhoto(photo: boolean): void {
     this.photo = photo;
     this.render();

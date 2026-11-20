@@ -524,7 +524,11 @@
   }
 }
 
-@media (max-width: 559.98px), (max-width: 719.98px) and (min-height: 520.02px) {
+/* phones, and short landscape (740x360), where the label would jut out of
+   the button column */
+@media (max-width: 559.98px),
+  (max-width: 719.98px) and (min-height: 520.02px),
+  (max-height: 520px) {
   #map .maplibregl-ctrl-group .basemap-ctrl__button {
     width: 44px;
     padding: 0;

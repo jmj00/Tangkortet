@@ -53,8 +53,8 @@ coast only in the Risiko tab, so the sheet's peek stays as it was.
 With `VITE_DATAFORDELER_API_KEY` (see `.env.example`) the basemap is
 Skærmkort, and a "Luftfoto" button (`src/basemapcontrol.ts`, remembered per
 device) switches to the GeoDanmark spring aerial photo. Both load through a
-retrying protocol (`src/tileretry.ts`, `src/map.ts`) over an OSM base, and
-fall back to OSM only when the service clearly fails
+retrying protocol (`src/tileretry.ts`, `src/map.ts`) over a flat land/water
+background, and fall back to OSM only when the service clearly fails
 (`docs/data-sources.md`). Without the key the map uses
 OpenStreetMap and the search box finds towns, postal districts and coastal
 bathing sites only (`src/placesearch.ts`, list `src/data/places.json` from

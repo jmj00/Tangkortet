@@ -687,3 +687,14 @@
     transition: none !important;
   }
 }
+
+/* --- the pin on the aerial photo ---
+   The teal pin (MapLibre's default marker, main.ts) all but vanishes on the
+   photo's dark water: a white halo while the photo is the basemap (map.ts
+   sets data-basemap). In dark mode the pin is light already (pinColor).
+   The locate dot has no svg and is left alone. */
+@media not (prefers-color-scheme: dark) {
+  #map[data-basemap="photo"] .maplibregl-marker > svg {
+    filter: drop-shadow(0 0 0.5px #ffffff) drop-shadow(0 0 1px #ffffff) drop-shadow(0 0 1px #ffffff);
+  }
+}
