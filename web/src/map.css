@@ -49,7 +49,7 @@
 
 /* Two buttons side by side. The traffic light's words are never cut: a long
    title wraps inside its button, and the finds button moves to a row of its
-   own when it would get less than 7rem. */
+   own when its count would not fit beside it. */
 .tapcard__actions {
   display: flex;
   flex-wrap: wrap;
@@ -98,8 +98,9 @@
   max-width: 100%;
 }
 
+/* as wide as "11 arter" needs, more when there is room */
 .tapcard__finds {
-  flex: 1 1 7rem;
+  flex: 1 1 auto;
 }
 
 /* "11 arter" never breaks */

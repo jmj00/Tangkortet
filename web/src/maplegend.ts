@@ -135,6 +135,7 @@ export class MapLegend {
     this.toggle.addEventListener("click", () => {
       this.setOpen(!this.open);
       storeOpen(this.open);
+      if (this.open) this.onOpened?.();
     });
     // Escape inside the key folds it and leaves the focus on its line.
     this.root.addEventListener("keydown", (e) => {
@@ -149,6 +150,10 @@ export class MapLegend {
     this.applyOpen();
     map.getContainer().append(this.root);
   }
+
+  /** Called when the user opens the key (main.ts: bring the ring out from
+   * under it). */
+  onOpened: (() => void) | null = null;
 
   /** The key's box in map-container pixels while it is open and shown,
    * else null. */
@@ -315,4 +320,30 @@ export function clearOfBox(
   const fromBottom = { ...pad, bottom: Math.max(pad.bottom, Math.ceil(h - box.top + gap)) };
   const side = (p: Padding): number => Math.min(w - p.left - p.right, h - p.top - p.bottom);
   return side(fromLeft) >= side(fromBottom) ? fromLeft : fromBottom;
+}
+
+/** Whether the open key covers part of the ring of `radiusM` around `center`
+ * as the map shows it now. */
+export function legendCovers(
+  map: maplibregl.Map,
+  center: [number, number],
+  radiusM: number,
+): boolean {
+  const box = legends.get(map)?.openBox();
+  if (!box) return false;
+  const c = map.project(center);
+  const edge = map.project([center[0], center[1] + radiusM / 111_320]);
+  return circleMeetsBox(c.x, c.y, Math.hypot(edge.x - c.x, edge.y - c.y), box);
+}
+
+/** Pure: does a circle reach into a box? */
+export function circleMeetsBox(
+  x: number,
+  y: number,
+  r: number,
+  box: { left: number; top: number; right: number; bottom: number },
+): boolean {
+  const nx = Math.max(box.left, Math.min(x, box.right));
+  const ny = Math.max(box.top, Math.min(y, box.bottom));
+  return Math.hypot(nx - x, ny - y) < r;
 }
