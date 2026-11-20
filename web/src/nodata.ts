@@ -106,29 +106,55 @@ export function clearWhite(px: Uint8ClampedArray, width: number): number {
   return cleared + clearSeam(px, width, height);
 }
 
-/** The JPEG fringe of a no-data block in the next tile: light pixels on
- * this tile's edge, fewer than `FRINGE_PASSES` deep, with photo behind them.
- * Cleared, they no longer draw a dotted light seam along the coverage; sand
- * or a roof running off the tile is light further in, and stays. */
+/** A seam pixel on the tile's edge is near-white: the JPEG fringe of a
+ * no-data block in the next tile. Heath, concrete and roofs (135-200) never
+ * are; only bright sand or a white roof come close. */
+export const SEAM_MIN = 230;
+/** ...and the seam runs along the edge for at least this many pixels in a
+ * row: a no-data block's border is straight, while a bright roof or a wave
+ * crest touching the edge is a few pixels. */
+export const SEAM_RUN = 16;
+
+/** The JPEG fringe of a no-data block in the next tile: a straight run of
+ * near-white pixels on this tile's edge, fewer than `FRINGE_PASSES` deep,
+ * with photo behind them. Cleared, they no longer draw a dotted light seam
+ * along the coverage. Anything darker than `SEAM_MIN`, a run shorter than
+ * `SEAM_RUN`, and light ground running further in (sand, a roof) stay: on
+ * land this clears nothing. */
 function clearSeam(px: Uint8ClampedArray, width: number, height: number): number {
   if (width <= FRINGE_PASSES || height <= FRINGE_PASSES) return 0;
   let cleared = 0;
   const light = (p: number): boolean => px[p * 4 + 3] !== 0 && isWhite(px, p * 4, FRINGE_MIN);
-  const check = (p: number, step: number): void => {
-    let depth = 0;
+  /** How deep the seam at edge pixel `p` reaches inwards (`step`); 0: none. */
+  const depthAt = (p: number, step: number): number => {
+    if (px[p * 4 + 3] === 0 || !isWhite(px, p * 4, SEAM_MIN)) return 0;
+    let depth = 1;
     while (depth < FRINGE_PASSES && light(p + depth * step)) depth++;
-    if (depth === 0 || depth === FRINGE_PASSES) return;
-    for (let k = 0; k < depth; k++) clear(px, (p + k * step) * 4);
-    cleared += depth;
+    return depth === FRINGE_PASSES ? 0 : depth;
   };
-  for (let x = 0; x < width; x++) {
-    check(x, width);
-    check((height - 1) * width + x, -width);
-  }
-  for (let y = 0; y < height; y++) {
-    check(y * width, 1);
-    check(y * width + width - 1, -1);
-  }
+  /** One edge: `length` pixels from `start`, `along` apart, inwards `step`. */
+  const edge = (start: number, along: number, length: number, step: number): void => {
+    let run: [number, number][] = [];
+    const flush = (): void => {
+      if (run.length >= SEAM_RUN)
+        for (const [p, depth] of run) {
+          for (let k = 0; k < depth; k++) clear(px, (p + k * step) * 4);
+          cleared += depth;
+        }
+      run = [];
+    };
+    for (let k = 0; k < length; k++) {
+      const p = start + k * along;
+      const depth = depthAt(p, step);
+      if (depth > 0) run.push([p, depth]);
+      else flush();
+    }
+    flush();
+  };
+  edge(0, 1, width, width);
+  edge((height - 1) * width, 1, width, -width);
+  edge(0, width, height, 1);
+  edge(width - 1, width, height, -1);
   return cleared;
 }
 

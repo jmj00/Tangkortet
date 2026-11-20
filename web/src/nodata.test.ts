@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLEARED_RGB, clearWhite, FRINGE_PASSES, MIN_SHARE } from "./nodata";
+import { CLEARED_RGB, clearWhite, FRINGE_PASSES, MIN_SHARE, SEAM_MIN, SEAM_RUN } from "./nodata";
 
 /** n pixels of one colour, RGBA, opaque. */
 function pixels(n: number, rgb: [number, number, number]): number[] {
@@ -83,10 +83,10 @@ describe("clearWhite", () => {
   });
 
   it("clears a light seam on the tile's edge (the fringe of no-data in the next tile)", () => {
-    const size = 8;
+    const size = 32;
     const px = tile(size, [72, 96, 108], () => false);
     for (let y = 0; y < size; y++) {
-      px.set([224, 232, 240], y * size * 4);
+      px.set([236, 240, 244], y * size * 4);
       px.set([163, 177, 186], (y * size + 1) * 4);
     }
     expect(clearWhite(px, size)).toBe(2 * size);
@@ -95,11 +95,42 @@ describe("clearWhite", () => {
     expect(alpha(px, size, 2, 3)).toBe(255);
   });
 
-  it("keeps light ground running off the tile (sand, a roof)", () => {
-    const size = 8;
+  it("keeps a short light run on the edge (a white roof or a wave crest cut by the tile)", () => {
+    const size = 32;
+    const px = tile(size, [72, 96, 108], () => false);
+    for (let y = 4; y < 4 + SEAM_RUN - 1; y++) px.set([240, 242, 244], y * size * 4);
+    expect(clearWhite(px, size)).toBe(0);
+  });
+
+  it("keeps a light but not near-white edge (pale concrete, a grey roof row)", () => {
+    const size = 32;
     const px = tile(size, [72, 96, 108], () => false);
     for (let y = 0; y < size; y++)
-      for (const x of [0, 1, 2, 3]) px.set([226, 220, 205], (y * size + x) * 4);
+      px.set([SEAM_MIN - 12, SEAM_MIN - 8, SEAM_MIN - 6], y * size * 4);
+    expect(clearWhite(px, size)).toBe(0);
+  });
+
+  it("clears nothing on noisy land (heath, concrete, roofs at grey 120-170, ±20)", () => {
+    // the regression: a light-pixel rule cleared heath and roofs on every
+    // tile's edge and drew a dark dotted tile grid over the land
+    let seed = 1;
+    const rnd = (): number => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const size = 256;
+    for (const base of [120, 135, 145, 155, 170]) {
+      const px = new Uint8ClampedArray(size * size * 4);
+      for (let p = 0; p < size * size; p++) {
+        const v = base + (rnd() - 0.5) * 40;
+        px.set([v + 8, v, v - 6, 255], p * 4);
+      }
+      expect(clearWhite(px, size)).toBe(0);
+    }
+  });
+
+  it("keeps light ground running off the tile (sand, a roof)", () => {
+    const size = 32;
+    const px = tile(size, [72, 96, 108], () => false);
+    for (let y = 0; y < size; y++)
+      for (const x of [0, 1, 2, 3]) px.set([240, 238, 232], (y * size + x) * 4);
     expect(clearWhite(px, size)).toBe(0);
   });
 
