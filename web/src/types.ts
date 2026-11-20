@@ -78,6 +78,8 @@ export interface CoastIndex {
   coverage: string[] | null;
   source: string;
   license: string;
+  /** https://opendatacommons.org/licenses/odbl/1-0/ */
+  license_url?: string;
   osm_timestamp?: string | null;
 }
 

@@ -147,16 +147,24 @@ export function nearestWater(
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
     return [(b[1] - a[1]) / len, -(b[0] - a[0]) / len];
   };
+  // A closed line (an island) wraps round: its first vertex is also its last.
+  const last = line.length - 1;
+  const closed = last >= 3 && line[0][0] === line[last][0] && line[0][1] === line[last][1];
   let normal = right(line[i], line[i + 1]);
-  let from = t <= 0 ? line[i] : t >= 1 ? line[i + 1] : line[i];
-  if (t <= 0 && i > 0) {
-    const n = right(line[i - 1], line[i]);
-    normal = [normal[0] + n[0], normal[1] + n[1]];
-    from = line[i];
-  } else if (t >= 1 && i + 2 < line.length) {
-    const n = right(line[i + 1], line[i + 2]);
-    normal = [normal[0] + n[0], normal[1] + n[1]];
+  let from = line[i];
+  if (t <= 0) {
+    const prev = i > 0 ? i - 1 : closed ? last - 1 : -1;
+    if (prev >= 0) {
+      const n = right(line[prev], line[prev + 1]);
+      normal = [normal[0] + n[0], normal[1] + n[1]];
+    }
+  } else if (t >= 1) {
     from = line[i + 1];
+    const next = i + 2 <= last ? i + 1 : closed ? 0 : -1;
+    if (next >= 0) {
+      const n = right(line[next], line[next + 1]);
+      normal = [normal[0] + n[0], normal[1] + n[1]];
+    }
   }
   // the pin is at the origin: its offset from the nearest point is -from
   const side = -from[0] * normal[0] + -from[1] * normal[1];
@@ -184,7 +192,7 @@ const BEACH_LABEL = { sand: "Sandstrand", grus: "Grusstrand", sten: "Stenstrand"
 
 const KIND_LABEL: Record<CoastKind, string> = {
   beach: "Strand",
-  sand: "Sandflade",
+  sand: "Sandområde",
   saltmarsh: "Strandeng",
   tidalflat: "Vadeflade",
   harbour: "Havn",
@@ -192,12 +200,17 @@ const KIND_LABEL: Record<CoastKind, string> = {
   pier: "Bro",
   groyne: "Høfde",
   breakwater: "Mole",
-  cliff: "Klint",
+  // natural=cliff is any steep drop; most Danish ones are low clay slopes
+  cliff: "Skrænt",
   coastline: "Kystlinje",
 };
 
-/** "Sandstrand", "Badebro", "Høfde", ... */
-export function kindLabel(f: Pick<CoastFeature, "kind" | "detail">): string {
+/** "Sandstrand", "Badebro", "Høfde", ...; a cliff is a "Klint" only when its
+ * name says so (Møns Klint, Stevns Klint), else a "Skrænt". */
+export function kindLabel(
+  f: Pick<CoastFeature, "kind" | "detail"> & { name?: string | null },
+): string {
+  if (f.kind === "cliff" && /klint/i.test(f.name ?? "")) return "Klint";
   if (f.kind === "beach") {
     const type = beachType(f.detail);
     return type ? BEACH_LABEL[type] : KIND_LABEL.beach;
@@ -215,6 +228,7 @@ const NAMED: readonly CoastKind[] = [
   "tidalflat",
   "saltmarsh",
   "sand",
+  "cliff",
 ];
 
 export function shownName(f: CoastFeature): string | null {
@@ -277,11 +291,12 @@ export interface CoastSummary {
   nearby: Nearby[];
 }
 
+/** The coast at the pin. Without a coastline within 1 km there is no coast
+ * here, whatever else is mapped: a lake's beach or marina is not "Kysten her"
+ * (the pipeline drops most of them; this catches the rest). */
 export function summarize(cells: readonly CoastCell[], pin: LonLat): CoastSummary {
-  return {
-    water: nearestWater(coastlines(cells), pin),
-    nearby: nearbyFeatures(cellFeatures(cells), pin),
-  };
+  const water = nearestWater(coastlines(cells), pin);
+  return { water, nearby: water ? nearbyFeatures(cellFeatures(cells), pin) : [] };
 }
 
 export const NONE_TEXT = `Ingen kyst inden for ${COAST_RADIUS_M / 1000} km`;

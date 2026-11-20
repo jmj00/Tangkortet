@@ -109,22 +109,36 @@ Third-party data keeps its own licence and is not restricted further.
 
 | Feature | In the extract | Kept |
 |---|---|---|
-| `natural=beach` | 1,556 (ways, multipolygons, 10 nodes); 252 named; `surface` on about a third: sand 443, pebblestone 44, gravel 26, boulders 4, … | all |
+| `natural=beach` | 1,556 (ways, multipolygons, 10 nodes); 252 named; `surface` on about a third: sand 443, pebblestone 44, gravel 26, boulders 4, … | 1,470 within 1 km of the coastline (90 lake beaches dropped: Furesø, Silkeborg Langsø, Skanderborg Sø …) |
 | `natural=sand` | 4,073 | 590 within 500 m of the coastline (the rest are sand pits and inland dunes) |
-| `wetland=saltmarsh` / `tidalflat` (with `natural=wetland`) | 572 / 99 | all |
-| `landuse=harbour`, `industrial=port` (Aarhus's terminals), `harbour=yes` or `seamark:type=harbour`; `leisure=marina` | 114 objects; 554 | all (`leisure=marina` wins when both are set) |
+| `wetland=saltmarsh` / `tidalflat` (with `natural=wetland`) | 572 / 99 | 574 / 74 parts within 1 km of the coastline |
+| `landuse=harbour`, `industrial=port` (Aarhus's terminals), `harbour=yes` or `seamark:type=harbour`; `leisure=marina` | 114 objects; 554 | 113; 522 within 1 km of the coastline (`leisure=marina` wins when both are set; 32 lake marinas dropped) |
 | `man_made=pier` | 10,581 | 7,540 within 500 m of the coastline (the rest are mostly lake jetties). Bathing jetties are not tagged apart; a name with "badebro" (8) or `leisure=bathing_place` marks one |
-| `man_made=groyne` / `breakwater` | 3,163 / 1,440 | 3,124 / 1,417 (same coast rule) |
-| `natural=cliff` | 1,508 | 1,025 (same coast rule; inland ones are mostly gravel-pit edges) |
-| `natural=coastline` | 2,236 ways | all (land on the left, so the app can tell land from water) |
+| `man_made=groyne` / `breakwater` | 3,163 / 1,440 | 3,124 / 1,417 (within 500 m) |
+| `natural=cliff` | 1,508 | 1,025 (within 500 m; inland ones are mostly gravel-pit edges). Shown as "Skrænt", or "Klint" when the name says so |
+| `natural=coastline` | 2,236 ways | 2,235 (land on the left, so the app can tell land from water). The 1,011 closed ones (islands, islets) are simplified as rings that keep their area and never cross themselves; one speck under a metre is dropped |
+
+"Near the coastline" means any vertex, or any point along an edge, within
+reach of a coastline segment. **Known loss:** OSM maps Ringkøbing Fjord (and
+a few other lagoons) without a coastline, so its marinas and beaches more
+than 1 km from the sea are dropped with the lake ones. The app also shows no
+nearby features at all when no coastline is within 1 km of the pin.
 
 `pipeline/ingest/coast.py` reads it with pyosmium's C++ tag filter and area
-assembler: **about 25 s for the whole file** on a desktop (2026-11-20), then
-simplifies with Douglas-Peucker (8 m for areas, coastline and cliffs; 3-4 m
-for piers, groynes and breakwaters; a thin beach strip keeps its shape) and
-splits into the risk cells' 0.2° grid with integer, delta-encoded
-coordinates: **2.0 MB for all of Denmark in 235 cells** (largest 50 kB),
-about 190 kB for the committed sample.
+assembler: **about 25 s to read, 28 s in all** on a desktop (2026-11-20, about
+1 GB peak memory), then simplifies with Douglas-Peucker (8 m for areas,
+coastline and cliffs; 3-4 m for piers, groynes and breakwaters; a thin beach
+strip or an islet keeps its shape) and splits into the risk cells' 0.2° grid
+with integer, delta-encoded coordinates: **2.4 MB for all of Denmark in 208
+cells**, about 200 kB for the committed sample. Check of the land/water side:
+of 1,063 sea pins 40-150 m off an islet, none read as land.
+
+**Deploy:** `scripts/fetch_osm_extract.sh` downloads the extract once per ISO
+week to a `.part` file, checks it against Geofabrik's `.md5` and only then
+moves it into place. If Geofabrik is down, last week's cached extract is used
+(`restore-keys`); with none at all the build keeps the committed coast index
+(the dev sample), so "Kysten her" shows only inside that area and the card is
+hidden elsewhere.
 
 Raw source dumps are never committed: `build/` is git-ignored, and the repo
 holds only the small dev sample and the derived risk cells.

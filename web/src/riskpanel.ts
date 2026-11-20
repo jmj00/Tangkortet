@@ -53,6 +53,9 @@ import {
 
 export const RADII_M = [1000, 2000, 5000] as const;
 
+/** "Kysten her" rows shown before "+ N flere". */
+export const COAST_ROWS = 4;
+
 export const DISCLAIMER =
   "Kort og varslinger er værktøjer til at identificere potentielle risici – ikke en garanti for, at en lokalitet eller den indsamlede tang er fri for forurening.";
 
@@ -88,6 +91,10 @@ export class RiskPanel {
   private smallStreams: Pending<unknown | null> = "loading";
   private protectedAreas: Pending<LiveResult<ProtectedArea>> = "loading";
   private coast: CoastState = "loading";
+  /** "+ N flere" opened, kept across redraws for the same pin. */
+  private coastMoreOpen = false;
+  /** "Prøv igen" was pressed: the coast card keeps the focus until it answers. */
+  private focusCoast = false;
   private abort: AbortController | null = null;
   /** The traffic light last reported through onVerdict, and for which pin. */
   private reported: { pin: [number, number]; level: Level | "pending" } | null = null;
@@ -111,6 +118,7 @@ export class RiskPanel {
     this.abort = new AbortController();
     const signal = this.abort.signal;
     this.items = this.rain = this.wind = this.water = this.soil = this.protectedAreas = "loading";
+    this.coastMoreOpen = this.focusCoast = false;
     this.namedStreams = this.smallStreams = "loading";
     this.render();
 
@@ -203,6 +211,10 @@ export class RiskPanel {
       return;
     }
     const coast = this.coastCard();
+    // Each redraw replaces the card: a focus on it (or on its "Prøv igen")
+    // goes to the new card.
+    const keepFocus = this.focusCoast || document.activeElement?.closest?.("#coast-card") != null;
+    if (this.focusCoast && this.coast !== "loading") this.focusCoast = false;
     this.root.replaceChildren(
       this.verdictCard(),
       h("p", { class: "disclaimer" }, DISCLAIMER),
@@ -232,6 +244,7 @@ export class RiskPanel {
       this.soilCard(),
       this.linksCard(),
     );
+    if (keepFocus && coast) coast.focus({ preventScroll: true });
   }
 
   /** Watercourses known so far; null if the named query failed. Small streams
@@ -368,9 +381,9 @@ export class RiskPanel {
                 type: "button",
                 class: "retry",
                 onclick: () => {
+                  // the button is about to go: the focus moves to its card
+                  this.focusCoast = true;
                   this.fetchCoast(pin, this.abort?.signal ?? new AbortController().signal);
-                  // the button is gone: keep the focus on the card it was in
-                  this.root.querySelector<HTMLElement>("#coast-card")?.focus();
                 },
               },
               "Prøv igen",
@@ -378,36 +391,44 @@ export class RiskPanel {
           : null,
       );
     }
-    const km = `${COAST_RADIUS_M / 1000} km`;
-    if (!c.water && c.nearby.length === 0)
+    if (!c.water)
       return this.card(title, h("p", { class: "coast__water" }, `${NONE_TEXT}.`), source);
-    const water = c.water
-      ? h("p", { class: "coast__water" }, h("strong", {}, waterText(c.water)))
-      : h("p", { class: "coast__water" }, `Ingen kystlinje inden for ${km}.`);
-    const list = c.nearby.slice(0, 6);
+    const row = (n: CoastSummary["nearby"][number]): HTMLElement => {
+      const name = shownName(n.feature);
+      return h(
+        "li",
+        {},
+        h("span", { class: "coast__kind" }, n.label),
+        name ? h("span", { class: "coast__name" }, ` – ${name}`) : null,
+        h("span", { class: "coast__dist" }, n.distanceM < 15 ? "ved nålen" : metres(n.distanceM)),
+      );
+    };
+    // The first few, the rest folded, so the risk factors below stay near.
+    const shown = c.nearby.slice(0, COAST_ROWS);
+    const more = c.nearby.slice(COAST_ROWS, 8);
+    const folded = more.length
+      ? h(
+          "details",
+          {
+            class: "coast__more",
+            open: this.coastMoreOpen,
+            ontoggle: (e: Event) => (this.coastMoreOpen = (e.target as HTMLDetailsElement).open),
+          },
+          h("summary", {}, `+ ${more.length} ${more.length === 1 ? "mere" : "flere"}`),
+          h("ul", { class: "coast__list" }, ...more.map(row)),
+        )
+      : null;
     return this.card(
       title,
-      water,
-      list.length
-        ? h(
-            "ul",
-            { class: "coast__list" },
-            ...list.map((n) => {
-              const name = shownName(n.feature);
-              return h(
-                "li",
-                {},
-                h("span", { class: "coast__kind" }, n.label),
-                name ? h("span", { class: "coast__name" }, ` – ${name}`) : null,
-                h(
-                  "span",
-                  { class: "coast__dist" },
-                  n.distanceM < 15 ? "ved nålen" : metres(n.distanceM),
-                ),
-              );
-            }),
-          )
-        : h("p", {}, `Ingen strande, havne, broer eller klinter kortlagt inden for ${km}.`),
+      h("p", { class: "coast__water" }, h("strong", {}, waterText(c.water))),
+      shown.length
+        ? h("ul", { class: "coast__list" }, ...shown.map(row))
+        : h(
+            "p",
+            {},
+            `Ingen strande, havne, broer eller skrænter kortlagt inden for ${COAST_RADIUS_M / 1000} km.`,
+          ),
+      folded,
       source,
     );
   }

@@ -74,3 +74,29 @@
     min-height: 44px;
   }
 }
+
+/* "+ 2 flere": the rest of the list, folded */
+.coast__more {
+  margin: 0 0 0.35rem;
+  font-size: 0.9rem;
+}
+
+.coast__more > summary {
+  display: flex;
+  align-items: center;
+  min-height: 2rem;
+  color: var(--accent);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.coast__more > summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .coast__more > summary {
+    min-height: 44px;
+  }
+}

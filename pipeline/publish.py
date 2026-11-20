@@ -42,7 +42,7 @@ ATTRIBUTION = {
     "photos": "Fotos fra iNaturalist-fund (CC BY 4.0 / CC0) – se det enkelte billede",
     # The coast cells are a derivative database of OpenStreetMap: ODbL 1.0
     # (share-alike), not the project's CC BY-NC (docs/data-sources.md).
-    "coast": "Kysten her (strande, havne, broer, høfder, klinter): © OpenStreetMap-bidragydere,"
+    "coast": "Kysten her (strande, havne, broer, høfder, skrænter): © OpenStreetMap-bidragydere,"
     " ODbL 1.0 – kan være ufuldstændigt",
 }
 

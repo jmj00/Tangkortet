@@ -71,6 +71,27 @@ describe("nearestWater", () => {
     expect(nearestWater([bend], [10.201, 56.149])?.inWater).toBe(true);
   });
 
+  it("wraps round a closed islet, whichever vertex is nearest", () => {
+    // a 60 x 55 m islet, anticlockwise (land on the left, inside)
+    const islet: LonLat[] = [
+      [10.3, 56.1],
+      [10.301, 56.1],
+      [10.301, 56.1005],
+      [10.3, 56.1005],
+      [10.3, 56.1],
+    ];
+    // off each corner, including the first/last one
+    for (const pin of [
+      [10.2995, 56.0995],
+      [10.3015, 56.0995],
+      [10.3015, 56.101],
+      [10.2995, 56.101],
+    ] as LonLat[]) {
+      expect(nearestWater([islet], pin)?.inWater).toBe(true);
+    }
+    expect(nearestWater([islet], [10.3005, 56.10025])?.inWater).toBe(false);
+  });
+
   it("is null beyond the radius", () => {
     expect(nearestWater([coastNorth], [10.1, 56.15])).toBeNull();
     expect(nearestWater([], [10.1, 56.15])).toBeNull();
@@ -94,6 +115,9 @@ describe("words", () => {
     expect(kindLabel({ kind: "saltmarsh", detail: null })).toBe("Strandeng");
     expect(kindLabel({ kind: "tidalflat", detail: null })).toBe("Vadeflade");
     expect(kindLabel({ kind: "marina", detail: null })).toBe("Lystbådehavn");
+    expect(kindLabel({ kind: "sand", detail: null })).toBe("Sandområde");
+    expect(kindLabel({ kind: "cliff", detail: null })).toBe("Skrænt");
+    expect(kindLabel({ kind: "cliff", detail: null, name: "Møns Klint" })).toBe("Klint");
   });
 
   it("rounds distances to 10 m and says where the water is", () => {
@@ -173,6 +197,9 @@ describe("features near the pin", () => {
     const summary = summarize([cell], [10.1997, 56.1462]);
     expect(summaryLine(summary)).toBe("Vandet 20 m væk · Sandstrand 20 m · Badebro 90 m");
     expect(summaryLine({ water: null, nearby: [] })).toBe(NONE_TEXT);
+    // a lake marina without a coastline near is not the coast
+    const lake: CoastCell = { coastline: [], features: cell.features };
+    expect(summarize([lake], [10.1997, 56.1462])).toEqual({ water: null, nearby: [] });
     expect(NONE_TEXT).toBe("Ingen kyst inden for 1 km");
   });
 });

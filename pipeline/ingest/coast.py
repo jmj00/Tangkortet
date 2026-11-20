@@ -14,9 +14,12 @@ the features that say what the shore is like and how to get to the water:
   groynes (``man_made=groyne``), breakwaters (``man_made=breakwater``) and
   cliffs (``natural=cliff``).
 
-Sand, cliffs, piers, groynes and breakwaters are kept only within
-:data:`NEAR_COAST_M` of the coastline: inland they are sand pits, gravel-pit
-edges and lake jetties, which say nothing about the coast.
+Every kind is kept only near the coastline (:data:`NEAR_COAST_M`): within
+500 m for sand, cliffs, piers, groynes and breakwaters (inland they are sand
+pits, gravel-pit edges and lake jetties), within 1 km for beaches, harbours,
+marinas, salt marsh and tidal flats (inland they are lake beaches and lake
+marinas: Furesø, Silkeborg Langsø, Skanderborg Sø). A fjord OSM maps without
+a coastline (Ringkøbing Fjord) loses its marinas and beaches with them.
 
 The C++ side of pyosmium does the heavy lifting: a tag filter drops every
 object we don't want before Python sees it, and the area assembler builds the
@@ -50,9 +53,19 @@ AREA_KINDS = ("beach", "sand", "saltmarsh", "tidalflat", "harbour", "marina")
 LINE_KINDS = ("coastline", "pier", "groyne", "breakwater", "cliff")
 #: Kinds a single node can stand for (a beach or a harbour mapped as a point).
 POINT_KINDS = ("beach", "harbour", "marina")
-#: Kinds dropped unless within NEAR_COAST_M of the coastline.
-COASTAL_ONLY = ("sand", "cliff", "pier", "groyne", "breakwater")
-NEAR_COAST_M = 500.0
+#: How near the coastline (any vertex or edge) a feature must be to be kept.
+NEAR_COAST_M: dict[str, float] = {
+    "sand": 500.0,
+    "cliff": 500.0,
+    "pier": 500.0,
+    "groyne": 500.0,
+    "breakwater": 500.0,
+    "beach": 1000.0,
+    "harbour": 1000.0,
+    "marina": 1000.0,
+    "saltmarsh": 1000.0,
+    "tidalflat": 1000.0,
+}
 
 #: Douglas-Peucker tolerance in metres. Short structures (a groyne is often
 #: 30-60 m) keep more detail than beaches and the coastline.
@@ -183,16 +196,52 @@ def _area_m2(ring: Sequence[Point]) -> float:
     return abs(total) / 2
 
 
+def _segments_cross(a: Point, b: Point, c: Point, d: Point) -> bool:
+    """Segments ab and cd properly cross (touching at an end does not count).
+    From Svampekortet 624fb8b (pipeline/forest_outlines.py)."""
+
+    def orient(p: Point, q: Point, r: Point) -> float:
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+
+    d1, d2, d3, d4 = orient(c, d, a), orient(c, d, b), orient(a, b, c), orient(a, b, d)
+    return ((d1 > 0) != (d2 > 0)) and ((d3 > 0) != (d4 > 0)) and 0 not in (d1, d2, d3, d4)
+
+
+#: Rings longer than this skip the (quadratic) self-crossing check.
+SIMPLE_CHECK_MAX = 2000
+
+
+def ring_is_simple(ring: Sequence[Point]) -> bool:
+    """No two edges of the closed ring cross (a bow tie would put the pin on
+    the wrong side of an islet). Adapted from Svampekortet 624fb8b
+    (pipeline/forest_outlines.py ring_is_simple)."""
+    n = len(ring) - 1
+    if n > SIMPLE_CHECK_MAX:
+        return True
+    for i in range(n):
+        a, b = ring[i], ring[i + 1]
+        lo, hi = min(a[0], b[0]), max(a[0], b[0])
+        for j in range(i + 2, n):
+            if i == 0 and j == n - 1:
+                continue  # the first and last edge share the closing point
+            c, d = ring[j], ring[j + 1]
+            if max(c[0], d[0]) < lo or min(c[0], d[0]) > hi:
+                continue
+            if _segments_cross(a, b, c, d):
+                return False
+    return True
+
+
 def simplify_ring(ring: Sequence[Point], tolerance_m: float) -> list[Point]:
     """A closed ring simplified like a line, but a thin strip (a beach is often
-    a few metres wide and a hundred long) must not collapse: the tolerance is
-    halved until the ring keeps at least half its area, else it stays as it
-    was (rounded)."""
+    a few metres wide and a hundred long) must not collapse or cross itself:
+    the tolerance is halved until the ring keeps at least half its area and
+    no edges cross, else it stays as it was (rounded)."""
     area = _area_m2(ring)
     tolerance = tolerance_m
     for _ in range(4):
         out = simplify_lonlat(ring, tolerance)
-        if len(out) >= 4 and _area_m2(out) >= area / 2:
+        if len(out) >= 4 and _area_m2(out) >= area / 2 and ring_is_simple(out):
             return out
         tolerance /= 2
     return simplify_lonlat(ring, 0.0)
@@ -211,8 +260,8 @@ def _seg_dist_m(p: Point, a: Point, b: Point) -> float:
 
 class CoastIndex:
     """Coastline segments bucketed in a 0.01 degree grid, for "is this within
-    NEAR_COAST_M of the coast" (a bucket is at least 620 m wide in Denmark, so
-    the 3x3 neighbourhood covers 500 m)."""
+    so many metres of the coast" (a bucket is at least 620 m wide in Denmark;
+    the neighbourhood searched grows with the distance)."""
 
     STEP = 0.01
 
@@ -226,18 +275,31 @@ class CoastIndex:
                     for y in range(y0, y1 + 1):
                         self.buckets.setdefault((x, y), []).append((a, b))
 
-    def near(self, p: Point, limit_m: float = NEAR_COAST_M) -> bool:
+    def near(self, p: Point, limit_m: float = 500.0) -> bool:
         bx, by = math.floor(p[0] / self.STEP), math.floor(p[1] / self.STEP)
-        for x in (bx - 1, bx, bx + 1):
-            for y in (by - 1, by, by + 1):
+        reach = math.ceil(limit_m / 620.0)
+        for x in range(bx - reach, bx + reach + 1):
+            for y in range(by - reach, by + reach + 1):
                 for a, b in self.buckets.get((x, y), ()):
                     if _seg_dist_m(p, a, b) <= limit_m:
                         return True
         return False
 
-    def any_near(self, points: Sequence[Point], limit_m: float = NEAR_COAST_M) -> bool:
-        # every vertex of a long feature is plenty; most hit on the first few
-        return any(self.near(p, limit_m) for p in points)
+    def any_near(self, points: Sequence[Point], limit_m: float = 500.0) -> bool:
+        """Any vertex, or any point along an edge (sampled every limit/2), within
+        ``limit_m`` of a coastline segment; most features hit on the first few."""
+        if any(self.near(p, limit_m) for p in points):
+            return True
+        step = limit_m / 2
+        for a, b in zip(points, points[1:], strict=False):
+            kx = _kx(a[1])
+            length = math.hypot((b[0] - a[0]) * kx, (b[1] - a[1]) * _M_PER_DEG_LAT)
+            n = int(length // step)
+            for i in range(1, n + 1):
+                t = i / (n + 1)
+                if self.near((a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])), limit_m):
+                    return True
+        return False
 
 
 # --- reading the extract ---
@@ -315,18 +377,27 @@ def read_pbf(path: str | pathlib.Path) -> Extract:
     return result
 
 
+def simplify_coastline(geom: Sequence[Point]) -> list[Point]:
+    """An open coastline as a line; a closed one (an island) as a ring, or []
+    when even unsimplified it is less than a triangle."""
+    tolerance = TOLERANCE_M.get("coastline", DEFAULT_TOLERANCE_M)
+    if len(geom) >= 4 and geom[0] == geom[-1]:
+        ring = simplify_ring(geom, tolerance)
+        return ring if len(ring) >= 4 else []
+    return simplify_lonlat(geom, tolerance)
+
+
 def _point(f: Feature, lon: float, lat: float) -> Feature:
     return Feature(f.id, f.kind, "p", [(round(lon, 5), round(lat, 5))], f.name, f.detail)
 
 
 def prepare(extract: Extract) -> list[Feature]:
-    """Simplify every feature and drop the inland ones of COASTAL_ONLY kinds.
-    A ring that simplifies to less than a triangle becomes a point."""
-    coastline = [
-        simplify_lonlat(f.geom, TOLERANCE_M.get(f.kind, DEFAULT_TOLERANCE_M))
-        for f in extract.features
-        if f.kind == "coastline"
-    ]
+    """Simplify every feature and drop the ones away from the coast
+    (NEAR_COAST_M). A ring that simplifies to less than a triangle becomes a
+    point. A closed coastline (an island, an islet) is simplified as a ring,
+    so it keeps its area and its land/water sides; one that still collapses
+    is dropped."""
+    coastline = [simplify_coastline(f.geom) for f in extract.features if f.kind == "coastline"]
     index = CoastIndex(coastline)
     out: list[Feature] = []
     coast_iter = iter(coastline)
@@ -336,7 +407,7 @@ def prepare(extract: Extract) -> list[Feature]:
             if len(geom) >= 2:
                 out.append(Feature(f.id, f.kind, "l", geom))
             continue
-        if f.kind in COASTAL_ONLY and not index.any_near(f.geom):
+        if not index.any_near(f.geom, NEAR_COAST_M.get(f.kind, 500.0)):
             extract.dropped_inland[f.kind] += 1
             continue
         if f.type == "p":
@@ -465,6 +536,7 @@ def download(dest: pathlib.Path, url: str = GEOFABRIK_URL) -> pathlib.Path:
 
 SOURCE = "OpenStreetMap (Geofabrik-udtræk for Danmark)"
 LICENSE = "ODbL 1.0"
+LICENSE_URL = "https://opendatacommons.org/licenses/odbl/1-0/"
 
 
 def publish_coast(
@@ -499,6 +571,7 @@ def publish_coast(
         "coverage": keep,
         "source": SOURCE,
         "license": LICENSE,
+        "license_url": LICENSE_URL,
         "osm_timestamp": extract.timestamp,
         # features in the whole extract, before any sample cut
         "counts_denmark": {k: counts.get(k, 0) for k in (*AREA_KINDS, *LINE_KINDS)},

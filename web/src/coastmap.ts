@@ -176,7 +176,7 @@ export function legendItems(
     },
     { key: "pier", label: "Bro, mole", color: p.pier, style: "line", when: ["pier", "breakwater"] },
     { key: "groyne", label: "Høfde", color: p.groyne, style: "line", when: ["groyne"] },
-    { key: "cliff", label: "Klint", color: p.cliff, style: "dots", when: ["cliff"] },
+    { key: "cliff", label: "Skrænt, klint", color: p.cliff, style: "dots", when: ["cliff"] },
   ];
   return rows
     .filter((r) => r.when.some((k) => kinds.has(k)))
@@ -279,33 +279,49 @@ function repaint(map: maplibregl.Map): void {
   map.setPaintProperty(CLIFF, "line-color", p.cliff);
 }
 
-type Bbox = [number, number, number, number];
+/** Decoded cells kept in memory at most (a long pan along the coast). */
+export const CELL_CACHE = 60;
 
-function featureBbox(f: CoastFeature): Bbox {
-  let [minX, minY, maxX, maxY] = [Infinity, Infinity, -Infinity, -Infinity];
-  for (const [x, y] of f.coords) {
-    minX = Math.min(minX, x);
-    minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x);
-    maxY = Math.max(maxY, y);
+/** A small least-recently-used map: `get` refreshes, `set` evicts the oldest. */
+export class Lru<K, V> {
+  private readonly items = new Map<K, V>();
+  constructor(private readonly max: number) {}
+  get(key: K): V | undefined {
+    const value = this.items.get(key);
+    if (value !== undefined) {
+      this.items.delete(key);
+      this.items.set(key, value);
+    }
+    return value;
   }
-  return [minX, minY, maxX, maxY];
+  has(key: K): boolean {
+    return this.items.has(key);
+  }
+  set(key: K, value: V): void {
+    this.items.delete(key);
+    this.items.set(key, value);
+    while (this.items.size > this.max) this.items.delete(this.items.keys().next().value as K);
+  }
+  get size(): number {
+    return this.items.size;
+  }
 }
-
-const overlaps = (a: Bbox, b: Bbox): boolean =>
-  a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
 
 /** Draw the coast on `map` (once the style is ready) and keep it to the
  * cells in view. */
 export function initCoastMap(map: maplibregl.Map, index: CoastIndex | null | undefined): void {
   if (!index) return;
   const available = new Set(index.cells);
-  const decoded = new Map<string, { feature: CoastFeature; bbox: Bbox }[]>();
+  const decoded = new Lru<string, CoastFeature[]>(CELL_CACHE);
   let shown = "";
   let request = 0;
   let kindsInView = new Set<CoastKind>();
 
-  map.addSource(SOURCE, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addSource(SOURCE, {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+    attribution: "© OpenStreetMap-bidragydere (ODbL)",
+  });
   addLayers(map);
 
   const pushLegend = (): void => {
@@ -313,59 +329,63 @@ export function initCoastMap(map: maplibregl.Map, index: CoastIndex | null | und
     legendFor(map).update({ coast: visible ? legendItems(kindsInView) : null });
   };
 
+  /** The key lists what is really drawn in view, read back from the map
+   * once it has rendered (not every feature whose box overlaps the view). */
+  const readRendered = (): void => {
+    const layers = COAST_LAYERS.filter((id) => map.getLayer(id));
+    kindsInView = new Set(
+      map.getZoom() < COAST_MIN_ZOOM
+        ? []
+        : map.queryRenderedFeatures({ layers }).map((f) => f.properties?.k as CoastKind),
+    );
+    pushLegend();
+  };
+
   const update = async (): Promise<void> => {
     const id = ++request;
-    if (map.getZoom() < FETCH_ZOOM) {
-      kindsInView = new Set();
-      pushLegend();
-      return;
-    }
+    if (map.getZoom() < FETCH_ZOOM) return;
     const b = map.getBounds();
-    const view: Bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
-    const keys = cellKeys(view, index.cell_deg).filter((k) => available.has(k));
+    const keys = cellKeys(
+      [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()],
+      index.cell_deg,
+    ).filter((k) => available.has(k));
     if (keys.length > MAX_CELLS) return;
+    const cells = new Map<string, CoastFeature[]>();
     try {
       await Promise.all(
-        keys
-          .filter((k) => !decoded.has(k))
-          .map(async (k) => {
-            const cell = await loadCoastCell(k);
-            decoded.set(
-              k,
-              cellFeatures([cell]).map((feature) => ({ feature, bbox: featureBbox(feature) })),
-            );
-          }),
+        keys.map(async (k) => {
+          let features = decoded.get(k);
+          if (!features) {
+            features = cellFeatures([await loadCoastCell(k)]);
+            decoded.set(k, features);
+          }
+          cells.set(k, features);
+        }),
       );
     } catch {
       return; // offline: the map simply has no coast layer; the next move tries again
     }
     if (id !== request) return;
     const signature = keys.join(",");
-    if (signature !== shown) {
-      shown = signature;
-      const seen = new Set<string>();
-      const features: CoastFeature[] = [];
-      for (const k of keys) {
-        for (const { feature } of decoded.get(k) ?? []) {
-          // an area lies whole in every cell it touches; draw it once
-          if (feature.type === "a") {
-            if (seen.has(feature.id)) continue;
-            seen.add(feature.id);
-          }
-          features.push(feature);
+    if (signature === shown) return;
+    shown = signature;
+    const seen = new Set<string>();
+    const features: CoastFeature[] = [];
+    for (const k of keys) {
+      for (const feature of cells.get(k) ?? []) {
+        // an area lies whole in every cell it touches; draw it once
+        if (feature.type === "a") {
+          if (seen.has(feature.id)) continue;
+          seen.add(feature.id);
         }
+        features.push(feature);
       }
-      (map.getSource(SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(toGeoJson(features));
     }
-    kindsInView = new Set();
-    for (const k of keys)
-      for (const { feature, bbox } of decoded.get(k) ?? [])
-        if (feature.kind !== "coastline" && feature.type !== "p" && overlaps(bbox, view))
-          kindsInView.add(feature.kind);
-    pushLegend();
+    (map.getSource(SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(toGeoJson(features));
   };
 
   map.on("moveend", () => void update());
+  map.on("idle", readRendered);
   void update();
 
   globalThis.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
