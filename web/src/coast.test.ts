@@ -201,6 +201,23 @@ describe("features near the pin", () => {
     const lake: CoastCell = { coastline: [], features: cell.features };
     expect(summarize([lake], [10.1997, 56.1462])).toEqual({ water: null, nearby: [] });
     expect(NONE_TEXT).toBe("Ingen kyst inden for 1 km");
+    // ...but a pin out on a Wadden Sea flat, far from the coastline, is the coast
+    const flatRing: LonLat[] = [
+      [8.6, 55.27],
+      [8.64, 55.27],
+      [8.64, 55.3],
+      [8.6, 55.3],
+      [8.6, 55.27],
+    ];
+    const wadden: CoastCell = {
+      coastline: [],
+      features: [["r1", "tidalflat", "a", enc(flatRing)]],
+    };
+    const onFlat = summarize([wadden], [8.62, 55.285]);
+    expect(onFlat.water).toBeNull();
+    expect(summaryLine(onFlat)).toBe("Vadeflade ved nålen");
+    // beside the flat (not on it) with no coastline near: still no coast
+    expect(summarize([wadden], [8.66, 55.285]).nearby).toEqual([]);
   });
 });
 

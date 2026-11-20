@@ -391,7 +391,7 @@ export class RiskPanel {
           : null,
       );
     }
-    if (!c.water)
+    if (!c.water && c.nearby.length === 0)
       return this.card(title, h("p", { class: "coast__water" }, `${NONE_TEXT}.`), source);
     const row = (n: CoastSummary["nearby"][number]): HTMLElement => {
       const name = shownName(n.feature);
@@ -404,8 +404,10 @@ export class RiskPanel {
       );
     };
     // The first few, the rest folded, so the risk factors below stay near.
-    const shown = c.nearby.slice(0, COAST_ROWS);
-    const more = c.nearby.slice(COAST_ROWS, 8);
+    // never fold a single row: "+ 1 mere" hiding one line saves nothing
+    const fold = c.nearby.length > COAST_ROWS + 1;
+    const shown = fold ? c.nearby.slice(0, COAST_ROWS) : c.nearby.slice(0, COAST_ROWS + 1);
+    const more = fold ? c.nearby.slice(COAST_ROWS, 8) : [];
     const folded = more.length
       ? h(
           "details",
@@ -414,13 +416,18 @@ export class RiskPanel {
             open: this.coastMoreOpen,
             ontoggle: (e: Event) => (this.coastMoreOpen = (e.target as HTMLDetailsElement).open),
           },
-          h("summary", {}, `+ ${more.length} ${more.length === 1 ? "mere" : "flere"}`),
+          h(
+            "summary",
+            {},
+            h("span", { class: "coast__more-closed" }, `+ ${more.length} flere`),
+            h("span", { class: "coast__more-open" }, "Vis færre"),
+          ),
           h("ul", { class: "coast__list" }, ...more.map(row)),
         )
       : null;
     return this.card(
       title,
-      h("p", { class: "coast__water" }, h("strong", {}, waterText(c.water))),
+      c.water ? h("p", { class: "coast__water" }, h("strong", {}, waterText(c.water))) : null,
       shown.length
         ? h("ul", { class: "coast__list" }, ...shown.map(row))
         : h(

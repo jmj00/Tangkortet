@@ -291,12 +291,20 @@ export interface CoastSummary {
   nearby: Nearby[];
 }
 
+/** Shore that lies out in the sea, far from the mapped coastline: the
+ * Wadden Sea flats are kilometres wide. */
+const OFFSHORE_KINDS = new Set(["tidalflat", "saltmarsh"]);
+
 /** The coast at the pin. Without a coastline within 1 km there is no coast
  * here, whatever else is mapped: a lake's beach or marina is not "Kysten her"
- * (the pipeline drops most of them; this catches the rest). */
+ * (the pipeline drops most of them; this catches the rest). The exception is
+ * a pin on a tidal flat or salt marsh itself, which is the coast. */
 export function summarize(cells: readonly CoastCell[], pin: LonLat): CoastSummary {
   const water = nearestWater(coastlines(cells), pin);
-  return { water, nearby: water ? nearbyFeatures(cellFeatures(cells), pin) : [] };
+  const nearby = nearbyFeatures(cellFeatures(cells), pin);
+  if (water) return { water, nearby };
+  const onShore = nearby.some((n) => n.distanceM < EDGE_M && OFFSHORE_KINDS.has(n.feature.kind));
+  return { water: null, nearby: onShore ? nearby : [] };
 }
 
 export const NONE_TEXT = `Ingen kyst inden for ${COAST_RADIUS_M / 1000} km`;

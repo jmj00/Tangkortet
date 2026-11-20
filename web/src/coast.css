@@ -100,3 +100,9 @@
     min-height: 44px;
   }
 }
+
+/* "+ N flere" / "Vis færre": the summary says which way it goes */
+.coast__more:not([open]) .coast__more-open,
+.coast__more[open] .coast__more-closed {
+  display: none;
+}
