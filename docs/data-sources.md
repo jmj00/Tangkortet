@@ -1,0 +1,90 @@
+# Data sources: access, terms, validity
+
+Living document, carried over from Svampekortet's practice: nothing gets built
+on a source until its row here is complete. Phase-0 spikes run 2026-10-23 (risk layers re-checked in the pipeline build, PR 5):
+`scripts/spike_gbif_seaweed.py` (observations) and
+`scripts/spike_risk_sources.py` (risk layers). Rerun them to refresh the counts.
+
+## Summary
+
+### Observations and species
+
+| Source | Access | Auth | Status |
+|---|---|---|---|
+| GBIF occurrence API, `country=DK` | `https://api.gbif.org/v1/occurrence/search` | none | **verified**: 30–1,625 DK records per candidate species; see `data/expert/species_evidence.json` |
+| NHMD Phycology Herbarium (via GBIF) | dataset "NHMD Phycology Herbarium - static" | none | **verified**: the bulk of all records, mostly 1990s reef-diving surveys **with depth** |
+| arter.dk (via GBIF, dataset `963a6b96-4d22-4428-86e4-afee52cf4a8e`) | as Svampekortet | none | **verified**: the naming source of truth (`vernacularName`); few seaweed records |
+| iNaturalist research-grade (via GBIF) | as above | none | **verified**: most recent shore records (e.g. 504 *Fucus vesiculosus*) |
+| NOVANA macroalgae reef monitoring (DCE / VanDa / ODA) | not found as an open download | ? | **deferred**: GBIF depth data is good enough for v1 |
+
+### Contamination risk (brief §1)
+
+All layers below answer anonymous WFS 2.0 / ArcGIS REST requests, are national,
+and come in EPSG:25832 (MiljøGIS) unless noted.
+
+| Risk factor | Layer | Features | Notes |
+|---|---|---|---|
+| Spildevand: regnbetingede udløb / overløb | MiljøGIS `vp4basis2026:vp4_ba_26_punkt_rbu_saml` | 20,640 | Point per outlet, owner, yearly volume (`udl_va_sta` m³), type (`bgv_type`, e.g. `OS` = overløb fra fællessystem), data year 2024 |
+| Spildevand: renseanlæg | MiljøGIS `…punkt_rens_saml` | 633 | Name, owner, design capacity (PE), treatment level, yearly load |
+| Industri (current discharges) | MiljøGIS `…punkt_ind_saml` | 76 | Direct industrial discharges only. Historic industry comes via soil contamination below |
+| Akvakultur | MiljøGIS `…punkt_havdam_saml` | 27 | Sea/land-based fish farms |
+| Havne og sejlads | MiljøGIS `vp4basis2026:vp4_ba_26_havne` | 458 | Name, `erhvervshavn` / `lystbaadehavn` flags |
+| Sediment: klappladser | MiljøGIS `…klappladser` + `…nedlagte_klappladser` | 81 + 44 | Polygons. MST INSPIRE record: **CC BY 4.0**, no access limits |
+| Badevandskvalitet (season class) | MiljøGIS `vp4basis2026:vp4_ba_26_badevand` | 1,049 | EU class (`quality`: "1 - Excellent" …), season 2024, name, lat/lon, link to the bathing-water profile. MST INSPIRE record: **CC BY 4.0**. Also a ready list of named beaches for "kyster nær mig" |
+| Kystvande: kemisk / økologisk tilstand | MiljøGIS `vp3_2endelig2025:vp3_2e2025_marin_saml_punkt` | 89 | One point per coastal water body, `ov_til_kem` ("Ikke-god kemisk tilstand"), `til_oko_sm`. Polygon layer still to locate (phase 3) |
+| Industri og historisk forurening: V1/V2 | Vejdirektoratet ArcGIS mirror of DKJord, `kort.vd.dk/…/Grunddata/Jordforurening/MapServer/5` (V1) and `/6` (V2) | 29,808 / 34,808 rows | **Geometry is withheld** (layer extent NaN, no shapes returned), so it can't be precomputed. Spatial queries still work, so the client asks it live: point + `distance=1000` m, `returnDistinctValues`, CORS allowed. Rows repeat per cadastral parcel, so dedupe by `lokalitetsnr`. **A third-party mirror with unstated terms.** The authoritative source is Miljøportalen's Arealdata (`dkjord-5`), which has no service URL or download API we could find. Ask Miljøportalen before launch |
+| Naturbeskyttelse: Natura 2000 | Miljøportalen WFS `dai:habitat_omr`, `dai:fugle_bes_omr` | 269 / 125 | Shown as *collecting rules*, not contamination |
+| Naturbeskyttelse: fredninger, reservater | Miljøportalen WFS `dai:fredede_omr`, `dai:natur_vildt_reservat` | 4,176 / 94 | Same |
+| Kraftig nedbør 24/48/72 h | DMI `metObs` `precip_past1h` (stations, hourly, up to the latest hour) | live | No key; **CORS `*`**, so the browser can fetch it directly (no daily rebuild needed). Svampekortet's `climateData` client also works for daily totals |
+| Live badevandsvarsler | badevand.dk (DHI) `/api/next/beaches` | n/a | **Not usable**: protected by reCAPTCHA. Link out instead. A data agreement with DHI is a user decision |
+| Opblomstringer (alger, cyanobakterier) | none found | n/a | Link out + checklist item |
+| Landbrug og dræn, vandløb | Miljøportalen `dai:bes_vandloeb`; MiljøGIS coastal catchments (`…kystvand_opland_afg`) | n/a | Available, not yet sized. Phase 3 decides whether "a stream mouth nearby" is worth showing |
+| Strøm og vandudskiftning | none | n/a | Checklist text only (brief §2) |
+
+### Accumulation (iodine, arsenic, cadmium)
+
+| Source | Notes |
+|---|---|
+| Susan Løvstad Holdt, DTU (recommended by the expert, round 1) | **Used, 2026-11-01**: her Danish measurements (Sá Monteiro, Sloth, Holdt & Hansen 2019, EFSA Journal) and blanching study (Nielsen, Holdt et al. 2020, Foods), plus two non-Holdt papers for species she didn't cover. Gives *proposals* per species, shown on the review page for the expert to confirm; not in the app yet. See [`literature-accumulation.md`](literature-accumulation.md) |
+
+### Basemap and address search
+
+As in Svampekortet (Skærmkort WMS, Adressevælgeren, both Datafordeler API-Key),
+needing **Tangkortet's own** key. Not yet requested.
+
+## Licences
+
+**This project's own material.** Code: PolyForm Strict 1.0.0 (`LICENSE`).
+Texts and derived data (the published payload, the risk cells, the
+traffic-light rules, the accumulation proposals, these docs): **CC BY-NC 4.0**.
+Third-party data keeps its own licence and is not restricted further.
+
+| Source | Used for | Licence / terms | In this repo |
+|---|---|---|---|
+| GBIF occurrence records (NHMD Phycology Herbarium, arter.dk, iNaturalist, observation.org, …) | finds per species | per dataset; in the committed dev payload: 7,700 records **CC BY 4.0**, 1,255 **CC BY-NC 4.0**, 100 **CC0** (2026-11-20). Each record's licence and dataset are kept in the published species files | dev sample `web/public/data/species/` |
+| arter.dk (via GBIF) | Danish names, part of the finds | observation data CC BY 4.0, credit "Datagrundlag: Arter – Miljøstyrelsen, Statens Naturhistoriske Museum" | as above |
+| Miljøstyrelsen, MiljøGIS water-plan layers (`vp4basis2026`, `vp3_2endelig2025`) | overflows, treatment plants, industry, aquaculture, harbours, dumping sites, bathing water, coastal-water status | INSPIRE records for klappladser and badevand: **CC BY 4.0** (geodata-info.dk); the other layers come from the same publisher, **confirm before launch** | derived risk cells for the dev area (`web/public/data/risk/`) |
+| Danmarks Miljøportal (Natura 2000, fredninger) | live query at the pin | free use under <https://miljoeportal.dk/dataansvar/vilkaar-for-brug/>; **record the attribution line before launch** | nothing stored |
+| DKJord via Vejdirektoratet's ArcGIS mirror | live V1/V2 query at the pin | terms not stated on the service; **ask before launch** | nothing stored |
+| DMI metObs | live rain and wind | open data, credit "Data fra DMI" | nothing stored |
+| OpenStreetMap | basemap | ODbL, credit "© OpenStreetMap-bidragydere" | nothing stored |
+| Literature (Holdt et al. and others) | accumulation proposals | cited by DOI; only short facts and numbers are reproduced | `docs/literature-accumulation.md` |
+| badevand.dk (DHI) | — | reCAPTCHA-protected, **not used**; the app only links to it | nothing stored |
+
+Raw source dumps are never committed: `build/` is git-ignored, and the repo
+holds only the small dev sample and the derived risk cells.
+
+## Findings worth remembering
+
+- **Attached vs. drift** exists only in free text. The rules in
+  `pipeline/attachment.py` (ADR-0003) give, for example, *Saccharina
+  latissima* 1,019 attached / 20 drift / 261 unknown, and *Fucus vesiculosus*
+  386 / 48 / 1,191. Recent shore records are mostly "unknown".
+- **Depth** is on most herbarium/survey records. Median by species fits the
+  expected zonation: *F. vesiculosus* 1 m, *F. serratus* 5 m, *Chondrus* 6 m,
+  *Laminaria digitata* 9 m, *Saccharina* 10 m. A depth of 0 is ambiguous
+  (shore, or not recorded), so it doesn't count as "attached".
+- Miljøportalen's GeoServer is reachable from here (Svampekortet found only its
+  Vue frontend in 2026-09; the WFS is at `arealeditering-dist-geo…/geoserver/ows`).
+- The water-plan data is versioned per planning round (`vp3…`, `vp4basis2026`).
+  Pin the round in config and let a contract check catch a new one.

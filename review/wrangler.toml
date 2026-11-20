@@ -1,0 +1,11 @@
+name = "tangkortet-review"
+pages_build_output_dir = "public"
+compatibility_date = "2026-10-01"
+
+# Backs review/functions/api/review-state.js. The namespace is created once, by
+# hand, in the Cloudflare dashboard (Storage & Databases -> KV); its id lives in
+# the repo variable REVIEW_KV_ID and is substituted for the placeholder below
+# by .github/workflows/deploy-review.yml.
+[[kv_namespaces]]
+binding = "REVIEW_STATE"
+id = "REVIEW_KV_ID_PLACEHOLDER"

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="da">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#1f6f78" />
+    <!-- Not launched yet: keep it out of search engines (see public/robots.txt). -->
+    <meta name="robots" content="noindex" />
+    <link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin />
+    <link rel="preload" as="fetch" href="/data/manifest.json" crossorigin />
+    <meta
+      name="description"
+      content="Kort over tang langs de danske kyster – hvor arterne er fundet, og hvilke mulige forureningskilder der ligger i nærheden."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-title" content="Tangkortet" />
+    <title>Tangkortet</title>
+  </head>
+  <body>
+    <div id="app" data-tab="arter">
+      <h1 class="sr-only">Tangkortet – tang langs de danske kyster</h1>
+      <form id="search" autocomplete="off">
+        <input
+          id="q"
+          type="search"
+          placeholder="Søg adresse i Danmark…"
+          aria-label="Søg adresse"
+          role="combobox"
+          aria-expanded="false"
+          aria-controls="results"
+          aria-autocomplete="list"
+        />
+        <ul id="results" role="listbox" aria-label="Adresseforslag"></ul>
+      </form>
+      <div id="map"></div>
+      <aside id="panel" aria-label="Arter, risiko og tjekliste">
+        <p id="readout" aria-live="polite">Tryk på kortet ved kysten for at sætte en nål.</p>
+        <nav id="tabs" role="tablist" aria-label="Visning">
+          <button type="button" role="tab" data-tab="arter" aria-selected="true">Arter</button>
+          <button type="button" role="tab" data-tab="risiko" aria-selected="false">Risiko</button>
+          <button type="button" role="tab" data-tab="guide" aria-selected="false">
+            Før du går
+          </button>
+        </nav>
+        <section id="tab-arter" class="tab" role="tabpanel">Indlæser…</section>
+        <section id="tab-risiko" class="tab" role="tabpanel" hidden></section>
+        <section id="tab-guide" class="tab" role="tabpanel" hidden></section>
+        <footer>
+          <button id="about" type="button" class="link">Om Tangkortet og data</button>
+        </footer>
+      </aside>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,96 @@
+{
+  "status": "udkast",
+  "version": "2026-10-23",
+  "note": "Draft by Claude from the expert's brief, pending the expert's review (review page, 'Trafiklys'). One source of truth: web/src/verdict.ts evaluates these, scripts/build_expert_review.py shows them to the expert. Coastal-water chemical status is deliberately not a rule: 121 of 123 Danish coastal waters are 'Ikke-god kemisk tilstand', so it would make every spot yellow.",
+  "rain_mm_48h": 10,
+  "rules": [
+    {
+      "id": "overloeb_regn",
+      "level": "red",
+      "type": "nearby",
+      "groups": ["overloeb"],
+      "within_m": 500,
+      "needs_rain": true,
+      "text": "Kloakoverløb inden for 500 m, og mindst 10 mm regn de seneste 48 timer"
+    },
+    {
+      "id": "udledning_naer",
+      "level": "red",
+      "type": "nearby",
+      "groups": ["rens", "industri"],
+      "within_m": 500,
+      "text": "Renseanlæg eller industriudledning inden for 500 m"
+    },
+    {
+      "id": "erhvervshavn_naer",
+      "level": "red",
+      "type": "nearby",
+      "groups": ["havne"],
+      "kind_contains": "Erhverv",
+      "within_m": 500,
+      "text": "Erhvervshavn inden for 500 m"
+    },
+    {
+      "id": "klapplads_aktiv",
+      "level": "red",
+      "type": "nearby",
+      "groups": ["klapplads"],
+      "kind_contains": "aktiv",
+      "within_m": 0,
+      "text": "Nålen ligger på en aktiv klapplads"
+    },
+    {
+      "id": "overloeb",
+      "level": "yellow",
+      "type": "nearby",
+      "groups": ["overloeb"],
+      "within_m": 1000,
+      "text": "Kloakoverløb inden for 1 km"
+    },
+    {
+      "id": "udledning",
+      "level": "yellow",
+      "type": "nearby",
+      "groups": ["rens", "industri"],
+      "within_m": 2000,
+      "text": "Renseanlæg eller industriudledning inden for 2 km"
+    },
+    {
+      "id": "havn",
+      "level": "yellow",
+      "type": "nearby",
+      "groups": ["havne"],
+      "within_m": 1000,
+      "text": "Havn (også lystbådehavn) inden for 1 km"
+    },
+    {
+      "id": "klapplads",
+      "level": "yellow",
+      "type": "nearby",
+      "groups": ["klapplads"],
+      "within_m": 2000,
+      "text": "Klapplads (aktiv eller nedlagt) inden for 2 km"
+    },
+    {
+      "id": "badevand_daarlig",
+      "level": "yellow",
+      "type": "nearby",
+      "groups": ["badevand"],
+      "kinds": ["3", "4"],
+      "within_m": 2000,
+      "text": "Badevand klassificeret som Tilfredsstillende eller Ringe inden for 2 km"
+    },
+    {
+      "id": "jord_v2",
+      "level": "yellow",
+      "type": "soil_v2",
+      "text": "V2-kortlagt jordforurening inden for 1 km"
+    },
+    {
+      "id": "regn",
+      "level": "yellow",
+      "type": "rain",
+      "text": "Mindst 10 mm regn de seneste 48 timer"
+    }
+  ]
+}

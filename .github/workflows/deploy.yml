@@ -1,0 +1,60 @@
+name: deploy
+
+# Rebuilds the payload from the live sources and publishes web/dist to the
+# Cloudflare Pages project "tangkortet" (separate from Svampekortet's).
+# Manual only until launch: the repo owner decides when the app goes online
+# (CLAUDE.md). The site carries noindex + robots "Disallow: /" until then.
+#
+# Needs the same CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID secrets as
+# deploy-review.yml. Optional: VITE_DATAFORDELER_API_KEY (Tangkortet's own key)
+# for the Skærmkort basemap and address search.
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+
+      - name: Build the payload (GBIF + MiljøGIS)
+        run: python -m pipeline.build --out web/public/data
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+        env:
+          VITE_DATAFORDELER_API_KEY: ${{ secrets.VITE_DATAFORDELER_API_KEY }}
+          VITE_RELEASE: ${{ github.sha }}
+
+      - name: Create the Pages project (first run only)
+        uses: cloudflare/wrangler-action@v3
+        continue-on-error: true
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages project create tangkortet --production-branch=main
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy web/dist --project-name=tangkortet --branch=main

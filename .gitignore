@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+pipeline/spikes/out/
+
+# Downloaded data and generated build artifacts (never commit these)
+*.zip
+data/raw/
+/build/
+*.duckdb
+/review/public/
+/backups/
+
+# Node
+node_modules/
+web/dist/
+web/.vite/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+web/.env
+web/.env.local
+*.key
+*.pem
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Wrangler local dev state (simulated KV etc.)
+.wrangler/
+
+# The expert's own words live in the private Tangkortet-expert repo, never here.
+/data/expert/answers/
+/docs/expert-brief.md
+/docs/expert-answers.md

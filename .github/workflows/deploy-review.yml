@@ -1,0 +1,57 @@
+name: deploy-review
+
+# Deploys the expert review page (review/) to its own Cloudflare Pages project,
+# tangkortet-review, separate from the app. Manual only: re-run whenever the
+# questions or the species evidence change. Answers live in Workers KV, so a
+# redeploy never touches them.
+#
+# One-time setup (by the repo owner, see review/README.md):
+#   secrets   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+#   variable  REVIEW_KV_ID  (a KV namespace created by hand in the dashboard)
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-review
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the review page
+        run: python scripts/build_expert_review.py
+
+      - name: Bind the KV namespace
+        env:
+          REVIEW_KV_ID: ${{ vars.REVIEW_KV_ID }}
+        run: |
+          test -n "$REVIEW_KV_ID" || { echo "::error::repo variable REVIEW_KV_ID is not set"; exit 1; }
+          sed -i "s/REVIEW_KV_ID_PLACEHOLDER/$REVIEW_KV_ID/" review/wrangler.toml
+
+      - name: Create the Pages project (first run only)
+        # wrangler pages deploy does not auto-create the project. This step
+        # fails on every run after the first, which is expected.
+        uses: cloudflare/wrangler-action@v3
+        continue-on-error: true
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: review
+          command: pages project create tangkortet-review --production-branch=main
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: review
+          command: pages deploy public --project-name=tangkortet-review --branch=main
