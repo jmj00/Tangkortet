@@ -6,6 +6,8 @@
       risk/<cell>.json         risk features in one grid cell (pipeline/ingest/risk.py)
       coast/<cell>.json        OpenStreetMap coast features, same grid (pipeline/ingest/coast.py;
                                ODbL, unlike the rest of the payload)
+      names/<cell>.json        official coastal place names, same grid
+                               (pipeline/ingest/stednavne.py; CC BY 4.0, Klimadatastyrelsen)
 
 Observations are packed as arrays to keep the files small:
 ``[lon, lat, year|null, attachment, depth_m|null, dataset_index]`` where
@@ -44,6 +46,9 @@ ATTRIBUTION = {
     # (share-alike), not the project's CC BY-NC (docs/data-sources.md).
     "coast": "Kysten her (strande, havne, broer, høfder, skrænter): © OpenStreetMap-bidragydere,"
     " ODbL 1.0 – kan være ufuldstændigt",
+    # Danske Stednavne: CC BY 4.0, kept in their own files (names/<cell>.json)
+    "names": "Stednavne ved kysten (strande, havne, pynter, farvande) og byer: Indeholder data"
+    " fra Klimadatastyrelsen, Danske Stednavne (CC BY 4.0)",
 }
 
 
@@ -204,6 +209,7 @@ def write_manifest(
     risk: dict[str, Any] | None,
     version: str | None = None,
     coast: dict[str, Any] | None = None,
+    names: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     manifest = {
         "version": version or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
@@ -213,6 +219,7 @@ def write_manifest(
         ),
         "risk": risk,
         "coast": coast,
+        "names": names,
     }
     write_json(out / "manifest.json", manifest)
     return manifest
