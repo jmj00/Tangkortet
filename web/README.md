@@ -6,7 +6,10 @@ Mobile-first PWA: a MapLibre map of the Danish coast with three tabs.
   and a species sheet: finds on the map as attached (solid), drift (ring) or
   unknown (faint), observed depth, and the expert fields (harvest method,
   season, accumulation), which show "afventer ekspert" / "foreløbig" until the
-  expert signs them off (`pipeline/species.py`).
+  expert signs them off (`pipeline/species.py`). Rows and the sheet carry
+  species-level risk badges (iodine, arsenic, cadmium, kainic acid; not the
+  spot's risk), and the sheet a "Sæson" block: the expert's months, and finds
+  per month labelled as when people recorded them (`src/season.ts`).
 - **Risiko**: for the pin, a draft traffic light (`src/verdict.ts`, rules in
   `src/verdict-rules.json`, ADR-0005) with the matching rules as reasons; then
   live DMI rain (24/48/72 h) and the last hard wind within 40 km (`src/wind.ts`,

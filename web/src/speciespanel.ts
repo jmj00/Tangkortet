@@ -8,6 +8,7 @@
 // Svampekortet's specieslist.ts / detail.ts / panel.ts (624fb8b).
 
 import "./species.css";
+import "./season.css";
 
 import { forgetPendingSpecies } from "./data";
 import { h, extLink } from "./dom";
@@ -31,6 +32,16 @@ import {
   type FieldText,
   type SheetModel,
 } from "./species";
+import {
+  findsChart,
+  listNote,
+  MONTH_NAMES,
+  riskFlags,
+  seasonCue,
+  seasonStrip,
+  type FindsChart,
+  type RiskFlag,
+} from "./season";
 import { heroSources, photoImg, thumbBox } from "./thumb";
 import { shownName } from "./types";
 import type { Attachment, Manifest, SpeciesDoc, SpeciesImage, SpeciesSummary } from "./types";
@@ -440,8 +451,9 @@ export class SpeciesPanel {
     // Re-parenting a focused row blurs it; put focus back.
     const focused = document.activeElement;
     const elsewhere = this.elsewhereBox(near);
-    if (elsewhere) this.results.replaceChildren(elsewhere, list);
-    else this.results.replaceChildren(list);
+    const note = this.listNote(matched);
+    if (elsewhere) this.results.replaceChildren(elsewhere, list, note);
+    else this.results.replaceChildren(list, note);
     if (focused instanceof HTMLElement && focused !== document.activeElement) {
       if (list.contains(focused)) focused.focus({ preventScroll: true });
     }
@@ -583,13 +595,17 @@ export class SpeciesPanel {
           "span",
           { class: "spp-row__name" },
           h("span", { class: s.danish_name ? "" : "spp-sci" }, shownName(s)),
-          s.invasive ? h("span", { class: "spp-tag spp-tag--invasive" }, "Invasiv") : null,
         ),
         h(
           "span",
           { class: "spp-row__sub" },
-          s.danish_name ? h("span", { class: "spp-sci" }, s.scientific_name) : "Intet dansk navn",
+          h(
+            "span",
+            { class: s.danish_name ? "spp-row__sci spp-sci" : "spp-row__sci" },
+            s.danish_name ? s.scientific_name : "Intet dansk navn",
+          ),
           h("span", { class: "sr-only" }, `, ${s.group},`),
+          this.rowFlags(s),
         ),
       ),
       meta,
@@ -602,6 +618,53 @@ export class SpeciesPanel {
     const refs = { li: h("li", {}, button), button, meta };
     this.rows.set(s.slug, refs);
     return refs;
+  }
+
+  /** The row's species-level badges: Invasiv, the substances it can hold
+   * (Jod, Arsen, Cadmium, Kainsyre) and, only once the expert has given the
+   * months, "Sæson nu". About the species, never the spot: neutral colours,
+   * nothing like the traffic light. On the second line, so the row keeps its
+   * height and width. */
+  private rowFlags(s: SpeciesSummary): HTMLElement | null {
+    const risks = riskFlags(s.accumulation, s.warnings);
+    const cue = seasonCue(s.season_months, s.expert_verified);
+    if (!s.invasive && risks.length === 0 && !cue) return null;
+    const said = [
+      s.invasive ? "invasiv art" : "",
+      risks.length ? `kan indeholde ${risks.map((r) => r.label.toLowerCase()).join(", ")}` : "",
+      cue ? `${cue.label.toLowerCase()}${cue.provisional ? " (foreløbig)" : ""}` : "",
+    ].filter(Boolean);
+    return h(
+      "span",
+      { class: "spp-row__flags" },
+      h("span", { class: "sr-only" }, ` ${said.join("; ")}.`),
+      s.invasive
+        ? h("span", { class: "spp-tag spp-tag--invasive", "aria-hidden": "true" }, "Invasiv")
+        : null,
+      ...risks.map((r) =>
+        h(
+          "span",
+          { class: "spp-tag spp-tag--risk", "data-risk": r.key, "aria-hidden": "true" },
+          r.label,
+        ),
+      ),
+      cue
+        ? h(
+            "span",
+            {
+              class: `spp-tag spp-tag--season${cue.provisional ? " spp-tag--provisional" : ""}`,
+              "aria-hidden": "true",
+            },
+            cue.provisional ? `${cue.label}*` : cue.label,
+          )
+        : null,
+    );
+  }
+
+  /** Under the rows: what the badges mean, that no badge is no all-clear,
+   * and what is still pending for the rows shown (season.ts listNote). */
+  private listNote(shown: readonly SpeciesSummary[]): HTMLElement {
+    return h("p", { class: "spp-list-note" }, listNote(shown, this.manifest.species).join(" "));
   }
 
   private patchRow(refs: RowRefs, s: SpeciesSummary, near: Map<string, number> | null): void {
@@ -670,13 +733,7 @@ export class SpeciesPanel {
         `Kan forveksles med ${lookalikes} ${lookalikes === 1 ? "art" : "arter"}`,
         h("span", { "aria-hidden": "true" }, "↓"),
       );
-      jump.addEventListener("click", () => {
-        const target = this.root.querySelector<HTMLElement>("#spp-sec-lookalikes");
-        if (!target) return;
-        const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-        target.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
-        target.focus({ preventScroll: true });
-      });
+      jump.addEventListener("click", () => this.jumpTo("spp-sec-lookalikes"));
       tags.push(h("li", {}, jump));
     }
 
@@ -990,12 +1047,17 @@ export class SpeciesPanel {
             h(
               "div",
               { class: "spp-warn__body" },
-              h("h3", { class: "spp-warn__title", id: "spp-warn-title" }, "Vigtigt"),
+              h(
+                "h3",
+                { class: "spp-warn__title", id: "spp-warn-title", tabindex: "-1" },
+                "Vigtigt",
+              ),
               ...m.warnings.map((w) => h("p", {}, w)),
             ),
           )
         : null,
       head.after,
+      this.riskSection(doc, m),
       this.findsSection(doc, m),
       this.section(
         "Høst",
@@ -1005,9 +1067,9 @@ export class SpeciesPanel {
           { class: "spp-fields" },
           ...this.field("Dybde", m.harvest.depth),
           ...this.field("Høstmetode", m.harvest.method),
-          ...this.field("Bedste sæson", m.harvest.season),
         ),
       ),
+      this.seasonSection(doc),
       this.section(
         "Ophobning og sikkerhed",
         "spp-sec-accumulation",
@@ -1028,6 +1090,233 @@ export class SpeciesPanel {
     );
     if (images.length) article.dataset.hero = warned ? "compact" : "photos";
     return article;
+  }
+
+  /** Scroll to a section heading (or the warning's) and focus it. */
+  private jumpTo(id: string): void {
+    const target = this.root.querySelector<HTMLElement>(`#${id}`);
+    if (!target) return;
+    // Scroll only the tab's own scroller (scrollIntoView would also move
+    // #app and the sheet), leaving room for the sticky back bar.
+    const scroller = this.scroller();
+    const bar = this.root.querySelector<HTMLElement>(".spp-nav")?.offsetHeight ?? 0;
+    // the whole warning box, not just its heading
+    const box = target.closest<HTMLElement>(".spp-warn") ?? target;
+    const top =
+      box.getBoundingClientRect().top -
+      scroller.getBoundingClientRect().top +
+      scroller.scrollTop -
+      bar -
+      12;
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    scroller.scrollTo({ top: Math.max(0, top), behavior: reduced ? "auto" : "smooth" });
+    target.focus({ preventScroll: true });
+  }
+
+  /** A small link-like button to another part of the page. */
+  private jumpLink(text: string, id: string, arrow: "↑" | "↓"): HTMLButtonElement {
+    const button = h(
+      "button",
+      { type: "button", class: "spp-jumplink" },
+      text,
+      h("span", { "aria-hidden": "true" }, ` ${arrow}`),
+    );
+    button.addEventListener("click", () => this.jumpTo(id));
+    return button;
+  }
+
+  /** "Risiko for arten": what the species itself can hold or be mistaken for,
+   * at a glance, pointing to the sections that say it in full (the warning
+   * texts are not repeated). About the species, never the spot. */
+  private riskSection(doc: SpeciesDoc, m: SheetModel): HTMLElement {
+    const items: HTMLElement[] = [];
+    const item = (
+      badge: HTMLElement | null,
+      text: HTMLElement | string,
+      link: HTMLElement | null,
+    ) =>
+      items.push(
+        h(
+          "li",
+          { class: "spp-risk__item" },
+          badge,
+          h("span", { class: "spp-risk__text" }, text, link ? " " : null, link),
+        ),
+      );
+    for (const f of riskFlags(doc.expert.accumulation, doc.warnings)) {
+      item(
+        this.riskBadge(f),
+        f.inWarning ? "Nævnt under Vigtigt." : `Kan ophobe ${f.label.toLowerCase()}.`,
+        f.inWarning
+          ? this.jumpLink("Se Vigtigt", "spp-warn-title", "↑")
+          : this.jumpLink("Se Ophobning", "spp-sec-accumulation", "↓"),
+      );
+    }
+    if (doc.expert.accumulation === null) {
+      item(
+        null,
+        h(
+          "span",
+          {},
+          "Ophobning af jod, arsen og cadmium: ",
+          h("span", { class: "spp-pending" }, "afventer ekspert"),
+          ".",
+        ),
+        this.jumpLink("Se Ophobning", "spp-sec-accumulation", "↓"),
+      );
+    }
+    if (doc.invasive) {
+      item(h("span", { class: "spp-tag spp-tag--invasive" }, "Invasiv"), "Invasiv art.", null);
+    }
+    if (m.lookalikes.length) {
+      const n = m.lookalikes.length;
+      item(
+        null,
+        `Kan forveksles med ${n} ${n === 1 ? "anden art" : "andre arter"}.`,
+        this.jumpLink("Se Forveksling", "spp-sec-lookalikes", "↓"),
+      );
+    }
+    return this.section(
+      "Risiko for arten",
+      "spp-sec-risk",
+      items.length ? h("ul", { class: "spp-risk" }, ...items) : null,
+      h(
+        "p",
+        { class: "spp-note" },
+        "Gælder arten, ikke stedet – stedets risiko står under Risiko. Ingen markering betyder ikke, at arten er sikker.",
+      ),
+    );
+  }
+
+  private riskBadge(f: RiskFlag): HTMLElement {
+    return h("span", { class: "spp-tag spp-tag--risk", "data-risk": f.key }, f.label);
+  }
+
+  /** "Sæson": the expert's best months (a 12-month strip, or "Afventer
+   * ekspert"), then when finds were recorded, labelled as exactly that. */
+  private seasonSection(doc: SpeciesDoc): HTMLElement {
+    const now = new Date();
+    const strip = seasonStrip(doc.expert, now);
+    const chart = findsChart(
+      doc.finds_by_month ?? this.manifest.species.find((s) => s.slug === doc.slug)?.finds_by_month,
+      now,
+    );
+    const best: FieldText =
+      strip.kind === "pending"
+        ? { text: strip.text, status: "pending" }
+        : { text: strip.text, status: strip.status };
+    return this.section(
+      "Sæson",
+      "spp-sec-season",
+      h("dl", { class: "spp-fields" }, ...this.field("Bedste måneder", best)),
+      strip.kind === "known"
+        ? h(
+            "ol",
+            { class: "spp-months", "aria-hidden": "true" },
+            ...strip.cells.map((c) =>
+              h(
+                "li",
+                {
+                  class: "spp-months__cell",
+                  "data-state": c.state,
+                  "data-current": c.current ? "true" : null,
+                },
+                c.initial,
+              ),
+            ),
+          )
+        : null,
+      this.findsChartFigure(chart, now),
+    );
+  }
+
+  /** Finds per month: all finds as an outlined bar, the attached ones as a
+   * solid part of it (shape, not colour alone), the current month boxed. The
+   * summary line and a hidden table are the text alternative. */
+  private findsChartFigure(chart: FindsChart | null, now: Date): HTMLElement {
+    const caption = h(
+      "figcaption",
+      { class: "spp-chart__caption" },
+      h("span", { class: "spp-chart__title" }, "Fund pr. måned"),
+      h(
+        "span",
+        { class: "spp-chart__sub" },
+        "Hvornår folk har registreret arten – ikke hvornår den er bedst.",
+      ),
+    );
+    if (!chart) {
+      return h(
+        "figure",
+        { class: "spp-chart" },
+        caption,
+        h("p", { class: "spp-none" }, "Ingen fund med dato."),
+      );
+    }
+    const plot = h(
+      "div",
+      { class: "spp-chart__plot", "aria-hidden": "true" },
+      ...chart.bars.map((b) =>
+        h(
+          "div",
+          { class: "spp-chart__col", "data-current": b.current ? "true" : null },
+          h(
+            "div",
+            { class: "spp-chart__track" },
+            h(
+              "div",
+              {
+                class: "spp-chart__bar",
+                "data-zero": b.all === 0 ? "true" : null,
+                style: `--h: ${b.allPct}%; --a: ${b.all ? (b.attached / b.all) * 100 : 0}%`,
+              },
+              h("div", { class: "spp-chart__att" }),
+            ),
+          ),
+          h("span", { class: "spp-chart__label" }, b.initial),
+        ),
+      ),
+    );
+    const th = (text: string) => h("th", { scope: "col" }, text);
+    // A table ignores the sr-only box (width/overflow), so it goes inside a
+    // hidden div: otherwise it widens and scrolls the whole page.
+    const table = h(
+      "table",
+      {},
+      h("caption", {}, "Fund pr. måned"),
+      h("thead", {}, h("tr", {}, th("Måned"), th("Alle fund"), th("Fastsiddende"))),
+      h(
+        "tbody",
+        {},
+        ...chart.bars.map((b) =>
+          h(
+            "tr",
+            {},
+            h("th", { scope: "row" }, b.current ? `${b.name} (denne måned)` : b.name),
+            h("td", {}, b.all),
+            h("td", {}, b.attached),
+          ),
+        ),
+      ),
+    );
+    return h(
+      "figure",
+      { class: "spp-chart", "data-sparse": chart.sparse ? "true" : null },
+      caption,
+      h("p", { class: "spp-chart__summary" }, chart.summary),
+      plot,
+      h(
+        "p",
+        { class: "spp-chart__legend", "aria-hidden": "true" },
+        h("span", { class: "spp-chart__key spp-chart__key--att" }, "Fastsiddende"),
+        h("span", { class: "spp-chart__key spp-chart__key--all" }, "Alle fund"),
+        h(
+          "span",
+          { class: "spp-chart__key spp-chart__key--now" },
+          `Denne måned (${MONTH_NAMES[now.getMonth()]})`,
+        ),
+      ),
+      h("div", { class: "sr-only" }, table),
+    );
   }
 
   private section(title: string, id: string, ...children: (HTMLElement | null)[]): HTMLElement {
