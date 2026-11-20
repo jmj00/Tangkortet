@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { findLines } from "./findcard";
 import { basemapPaint } from "./map";
-import { clearOfBox, legendSummary } from "./maplegend";
+import { circleMeetsBox, clearOfBox, legendSummary } from "./maplegend";
 import {
   coordsText,
   findsNearText,
@@ -121,5 +121,13 @@ describe("the muted basemap", () => {
     expect(dark["raster-brightness-min"]).toBeGreaterThan(dark["raster-brightness-max"] as number);
     expect(dark["raster-hue-rotate"]).toBe(180);
     expect(basemapPaint(false, true)["raster-fade-duration"]).toBe(0);
+  });
+});
+
+describe("a ring under the key", () => {
+  const box = { left: 10, top: 300, right: 250, bottom: 600 };
+  it("is seen when the circle reaches into the box", () => {
+    expect(circleMeetsBox(400, 300, 200, box)).toBe(true);
+    expect(circleMeetsBox(600, 200, 200, box)).toBe(false);
   });
 });
