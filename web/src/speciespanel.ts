@@ -34,6 +34,7 @@ import {
 } from "./species";
 import {
   findsChart,
+  listNote,
   MONTH_NAMES,
   riskFlags,
   seasonCue,
@@ -158,8 +159,6 @@ export class SpeciesPanel {
   private readonly reset = h("button", { type: "button", class: "spp-reset" }, "Nulstil");
   private readonly hint = h("p", { class: "spp-hint" });
   private readonly results = h("div", { class: "spp-results" });
-  /** Under the rows: what the badges mean (listNote). */
-  private note: HTMLElement | null = null;
 
   constructor(
     private root: HTMLElement,
@@ -452,9 +451,9 @@ export class SpeciesPanel {
     // Re-parenting a focused row blurs it; put focus back.
     const focused = document.activeElement;
     const elsewhere = this.elsewhereBox(near);
-    this.note ??= this.listNote();
-    if (elsewhere) this.results.replaceChildren(elsewhere, list, this.note);
-    else this.results.replaceChildren(list, this.note);
+    const note = this.listNote(matched);
+    if (elsewhere) this.results.replaceChildren(elsewhere, list, note);
+    else this.results.replaceChildren(list, note);
     if (focused instanceof HTMLElement && focused !== document.activeElement) {
       if (list.contains(focused)) focused.focus({ preventScroll: true });
     }
@@ -662,21 +661,10 @@ export class SpeciesPanel {
     );
   }
 
-  /** Under the rows: what the badges mean, and that the months are pending. */
-  private listNote(): HTMLElement {
-    const anySeason = this.manifest.species.some((s) => s.season_months?.length);
-    return h(
-      "p",
-      { class: "spp-list-note" },
-      h(
-        "span",
-        {},
-        "Jod, arsen, cadmium og kainsyre: stoffer, arten selv kan indeholde – ikke stedets risiko, som du ser under Risiko.",
-      ),
-      anySeason
-        ? h("span", {}, " * Sæson nu: foreløbig, ikke bekræftet af vores fagperson endnu.")
-        : h("span", {}, " Bedste måneder pr. art afventer vores fagperson."),
-    );
+  /** Under the rows: what the badges mean, that no badge is no all-clear,
+   * and what is still pending for the rows shown (season.ts listNote). */
+  private listNote(shown: readonly SpeciesSummary[]): HTMLElement {
+    return h("p", { class: "spp-list-note" }, listNote(shown, this.manifest.species).join(" "));
   }
 
   private patchRow(refs: RowRefs, s: SpeciesSummary, near: Map<string, number> | null): void {
@@ -1108,8 +1096,18 @@ export class SpeciesPanel {
   private jumpTo(id: string): void {
     const target = this.root.querySelector<HTMLElement>(`#${id}`);
     if (!target) return;
+    // Scroll only the tab's own scroller (scrollIntoView would also move
+    // #app and the sheet), leaving room for the sticky back bar.
+    const scroller = this.scroller();
+    const bar = this.root.querySelector<HTMLElement>(".spp-nav")?.offsetHeight ?? 0;
+    const top =
+      target.getBoundingClientRect().top -
+      scroller.getBoundingClientRect().top +
+      scroller.scrollTop -
+      bar -
+      12;
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    target.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+    scroller.scrollTo({ top: Math.max(0, top), behavior: reduced ? "auto" : "smooth" });
     target.focus({ preventScroll: true });
   }
 
@@ -1225,7 +1223,7 @@ export class SpeciesPanel {
               ),
             ),
           )
-        : h("p", { class: "spp-note" }, "Bedste måneder kommer, når vores fagperson har svaret."),
+        : null,
       this.findsChartFigure(chart, now),
     );
   }
@@ -1277,9 +1275,11 @@ export class SpeciesPanel {
       ),
     );
     const th = (text: string) => h("th", { scope: "col" }, text);
+    // A table ignores the sr-only box (width/overflow), so it goes inside a
+    // hidden div: otherwise it widens and scrolls the whole page.
     const table = h(
       "table",
-      { class: "sr-only" },
+      {},
       h("caption", {}, "Fund pr. måned"),
       h("thead", {}, h("tr", {}, th("Måned"), th("Alle fund"), th("Fastsiddende"))),
       h(
@@ -1313,7 +1313,7 @@ export class SpeciesPanel {
           `Denne måned (${MONTH_NAMES[now.getMonth()]})`,
         ),
       ),
-      table,
+      h("div", { class: "sr-only" }, table),
     );
   }
 

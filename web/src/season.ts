@@ -193,7 +193,7 @@ export function findsChart(
   const dated = `${NUMBER.format(total)} fund med dato`;
   const summary = sparse
     ? `Kun ${dated} – for få til at sige noget om årstiden.`
-    : `Flest fund i ${joinDanish(peaks.map((m) => MONTH_NAMES[m - 1]))} (${dated}).`;
+    : `Flest registreringer i ${joinDanish(peaks.map((m) => MONTH_NAMES[m - 1]))} (${dated}).`;
   return {
     bars,
     total,
@@ -217,12 +217,57 @@ export interface RiskFlag {
   inWarning: boolean;
 }
 
-const RISKS: { key: RiskKey; label: string; pattern: RegExp }[] = [
-  { key: "jod", label: "Jod", pattern: /\bjod/i },
-  { key: "arsen", label: "Arsen", pattern: /\barsen/i },
-  { key: "cadmium", label: "Cadmium", pattern: /\b[ck]admium/i },
-  { key: "kainsyre", label: "Kainsyre", pattern: /\bkainsyre/i },
+// TODO(expert): kainic acid (and any substance only named in a warning) is
+// found by matching the warning text, because the expert's accumulation list
+// has no "kainsyre". It should become an explicit expert field; until then
+// the stems below also match compounds ("jodindhold", "uorganisk arsen") and
+// skip a term negated just before it ("indeholder ikke jod").
+const RISKS: { key: RiskKey; label: string; stem: string }[] = [
+  { key: "jod", label: "Jod", stem: "jod" },
+  { key: "arsen", label: "Arsen", stem: "arsen" },
+  { key: "cadmium", label: "Cadmium", stem: "[ck]admium" },
+  { key: "kainsyre", label: "Kainsyre", stem: "kainsyre" },
 ];
+
+/** Whether `text` names the substance, other than as "ikke/ingen/uden …". */
+function names(text: string, stem: string): boolean {
+  const any = new RegExp(stem, "i");
+  const negated = new RegExp(`\\b(?:ikke|ingen|uden)\\s+(?:\\S+\\s+){0,2}\\S*${stem}`, "i");
+  // per sentence, so a negation elsewhere in the warning does not count
+  return text.split(/(?<=[.!?])\s+/).some((s) => any.test(s) && !negated.test(s));
+}
+
+/** The note under the species list, as sentences: what the badges mean, that
+ * no badge is no all-clear (with how many species still await the expert's
+ * accumulation answer), and the season lines that apply to the rows shown. */
+export function listNote(
+  shown: readonly {
+    accumulation?: ExpertFields["accumulation"];
+    season_months?: number[] | null;
+    expert_verified?: boolean;
+  }[],
+  all: readonly { accumulation?: ExpertFields["accumulation"] }[],
+  now: Date = new Date(),
+): string[] {
+  const pending = all.filter((s) => s.accumulation == null).length;
+  const which = pending * 2 > all.length ? "de fleste arter" : pending > 0 ? "nogle arter" : "";
+  const lines = [
+    "Jod, arsen, cadmium og kainsyre er stoffer, som arten selv kan indeholde – ikke stedets risiko, som står under Risiko.",
+    which
+      ? `Ingen markering betyder ikke, at arten er sikker; for ${which} afventer ophobning stadig vores fagperson.`
+      : "Ingen markering betyder ikke, at arten er sikker.",
+  ];
+  if (shown.some((s) => seasonCue(s.season_months, s.expert_verified, now)?.provisional))
+    lines.push("„Sæson nu*“ er foreløbig og endnu ikke bekræftet af vores fagperson.");
+  const noMonths = shown.filter((s) => !s.season_months?.length).length;
+  if (noMonths === shown.length && noMonths > 0)
+    lines.push("De bedste måneder for hver art afventer også vores fagperson.");
+  else if (noMonths > 0)
+    lines.push(
+      `For ${noMonths} af de viste arter afventer de bedste måneder stadig vores fagperson.`,
+    );
+  return lines;
+}
 
 /** The substances to flag for a species (not for a spot): those the expert
  * lists as accumulating, plus those its "Vigtigt" warnings name. Fixed order. */
@@ -231,8 +276,8 @@ export function riskFlags(
   warnings: readonly string[] | undefined,
 ): RiskFlag[] {
   const text = (warnings ?? []).join(" ");
-  return RISKS.flatMap(({ key, label, pattern }) => {
-    const inWarning = pattern.test(text);
+  return RISKS.flatMap(({ key, label, stem }) => {
+    const inWarning = names(text, stem);
     const listed = (accumulation ?? []).includes(key as "jod" | "arsen" | "cadmium");
     return inWarning || listed ? [{ key, label, inWarning }] : [];
   });

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   currentMonth,
   findsChart,
+  listNote,
   joinDanish,
   monthRanges,
   riskFlags,
@@ -105,10 +106,12 @@ describe("findsChart", () => {
   });
 
   it("describes the busiest months in words (the text alternative)", () => {
-    expect(findsChart(BLAERETANG, JULY)!.summary).toBe("Flest fund i juli (1.513 fund med dato).");
+    expect(findsChart(BLAERETANG, JULY)!.summary).toBe(
+      "Flest registreringer i juli (1.513 fund med dato).",
+    );
     const two = findsChart({ all: [0, 0, 0, 0, 0, 0, 90, 100, 0, 0, 0, 0], attached: [] }, JULY)!;
     expect(two.peaks).toEqual([7, 8]);
-    expect(two.summary).toBe("Flest fund i juli og august (190 fund med dato).");
+    expect(two.summary).toBe("Flest registreringer i juli og august (190 fund med dato).");
   });
 
   it("says when there are too few finds to mean anything", () => {
@@ -147,5 +150,51 @@ describe("riskFlags", () => {
 
   it("does not match words that merely contain the letters", () => {
     expect(riskFlags(null, ["Vokser på jordbund og sten."])).toEqual([]);
+  });
+});
+
+describe("riskFlags: compounds and negation", () => {
+  it("matches compounds and skips a negated term", () => {
+    expect(riskFlags(null, ["Højt jodindhold."]).map((f) => f.key)).toEqual(["jod"]);
+    expect(riskFlags(null, ["Kan indeholde uorganisk arsen."]).map((f) => f.key)).toEqual([
+      "arsen",
+    ]);
+    expect(riskFlags(null, ["Arten indeholder ikke kainsyre."])).toEqual([]);
+    expect(riskFlags(null, ["Ingen kendt arsen."])).toEqual([]);
+    // a negation in another sentence of the same warning does not count
+    const kelp = ["Kan indeholde store mængder jod. Man bør ikke spise store mængder dagligt."];
+    expect(riskFlags(null, kelp).map((f) => f.key)).toEqual(["jod"]);
+  });
+});
+
+describe("listNote", () => {
+  const pending = { accumulation: null, season_months: null };
+  const known = { accumulation: ["jod"] as ("jod" | "arsen" | "cadmium")[], season_months: null };
+
+  it("always says no badge is no all-clear, with the pending share", () => {
+    const lines = listNote([pending], [pending, pending, known], JULY);
+    expect(lines[1]).toBe(
+      "Ingen markering betyder ikke, at arten er sikker; for de fleste arter afventer ophobning stadig vores fagperson.",
+    );
+    expect(listNote([known], [pending, known, known], JULY)[1]).toContain("for nogle arter");
+    expect(listNote([known], [known], JULY)[1]).toBe(
+      "Ingen markering betyder ikke, at arten er sikker.",
+    );
+  });
+
+  it("follows the rows shown for the season lines", () => {
+    expect(listNote([pending], [pending], JULY)).toContain(
+      "De bedste måneder for hver art afventer også vores fagperson.",
+    );
+    const starred = { ...pending, season_months: [7], expert_verified: false };
+    const lines = listNote([starred, pending], [starred, pending], JULY);
+    expect(lines).toContain("„Sæson nu*“ er foreløbig og endnu ikke bekræftet af vores fagperson.");
+    expect(lines).toContain(
+      "For 1 af de viste arter afventer de bedste måneder stadig vores fagperson.",
+    );
+    // months given but not this month: no star is shown, so no star line
+    const later = { ...pending, season_months: [1], expert_verified: false };
+    expect(listNote([later], [later], JULY).join(" ")).not.toContain("Sæson nu");
+    expect(listNote([], [pending], JULY)).toHaveLength(2);
   });
 });
