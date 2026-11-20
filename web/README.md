@@ -14,7 +14,7 @@ Mobile-first PWA: a MapLibre map of the Danish coast with three tabs.
   mapped sources within 1/2/5 km from the precomputed grid cells
   (`src/risk.ts`); soil contamination V1/V2 within 1 km; Natura 2000 /
   fredninger.
-- **Før du går**: the expert's checklist and advice, verbatim from the brief.
+- **Råd og regler**: the expert's checklist and advice, verbatim from the brief.
 
 Shareable links: `#pin=<lat>,<lon>&tab=<arter|risiko|guide>&art=<slug>`. A visit
 without a pin or a species in the link opens on the start screen

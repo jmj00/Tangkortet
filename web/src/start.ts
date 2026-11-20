@@ -8,7 +8,7 @@
 //
 // Three views, switched through data-start on #app (absent = closed):
 //   home     the ways in, the way straight to the map, the welcome text, and
-//            the safety line and "Før du går" pinned underneath
+//            the safety line and "Råd og regler" pinned underneath
 //   place    "where?" for "Kan jeg sanke her?" and "Find en strand": my
 //            position, the place search (placesearch.ts, the same search as
 //            the main field), or a tap on the map (on a phone this view is a
