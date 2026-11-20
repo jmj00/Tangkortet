@@ -1,0 +1,42 @@
+[
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/96765729/large.jpg",
+    "credit": "Tina Ellegaard Poulsen",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/96765729",
+    "observation_url": "https://www.inaturalist.org/observations/60509976",
+    "country": "DK",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/132076015/large.jpg",
+    "credit": "Dorte Stokholm",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/132076015",
+    "observation_url": "https://www.inaturalist.org/observations/80573496",
+    "country": "DK",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/91600488/large.jpeg",
+    "credit": "Camilla Lund Kristensen",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/91600488",
+    "observation_url": "https://www.inaturalist.org/observations/57428251",
+    "country": "DK",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/143391174/large.jpeg",
+    "credit": "Johan Kjær Prehn",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/143391174",
+    "observation_url": "https://www.inaturalist.org/observations/87003694",
+    "country": "DK",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  }
+]

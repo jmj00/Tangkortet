@@ -29,3 +29,14 @@ Every overwrite keeps the previous state under a `history:<minute>` KV key for
 
     py scripts/build_expert_review.py
     cd review && npx wrangler pages dev public   # simulated KV, no login needed
+
+## Photo verdicts
+
+The "Fotos af arterne" section asks the expert to keep or reject each species
+photo (`foto.<slug>.<iNaturalist photo id>`). Apply a saved state to the image
+files with
+
+    py scripts/apply_photo_review.py <review-state.json>
+
+"Behold" marks a photo `reviewed: true`, "Afvis" marks it `rejected: true` (left
+out of the app, kept in the file). Commit the changed `data/images/*.json`.

@@ -1,0 +1,42 @@
+[
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/329001991/large.jpeg",
+    "credit": "Morten Rosenvold Villadsen",
+    "license": "CC0 1.0",
+    "photo_url": "https://www.inaturalist.org/photos/329001991",
+    "observation_url": "https://www.inaturalist.org/observations/188046326",
+    "country": "DK",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/708339135/large.jpg",
+    "credit": "Morten DD Hansen",
+    "license": "CC0 1.0",
+    "photo_url": "https://www.inaturalist.org/photos/708339135",
+    "observation_url": "https://www.inaturalist.org/observations/386850882",
+    "country": "DK",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/291275776/large.jpg",
+    "credit": "Hilary Rose Dawson",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/291275776",
+    "observation_url": "https://www.inaturalist.org/observations/168096332",
+    "country": "NO",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/314593624/large.jpg",
+    "credit": "Demian Hiß",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/314593624",
+    "observation_url": "https://www.inaturalist.org/observations/180586033",
+    "country": "NO",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  }
+]

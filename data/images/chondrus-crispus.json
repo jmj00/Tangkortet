@@ -1,0 +1,42 @@
+[
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/173436673/large.jpg",
+    "credit": "abumadsen",
+    "license": "CC0 1.0",
+    "photo_url": "https://www.inaturalist.org/photos/173436673",
+    "observation_url": "https://www.inaturalist.org/observations/103603319",
+    "country": "DK",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/121572979/large.jpg",
+    "credit": "Annie Evankow",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/121572979",
+    "observation_url": "https://www.inaturalist.org/observations/74389619",
+    "country": "NO",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/159454886/large.jpg",
+    "credit": "Vsevolod Rudyi",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/159454886",
+    "observation_url": "https://www.inaturalist.org/observations/95837956",
+    "country": "NO",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/566247664/large.jpg",
+    "credit": "Roland Gromes",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/566247664",
+    "observation_url": "https://www.inaturalist.org/observations/313551981",
+    "country": "DE",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  }
+]

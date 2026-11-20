@@ -1,0 +1,42 @@
+[
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/665250024/large.jpg",
+    "credit": "Paul Brazier",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/665250024",
+    "observation_url": "https://www.inaturalist.org/observations/364265693",
+    "country": "GB",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/737008131/large.jpg",
+    "credit": "Paul Brazier",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/737008131",
+    "observation_url": "https://www.inaturalist.org/observations/401542036",
+    "country": "GB",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/646193705/large.jpg",
+    "credit": "Paul Brazier",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/646193705",
+    "observation_url": "https://www.inaturalist.org/observations/354196029",
+    "country": "GB",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/322789700/large.jpg",
+    "credit": "Jessica Aidley",
+    "license": "CC0 1.0",
+    "photo_url": "https://www.inaturalist.org/photos/322789700",
+    "observation_url": "https://www.inaturalist.org/observations/184884629",
+    "country": "GB",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  }
+]

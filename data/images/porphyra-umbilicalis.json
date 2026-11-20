@@ -1,0 +1,22 @@
+[
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/364510772/large.jpg",
+    "credit": "Lou Wagstaffe",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/364510772",
+    "observation_url": "https://www.inaturalist.org/observations/206110207",
+    "country": "JE",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/160282084/large.jpeg",
+    "credit": "Marc-Aurèle Vallée",
+    "license": "CC0 1.0",
+    "photo_url": "https://www.inaturalist.org/photos/160282084",
+    "observation_url": "https://www.inaturalist.org/observations/96474590",
+    "country": "CA",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  }
+]

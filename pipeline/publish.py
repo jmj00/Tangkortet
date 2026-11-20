@@ -16,6 +16,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import pathlib
+import re
 import statistics
 from collections import Counter
 from typing import Any
@@ -26,12 +27,17 @@ from pipeline.species import Species
 
 ATTACHMENT_CODE = {"attached": 0, "drift": 1, "unknown": 2}
 
+# Curated photo shortlists, one data/images/<slug>.json per species
+# (scripts/pull_species_images.py; see data/images/README.md).
+IMAGES_DIR = pathlib.Path(__file__).resolve().parent.parent / "data" / "images"
+
 ATTRIBUTION = {
     "observations": "Fund via GBIF.org (bl.a. NHMD Phycology Herbarium, Arter.dk, iNaturalist);"
     " licens pr. datasæt",
     "basemap": "© OpenStreetMap-bidragydere / GeoDanmark (CC BY 4.0)",
     "risk": "Miljøstyrelsen, MiljøGIS (vandområdeplaner); Danmarks Miljøportal; DKJord",
     "weather": "Data fra DMI",
+    "photos": "Fotos fra iNaturalist-fund (CC BY 4.0 / CC0) – se det enkelte billede",
 }
 
 
@@ -56,6 +62,39 @@ def observed_depth(obs: list[Observation]) -> dict[str, float] | None:
     }
 
 
+def species_images(slug: str) -> list[dict[str, Any]]:
+    """The species' photos as the app shows them (url, credit, licence, links)."""
+    path = IMAGES_DIR / f"{slug}.json"
+    if not path.exists():
+        return []
+    return [
+        {
+            "url": img["url"],
+            "credit": img["credit"],
+            "license": img["license"],
+            "photo_url": img.get("photo_url"),
+            "observation_url": img.get("observation_url"),
+            "reviewed": bool(img.get("reviewed")),
+        }
+        for img in json.loads(path.read_text(encoding="utf-8"))
+        if not img.get("rejected")
+    ]
+
+
+_INAT_LARGE = re.compile(r"^(https://[^?#]+/photos/\d+/)large(\.[A-Za-z]+)$")
+
+
+def thumbnail(images: list[dict[str, Any]]) -> str | None:
+    """A small rendition of the first photo, for the list rows and the picker.
+    iNaturalist serves fixed size variants under one path (square, small,
+    medium, large); from Svampekortet 624fb8b."""
+    if not images:
+        return None
+    url = images[0]["url"]
+    match = _INAT_LARGE.match(url)
+    return f"{match.group(1)}small{match.group(2)}" if match else url
+
+
 def species_doc(sp: Species, obs: list[Observation]) -> dict[str, Any]:
     datasets: list[dict[str, str]] = []
     index: dict[tuple[str, str], int] = {}
@@ -76,8 +115,12 @@ def species_doc(sp: Species, obs: list[Observation]) -> dict[str, Any]:
             ]
         )
     counts = Counter(o["attachment"] for o in obs)
+    slug = slugify(sp["scientific_name"])
+    images = species_images(slug)
     return {
-        "slug": slugify(sp["scientific_name"]),
+        "slug": slug,
+        "images": images,
+        "thumbnail": thumbnail(images),
         "danish_name": sp["danish_name"],
         "danish_name_verified": sp["danish_name_verified"],
         "invasive": sp["invasive"],
@@ -115,6 +158,7 @@ def species_summary(doc: dict[str, Any]) -> dict[str, Any]:
         "scientific_name": doc["scientific_name"],
         "group": doc["group"],
         "invasive": doc["invasive"],
+        "thumbnail": doc.get("thumbnail"),
         "observation_count": doc["observation_count"],
         "attachment_counts": doc["attachment_counts"],
         "file": f"species/{doc['slug']}.json",

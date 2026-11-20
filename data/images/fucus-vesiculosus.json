@@ -1,0 +1,42 @@
+[
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/8770705/large.jpg",
+    "credit": "Tim Park",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/8770705",
+    "observation_url": "https://www.inaturalist.org/observations/6877615",
+    "country": "DK",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/24167399/large.jpeg",
+    "credit": "carnifex",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/24167399",
+    "observation_url": "https://www.inaturalist.org/observations/16126666",
+    "country": "DK",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/43594756/large.jpeg",
+    "credit": "Kasper Malmberg",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/43594756",
+    "observation_url": "https://www.inaturalist.org/observations/27985389",
+    "country": "DK",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/44607521/large.jpeg",
+    "credit": "Kasper Malmberg",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/44607521",
+    "observation_url": "https://www.inaturalist.org/observations/28607955",
+    "country": "DK",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  }
+]
