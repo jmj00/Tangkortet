@@ -1,0 +1,42 @@
+[
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/342922079/large.jpg",
+    "credit": "Lou Wagstaffe",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/342922079",
+    "observation_url": "https://www.inaturalist.org/observations/194995176",
+    "country": "JE",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/11493716/large.jpeg",
+    "credit": "Jacqui Geux",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/11493716",
+    "observation_url": "https://www.inaturalist.org/observations/8597520",
+    "country": "NZ",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/11673736/large.jpeg",
+    "credit": "Jacqui Geux",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/11673736",
+    "observation_url": "https://www.inaturalist.org/observations/8705946",
+    "country": "NZ",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  },
+  {
+    "url": "https://inaturalist-open-data.s3.amazonaws.com/photos/90409931/large.jpeg",
+    "credit": "Javier",
+    "license": "CC BY 4.0",
+    "photo_url": "https://www.inaturalist.org/photos/90409931",
+    "observation_url": "https://www.inaturalist.org/observations/56720563",
+    "country": "NZ",
+    "source": "iNaturalist (Research Grade)",
+    "reviewed": false
+  }
+]

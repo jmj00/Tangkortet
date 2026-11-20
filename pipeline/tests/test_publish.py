@@ -109,3 +109,42 @@ def test_observations_for_merges_keys_without_duplicates(monkeypatch):
     records = {1: [obs(key=10), obs(key=11)], 2: [obs(key=11), obs(key=12)]}
     monkeypatch.setattr(gbif, "observations", lambda key: records[key])
     assert [o["gbif_id"] for o in gbif.observations_for([1, 2])] == [10, 11, 12]
+
+
+def test_species_images_skip_rejected_and_thumbnail_uses_small(tmp_path, monkeypatch):
+    import json
+
+    from pipeline import publish
+
+    monkeypatch.setattr(publish, "IMAGES_DIR", tmp_path)
+    large = "https://inaturalist-open-data.s3.amazonaws.com/photos/123/large.jpg"
+    (tmp_path / "palmaria-palmata.json").write_text(
+        json.dumps(
+            [
+                {"url": large, "credit": "A", "license": "CC BY 4.0", "reviewed": True},
+                {"url": "https://x/y.jpg", "credit": "B", "license": "CC0 1.0", "rejected": True},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    images = publish.species_images("palmaria-palmata")
+    assert [i["credit"] for i in images] == ["A"]
+    assert images[0]["reviewed"] is True
+    assert publish.thumbnail(images) == large.replace("/large.", "/small.")
+    assert publish.species_images("no-such-species") == []
+    assert publish.thumbnail([]) is None
+
+
+def test_every_images_file_belongs_to_a_species_and_is_well_formed():
+    import json
+
+    from pipeline.publish import IMAGES_DIR, slugify
+    from pipeline.species import TARGET_SPECIES
+
+    slugs = {slugify(sp["scientific_name"]) for sp in TARGET_SPECIES}
+    for path in IMAGES_DIR.glob("*.json"):
+        assert path.stem in slugs, path.name
+        for img in json.loads(path.read_text(encoding="utf-8")):
+            assert img["url"].startswith("https://")
+            assert img["license"] in {"CC BY 4.0", "CC0 1.0"}
+            assert img["credit"]
