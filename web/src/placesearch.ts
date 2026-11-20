@@ -6,7 +6,7 @@
 
 import "./search.css";
 import { ADDRESSES_ENABLED, searchAddresses } from "./addresses";
-import { attachCombobox, type ComboItem, type SearchOutcome } from "./addresscombo";
+import { attachCombobox, type Combobox, type ComboItem, type SearchOutcome } from "./addresscombo";
 import {
   LIMITS,
   loadedPlaceIndex,
@@ -202,15 +202,54 @@ export async function search(
   }
 }
 
+/** The elements of one place-search field. `status` holds a
+ * `.search-status__text` and a "Prøv igen" `button`. */
+export interface PlaceSearchElements {
+  input: HTMLInputElement;
+  /** Must carry an id; the input names it in aria-controls. */
+  listbox: HTMLUListElement;
+  status: HTMLElement;
+}
+
 /**
  * Wire up the search field (#search, #q, #results, #search-status) and show
  * it. `onPlace` gets the chosen place; the caller sets the pin and flies.
  */
 export function initPlaceSearch(onPlace: (place: ChosenPlace) => void): void {
   const form = document.getElementById("search") as HTMLFormElement;
-  const input = document.getElementById("q") as HTMLInputElement;
-  const listbox = document.getElementById("results") as HTMLUListElement;
-  const status = document.getElementById("search-status") as HTMLElement;
+  const finePointer = window.matchMedia("(hover: hover) and (pointer: fine)");
+  form.hidden = false;
+  form.addEventListener("submit", (e) => e.preventDefault());
+  attachPlaceSearch(
+    {
+      input: document.getElementById("q") as HTMLInputElement,
+      listbox: document.getElementById("results") as HTMLUListElement,
+      status: document.getElementById("search-status") as HTMLElement,
+    },
+    (place) => {
+      onPlace(place);
+      // On a phone the keyboard would cover the map that is about to move: on
+      // to the pin's label (read out as it changes), not to nowhere.
+      if (!finePointer.matches) {
+        const readout = document.getElementById("readout");
+        if (readout) {
+          if (!readout.hasAttribute("tabindex")) readout.tabIndex = -1;
+          readout.focus({ preventScroll: true });
+        }
+      }
+    },
+  );
+}
+
+/**
+ * The place search on any field: the main interface's (initPlaceSearch) and
+ * the start screen's place step (start.ts) are the same search, with the same
+ * messages and "Prøv igen". `onPlace` gets the chosen place.
+ */
+export function attachPlaceSearch(
+  { input, listbox, status }: PlaceSearchElements,
+  onPlace: (place: ChosenPlace) => void,
+): Combobox {
   const statusText = status.querySelector(".search-status__text") as HTMLElement;
   const retry = status.querySelector("button") as HTMLButtonElement;
   const finePointer = window.matchMedia("(hover: hover) and (pointer: fine)");
@@ -233,10 +272,8 @@ export function initPlaceSearch(onPlace: (place: ChosenPlace) => void): void {
     "aria-label",
     ADDRESSES_ENABLED ? "Forslag til byer, strande og adresser" : "Forslag til byer og strande",
   );
-  form.hidden = false;
   fitPlaceholder();
   if ("ResizeObserver" in window) new ResizeObserver(fitPlaceholder).observe(input);
-  form.addEventListener("submit", (e) => e.preventDefault());
 
   let last: SearchOutcome<SearchState | "chosen"> = { state: "idle", query: "", shown: 0 };
   const say = (): void => {
@@ -269,15 +306,6 @@ export function initPlaceSearch(onPlace: (place: ChosenPlace) => void): void {
     },
     onSelect: (item) => {
       onPlace({ lngLat: item.target, label: item.text, zoom: item.zoom ?? ADDRESS_ZOOM });
-      // On a phone the keyboard would cover the map that is about to move: on
-      // to the pin's label (read out as it changes), not to nowhere.
-      if (!finePointer.matches) {
-        const readout = document.getElementById("readout");
-        if (readout) {
-          if (!readout.hasAttribute("tabindex")) readout.tabIndex = -1;
-          readout.focus({ preventScroll: true });
-        }
-      }
     },
   });
 
@@ -320,4 +348,5 @@ export function initPlaceSearch(onPlace: (place: ChosenPlace) => void): void {
       }
     }, 150),
   );
+  return combobox;
 }

@@ -177,10 +177,10 @@ describe("initNavigation", () => {
     expect(b.top()).toEqual(LIST);
   });
 
-  it("Back with the welcome dialog open closes the dialog only", async () => {
+  it("Back with a dialog open closes the dialog only", async () => {
     const b = fakeBrowser();
     const app = fakeApp(b, LIST);
-    app.go(dlg(LIST)); // the welcome dialog opens on a first visit
+    app.go(dlg(LIST)); // "Om Tangkortet"
     expect(b.length()).toBe(2);
     b.back();
     await b.settle();
@@ -232,5 +232,97 @@ describe("initNavigation", () => {
     b.back();
     await b.settle();
     expect(app.shown).toEqual(LIST);
+  });
+});
+
+// The start screen (start.ts): adapted from Svampekortet's tests (624fb8b).
+describe("plan with the start screen", () => {
+  const st = (start: Snapshot["start"], detail: string | null = null): Snapshot =>
+    start === null ? { detail } : { start, detail };
+  const MAP = st(null);
+  const HOME = st("home");
+
+  it("adds an entry for a step and for the start screen opened over the map", () => {
+    expect(plan([HOME], st("place-risk"))).toEqual({
+      kind: "ops",
+      ops: [{ op: "push", snap: st("place-risk") }],
+    });
+    expect(plan([HOME], st("species"))).toEqual({
+      kind: "ops",
+      ops: [{ op: "push", snap: st("species") }],
+    });
+    expect(plan([MAP], HOME)).toEqual({ kind: "ops", ops: [{ op: "push", snap: HOME }] });
+  });
+
+  it("goes back through a step's entry when its Forside button is used", () => {
+    expect(plan([HOME, st("place-beach")], HOME)).toEqual({ kind: "back", to: 0 });
+    expect(plan([st("species")], HOME)).toEqual({
+      kind: "ops",
+      ops: [{ op: "replace", snap: HOME }],
+    });
+  });
+
+  it("treats a snapshot without `start` as the map", () => {
+    expect(plan([{ detail: null }], { start: null, detail: null })).toEqual({ kind: "none" });
+  });
+
+  it("keeps the start screen the page opened on behind the map", () => {
+    expect(plan([HOME], MAP)).toEqual({ kind: "ops", ops: [{ op: "push", snap: MAP }] });
+    expect(plan([HOME, st("place-risk")], MAP)).toEqual({ kind: "back", to: 0 });
+    expect(plan([HOME], st(null, "palmaria-palmata"))).toEqual({
+      kind: "ops",
+      ops: [
+        { op: "push", snap: MAP },
+        { op: "push", snap: st(null, "palmaria-palmata") },
+      ],
+    });
+  });
+
+  it("returns to the map under a start screen opened from it", () => {
+    expect(plan([MAP, HOME], MAP)).toEqual({ kind: "back", to: 0 });
+    expect(plan([MAP, HOME, st("species")], st(null, "x"))).toEqual({ kind: "back", to: 0 });
+  });
+
+  it("reads start entries and rejects unknown views", () => {
+    expect(readNavState({ tgk: 1, stack: [HOME, st("place-risk")] })).toEqual({
+      tgk: 1,
+      stack: [HOME, st("place-risk")],
+    });
+    expect(readNavState({ tgk: 1, stack: [{ start: "elsewhere", detail: null }] })).toBeNull();
+  });
+
+  it("fresh visit: a step and Back; a species from the picker, Back to the list, Back home", async () => {
+    const b = fakeBrowser();
+    const app = fakeApp(b, HOME);
+    app.go(st("place-risk"));
+    expect(b.length()).toBe(2);
+    b.back();
+    await b.settle();
+    expect(app.shown).toEqual(HOME);
+    app.go(st("species"));
+    app.go(MAP); // the start screen closes...
+    app.go(st(null, "palmaria-palmata")); // ...and the species opens
+    await b.settle();
+    expect(b.top()).toEqual(st(null, "palmaria-palmata"));
+    b.back();
+    await b.settle();
+    expect(app.shown).toEqual(MAP);
+    b.back();
+    await b.settle();
+    expect(app.shown).toEqual(HOME);
+    expect(b.index()).toBe(0); // the next Back leaves the site
+  });
+
+  it("opened on the map: Forside, then Back returns to the map", async () => {
+    const b = fakeBrowser();
+    const app = fakeApp(b, MAP);
+    app.go(HOME);
+    b.back();
+    await b.settle();
+    expect(app.shown).toEqual(MAP);
+    app.go(HOME);
+    app.go(MAP); // "Gå til kortet"
+    await b.settle();
+    expect(b.index()).toBe(0);
   });
 });

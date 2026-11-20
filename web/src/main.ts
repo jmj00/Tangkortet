@@ -2,7 +2,6 @@ import type maplibregl from "maplibre-gl";
 import "./style.css";
 import "./shell.css";
 import { openAbout } from "./about";
-import { maybeWelcome } from "./welcome";
 import { initPlaceSearch, type ChosenPlace } from "./placesearch";
 import { flyCamera, fitCamera, mapInsets, popupAnchor, ringBounds } from "./camera";
 import { loadAllSpecies, loadManifest, loadSpecies } from "./data";
@@ -18,6 +17,8 @@ import { RiskPanel } from "./riskpanel";
 import { initErrorMonitoring } from "./sentry";
 import { initSheet } from "./sheet";
 import { SpeciesPanel } from "./speciespanel";
+import { initStart } from "./start";
+import { landingTarget, type Landing } from "./startstate";
 import type { Manifest } from "./types";
 
 initErrorMonitoring();
@@ -256,7 +257,9 @@ let fullBeforeDetail = false;
 let resolvePanel: (panel: SpeciesPanel | null) => void = () => {};
 const panelReady = new Promise<SpeciesPanel | null>((resolve) => (resolvePanel = resolve));
 
-loadManifest()
+// One fetch of the manifest, shared by the panels and the start screen.
+const manifestReady = loadManifest();
+manifestReady
   .then((m) => {
     manifest = m;
     speciesPanel = new SpeciesPanel(document.getElementById("tab-arter") as HTMLElement, m, {
@@ -482,7 +485,11 @@ window.addEventListener("hashchange", () => {
 
 function navSnapshot(): Snapshot {
   const dialog = document.querySelector("dialog[open]") !== null;
-  return { detail: speciesPanel?.selectedSlug ?? null, ...(dialog ? { dialog } : {}) };
+  return {
+    start: start.navSnap(),
+    detail: speciesPanel?.selectedSlug ?? null,
+    ...(dialog ? { dialog } : {}),
+  };
 }
 
 function openSpecies(panel: SpeciesPanel, slug: string): Promise<void> {
@@ -502,6 +509,8 @@ async function applyNavSnapshot(snap: Snapshot): Promise<void> {
       dialog.close();
     }
   }
+  if (snap.start) start.show(snap.start);
+  else if (start.isOpen()) start.close();
   const panel = await panelReady;
   if (!panel || panel.selectedSlug === snap.detail) return;
   const hadFocus = panelEl.contains(document.activeElement);
@@ -523,6 +532,43 @@ async function applyNavSnapshot(snap: Snapshot): Promise<void> {
   }
 }
 
+// --- start screen (start.ts): each way in lands here, set up for its task ---
+function landFromStart(landing: Landing): void {
+  const target = landingTarget(landing);
+  const place = landing.kind === "risk" || landing.kind === "beach" ? landing.place : undefined;
+  if (place && (place.lngLat[0] !== pin?.[0] || place.lngLat[1] !== pin?.[1])) {
+    locateGate.superseded(); // the user picked a place; a late position must not undo it
+    setPin(place.lngLat, place.label);
+  }
+  if (target.tab) setTab(target.tab);
+  writeHash();
+  if (target.tab) sheet.snapTo("half");
+  if (pin && target.camera === "ring") void frameRing(pin);
+  if (pin && target.camera === "place") void flyTo(pin, place?.zoom ?? 13);
+  const focusTarget =
+    target.focus === "tab"
+      ? tabButtons.find((b) => b.getAttribute("aria-selected") === "true")
+      : document.getElementById(`tab-${appRoot.dataset.tab}`);
+  focusTarget?.focus({ preventScroll: true });
+  // (focus is in the panel first, so the species sheet takes it on its title)
+  if (landing.kind === "species") speciesPanel?.selectBySlug(landing.slug);
+}
+
+const start = initStart({
+  app: appRoot,
+  behind: {
+    search: searchForm,
+    panel: panelEl,
+    map: document.getElementById("map") as HTMLElement,
+  },
+  map: mapReady,
+  manifest: manifestReady,
+  getPin: () => (pin ? { lngLat: pin, label: readout.textContent ?? "" } : null),
+  cancelLocate: () => locateGate.superseded(),
+  enter: landFromStart,
+  onNavigate: () => navigation?.record(),
+});
+
 navigation = initNavigation({ current: navSnapshot, apply: applyNavSnapshot });
 
 // A modal dialog opening or closing, by any route (its button, Escape, a
@@ -536,9 +582,6 @@ new MutationObserver((records) => {
   attributes: true,
   attributeFilter: ["open"],
 });
-
-// After the history is set up, so the welcome dialog gets an entry of its own.
-maybeWelcome();
 
 // --- place search (placesearch.ts): towns, postal districts, bathing sites
 // and, with a key, addresses. A chosen place becomes the pin.
