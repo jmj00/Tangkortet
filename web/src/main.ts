@@ -196,7 +196,9 @@ for (const button of tabButtons) {
     setTab(tab);
     writeHash();
     // Risiko opened by hand: show the whole ring around the pin.
-    if (tab === "risiko" && pin) void frameRing(pin);
+    // (The sheet stays where the tab click put it: on a two-stop screen
+    // lowering it would fold it straight back to peek.)
+    if (tab === "risiko" && pin) void frameRing(pin, false);
   });
   button.addEventListener("keydown", (e) => {
     const i = tabButtons.indexOf(button);
@@ -335,9 +337,10 @@ function flyTo(center: [number, number], zoom: number): Promise<void> {
 }
 
 /** Fit the risk ring (the Risiko tab's radius around the pin) into the
- * uncovered map, clear of the map buttons. */
-function frameRing(center: [number, number]): Promise<void> {
-  sheet.atMost("half");
+ * uncovered map, clear of the map buttons. `lowerSheet`: bring a fully open
+ * sheet down first (a flight), or leave it (the user just raised it). */
+function frameRing(center: [number, number], lowerSheet = true): Promise<void> {
+  if (lowerSheet) sheet.atMost("half");
   return shellReady.then(({ map }) =>
     fitCamera(map, ringBounds(center, riskRadiusM), {
       maxZoom: 15,
