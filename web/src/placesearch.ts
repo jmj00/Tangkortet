@@ -228,17 +228,21 @@ export function initPlaceSearch(onPlace: (place: ChosenPlace) => void): void {
     // first search does not wait for it.
     void loadPlaceIndex().catch(() => {});
     // Back in a field that still holds a search: list it again.
-    if (last.state === "chosen")
+    if (last.state === "chosen") {
       input.select(); // typing replaces the chosen place
-    else if (input.value.trim()) combobox.refresh();
-    else say();
+    } else if (input.value.trim()) {
+      combobox.refresh();
+    } else {
+      say();
+    }
   });
 
   // The message belongs to the search in progress: it goes when the field is
   // left (as the suggestions do), unless focus went to its own button.
   input.addEventListener("blur", () =>
     window.setTimeout(() => {
-      if (status.contains(document.activeElement)) return;
+      const here = document.activeElement;
+      if (here === input || status.contains(here)) return; // came straight back
       if (!input.value.trim()) last = { state: "idle", query: "", shown: 0 };
       statusText.textContent = "";
       status.hidden = true;
