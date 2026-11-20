@@ -10,6 +10,7 @@ import {
   oneSlipApart,
   parseAddressQuery,
   isPlaceName,
+  nearestPlace,
   type RawPlaces,
 } from "./placeindex";
 import raw from "./data/places.json";
@@ -216,5 +217,54 @@ describe("helpers", () => {
   it("allows one slip", () => {
     expect(oneSlipApart("silkeborg", "silkebrog")).toBe(true);
     expect(oneSlipApart("silkeborg", "silkbrog")).toBe(false);
+  });
+});
+
+describe("nearestPlace", () => {
+  const index = buildPlaceIndex({
+    postal: [],
+    towns: [
+      ["Bystad", 10.0, 56.0, 2.0, -1, 0],
+      ["Bystad Nord", 10.0, 56.015, 0.5, -1, 1],
+      ["Lillelund", 10.2, 56.0, 0.3, -1, 0],
+    ],
+    coast: [
+      ["Lillelund Strand", 10.2, 56.01, -1],
+      ["100 m nord for Lillelund Strand", 10.2, 56.011, -1],
+    ],
+  });
+
+  it("names the town a point lies in, the nearer centre of two", () => {
+    expect(nearestPlace(index, [10.0, 56.0])).toMatchObject({ name: "Bystad", distanceM: 0 });
+    // inside both Bystad (2 km) and Bystad Nord (0.5 km): the part of town
+    expect(nearestPlace(index, [10.0, 56.014])?.name).toBe("Bystad Nord");
+  });
+
+  it("measures a town to the edge of its area", () => {
+    const p = nearestPlace(index, [10.0, 56.05]); // 5.6 km from Bystad's centre
+    expect(p?.name).toBe("Bystad Nord");
+    expect(p?.distanceM).toBeGreaterThan(3000);
+  });
+
+  it("prefers a bathing site right by the point", () => {
+    expect(nearestPlace(index, [10.2, 56.0105])).toMatchObject({
+      name: "Lillelund Strand",
+      kind: "coast",
+    });
+  });
+
+  it("skips bathing sites named by where they are", () => {
+    expect(nearestPlace(index, [10.2, 56.0112])?.name).toBe("Lillelund Strand");
+  });
+
+  it("returns null out at sea", () => {
+    expect(nearestPlace(index, [11.0, 56.5])).toBeNull();
+  });
+
+  it("names a spot on the real list", () => {
+    // Aarhus harbour front (the README's risk example)
+    const p = nearestPlace(real, [10.219, 56.151]);
+    expect(p).not.toBeNull();
+    expect(p?.distanceM).toBeLessThan(2000);
   });
 });

@@ -1,0 +1,593 @@
+/* Things on and about the map: the pin's card in the sheet header
+   (tapcard.ts), the map key (maplegend.ts) and the find card (findcard.ts).
+   The key and the find card are adapted from Svampekortet 624fb8b
+   (web/src/map.css). Layout breakpoints are the shell's (shell.css):
+   phone = (max-width: 559.98px), (max-width: 719.98px) and (min-height: 520.02px). */
+
+:root {
+  --level-red: #c0392b;
+  --level-yellow: #d39e00;
+  --level-green: #2e8b57;
+}
+
+/* --- the pin's card: replaces the one-line readout --- */
+#readout.tapcard {
+  display: block;
+  min-height: 0;
+  padding: 0.1rem var(--gutter) 0.5rem;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+  line-clamp: none;
+}
+
+#readout.tapcard::before {
+  top: 0.22rem;
+}
+
+.tapcard__where {
+  margin: 0;
+  padding-left: 1.25rem;
+  min-height: 1.35rem;
+  font-size: 0.92rem;
+  font-weight: 650;
+  line-height: 1.35;
+  /* one line: a long beach name is cut, never the chips */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#readout[data-state="empty"] .tapcard__where {
+  font-weight: 400;
+  white-space: normal;
+}
+
+.tapcard__where[data-focus="true"] {
+  font-weight: 400;
+}
+
+.tapcard__coords {
+  margin-left: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* Two buttons side by side; a long title wraps inside its button rather than
+   pushing the other one to a row of its own. */
+.tapcard__actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+
+.tapcard__actions[hidden] {
+  display: none;
+}
+
+.tapcard__chip {
+  --lvl: var(--muted);
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  min-width: 0;
+  padding: 0.25rem 0.45rem 0.25rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.84rem;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tapcard__chip:hover {
+  border-color: var(--border-strong);
+  background: color-mix(in srgb, var(--ink) 5%, var(--surface));
+}
+
+.tapcard__chip:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* the traffic light keeps its words on one line while there is room */
+.tapcard__risk {
+  flex-grow: 0;
+}
+
+.tapcard__risk[data-level="red"] {
+  --lvl: var(--level-red);
+}
+
+.tapcard__risk[data-level="yellow"] {
+  --lvl: var(--level-yellow);
+}
+
+.tapcard__risk[data-level="green"] {
+  --lvl: var(--level-green);
+}
+
+.tapcard__risk:not([data-level="pending"], [data-level="unknown"]) {
+  border-color: color-mix(in srgb, var(--lvl) 60%, var(--border));
+  background: color-mix(in srgb, var(--lvl) 11%, var(--surface));
+}
+
+.tapcard__risk[data-level="pending"] {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+/* The traffic light: a dot with a dark edge (yellow alone is under 3:1 on
+   white); the words beside it say the level too. */
+.tapcard__light {
+  flex: none;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  background: var(--lvl);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 45%, transparent);
+}
+
+.tapcard__risk[data-level="pending"] .tapcard__light,
+.tapcard__risk[data-level="unknown"] .tapcard__light {
+  background: none;
+  box-shadow: none;
+  border: 1.5px dashed var(--muted);
+}
+
+.tapcard__finds[data-state="loading"] {
+  color: var(--muted);
+}
+
+.tapcard__label,
+.tapcard__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.tapcard__text {
+  display: flex;
+  flex-direction: column;
+}
+
+.tapcard__split {
+  display: none;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.tapcard__split:empty {
+  display: none !important;
+}
+
+/* "go to": a small chevron */
+.tapcard__go {
+  flex: none;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin: 0 0.1rem 0 0.05rem;
+  border-top: 2px solid var(--muted);
+  border-right: 2px solid var(--muted);
+  transform: rotate(45deg);
+}
+
+/* 44px to hit on touch screens: 36px drawn and 4px more above and below
+   (the buttons share one row, so the areas never overlap). */
+@media (pointer: coarse) {
+  .tapcard__chip::after {
+    content: "";
+    position: absolute;
+    inset: -4px 0;
+  }
+}
+
+/* Sidebar: room for the coordinates and the attached/washed-up split. */
+@media (min-width: 720px), (min-width: 560px) and (max-height: 520px) {
+  .tapcard__split {
+    display: block;
+  }
+}
+
+/* Desktop: the traffic light whole; the finds beside it, or below when the
+   light's words are long (green). Short landscape screens keep one row. */
+@media (min-width: 720px) and (min-height: 520.02px) {
+  .tapcard__actions {
+    flex-wrap: wrap;
+  }
+
+  .tapcard__risk {
+    flex: none;
+    max-width: 100%;
+  }
+
+  .tapcard__finds {
+    flex: 1 1 9rem;
+  }
+}
+
+@media (max-width: 559.98px), (max-width: 719.98px) and (min-height: 520.02px) {
+  .tapcard__coords {
+    display: none;
+  }
+}
+
+/* Short landscape: every line counts. */
+@media (min-width: 560px) and (max-height: 520px) {
+  #readout.tapcard {
+    padding-bottom: 0.35rem;
+  }
+
+  .tapcard__split,
+  .tapcard__coords {
+    display: none;
+  }
+
+  .tapcard__actions {
+    margin-top: 0.2rem;
+  }
+}
+
+/* --- the map key ("Signaturforklaring") ---
+   At the bottom left of the uncovered map, above the scale bar: opposite the
+   locate button on a phone (it rides the sheet's edge), and away from the
+   button column at the top right in the sidebar layout, so an open key never
+   covers a control. The full key opens upwards from its line. */
+.map-key {
+  position: absolute;
+  z-index: 2;
+  /* above the scale bar */
+  --map-key-lift: 1.75rem;
+  left: calc(var(--map-inset-left, 0px) + max(0.5rem, env(safe-area-inset-left)));
+  bottom: calc(var(--map-inset-bottom, 0px) + 0.5rem + var(--map-key-lift));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  /* clear of the locate button on the right */
+  max-width: calc(100% - var(--ctrl-column, 64px) - 0.75rem);
+  pointer-events: none;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.map-key > * {
+  pointer-events: auto;
+}
+
+.map-key[hidden],
+.map-key [hidden] {
+  display: none;
+}
+
+@media (max-width: 559.98px), (max-width: 719.98px) and (min-height: 520.02px) {
+  #app[data-sheet-ready]:not([data-sheet-dragging]) .map-key {
+    transition: bottom var(--dur-sheet) var(--ease-out);
+  }
+}
+
+.map-key__toggle,
+.map-key__panel {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m, 10px);
+  box-shadow: var(--elev-2);
+}
+
+.map-key__toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.75rem; /* 44px touch target */
+  max-width: 100%;
+  padding: 0 0.7rem;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+@media (pointer: fine) {
+  .map-key__toggle {
+    min-height: 2.25rem;
+  }
+}
+
+.map-key__toggle:hover {
+  background: var(--bg);
+}
+
+.map-key__toggle:focus-visible,
+.find-card__close:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Closed: the line is the key itself (marks and words). Open: it is the
+   header of the panel above it. */
+.map-key__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.35rem;
+  min-width: 0;
+  padding: 0.3rem 0;
+}
+
+.map-key__summary > span:not(.map-key__dot) + .map-key__dot,
+.map-key__summary-group {
+  margin-left: 0.3rem;
+}
+
+.map-key__summary-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.map-key__summary-group > span:last-child {
+  margin-left: 0.15rem;
+}
+
+.map-key__name {
+  font-weight: 600;
+}
+
+.map-key[data-open="true"] .map-key__summary,
+.map-key[data-open="false"] .map-key__name {
+  display: none;
+}
+
+.map-key__chevron {
+  flex: 0 0 auto;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin: 0.2rem 0.1rem 0 0.3rem;
+  border-left: 2px solid var(--muted);
+  border-top: 2px solid var(--muted);
+  transform: rotate(45deg);
+}
+
+.map-key[data-open="true"] .map-key__chevron {
+  margin-top: -0.2rem;
+  transform: rotate(-135deg);
+}
+
+.map-key__panel {
+  width: 15rem;
+  max-width: 100%;
+  /* never taller than the free map above the key's own line (phone: between
+     the search field and the sheet), so it scrolls instead */
+  max-height: min(
+    50dvh,
+    24rem,
+    calc(
+      100dvh - var(--map-inset-top, 0px) - var(--map-inset-bottom, 0px) - var(--map-key-lift, 0px) -
+        4.5rem
+    )
+  );
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.map-key__section {
+  padding: 0.55rem 0.75rem 0.6rem;
+}
+
+.map-key__section + .map-key__section {
+  border-top: 1px solid var(--border);
+}
+
+.map-key__title {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.map-key__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.map-key__list + .map-key__list {
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px dashed var(--border);
+}
+
+.map-key__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.1rem 0;
+}
+
+.map-key__none {
+  color: var(--muted);
+}
+
+.map-key__hint {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+}
+
+/* The marks as the circle layers draw them (layers.ts): attached solid with
+   a halo, washed-up a ring, unknown faint; risk markers solid with a halo. */
+.map-key__dot {
+  --c: var(--ink);
+  --halo: #ffffff;
+  flex: 0 0 auto;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow:
+    0 0 0 1.5px var(--halo),
+    0 0 0 2.5px color-mix(in srgb, var(--ink) 20%, transparent);
+}
+
+.map-key__dot--drift {
+  background: none;
+  border: 2px solid var(--c);
+  box-shadow: none;
+}
+
+.map-key__dot--unknown {
+  background: color-mix(in srgb, var(--c) 35%, transparent);
+  box-shadow: 0 0 0 1px var(--halo);
+}
+
+.map-key__dot--risk {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+
+/* the dashed ring around the pin */
+.map-key__ring {
+  --c: var(--accent);
+  flex: 0 0 auto;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  border: 2px dashed var(--c);
+}
+
+/* the pin: MapLibre's marker, small */
+.map-key__pin {
+  --c: var(--accent);
+  flex: 0 0 auto;
+  width: 0.75rem;
+  height: 0.95rem;
+  background: var(--c);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 30'%3E%3Cpath d='M12 0C5.4 0 0 5.2 0 11.7 0 20.4 12 30 12 30s12-9.6 12-18.3C24 5.2 18.6 0 12 0zm0 16a4.3 4.3 0 1 1 0-8.6 4.3 4.3 0 0 1 0 8.6z'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 30'%3E%3Cpath d='M12 0C5.4 0 0 5.2 0 11.7 0 20.4 12 30 12 30s12-9.6 12-18.3C24 5.2 18.6 0 12 0zm0 16a4.3 4.3 0 1 1 0-8.6 4.3 4.3 0 0 1 0 8.6z'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+
+@media (prefers-color-scheme: dark) {
+  .map-key__dot {
+    --halo: #0d1415;
+  }
+}
+
+/* A short phone: the open key keeps to the essentials. */
+@media (max-width: 719.98px) and (max-height: 700px) {
+  .map-key__hint {
+    display: none;
+  }
+
+  .map-key__section {
+    padding: 0.45rem 0.65rem 0.5rem;
+  }
+}
+
+/* --- the find card: a MapLibre popup on a tapped find --- */
+.find-card {
+  font: inherit;
+  z-index: 3; /* above the pin marker and the map key */
+}
+
+.find-card .maplibregl-popup-content {
+  padding: 0.6rem 0.75rem 0.65rem;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--elev-2);
+  font-size: 0.86rem;
+  line-height: 1.4;
+  min-width: 11rem;
+}
+
+.find-card.maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+.find-card.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+.find-card.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip {
+  border-top-color: var(--surface);
+}
+
+.find-card.maplibregl-popup-anchor-top .maplibregl-popup-tip,
+.find-card.maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+.find-card.maplibregl-popup-anchor-top-right .maplibregl-popup-tip {
+  border-bottom-color: var(--surface);
+}
+
+.find-card.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: var(--surface);
+}
+
+.find-card.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: var(--surface);
+}
+
+.find-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.find-card__title {
+  flex: 1;
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.find-card__close {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin: -0.25rem -0.35rem 0 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.find-card__close:hover {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+@media (pointer: coarse) {
+  .find-card__close {
+    width: 2.75rem;
+    height: 2.75rem;
+    margin: -0.6rem -0.7rem -0.5rem 0;
+  }
+}
+
+.find-card__line {
+  margin: 0.15rem 0 0;
+}
+
+.find-card__kind {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.3rem;
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #app[data-sheet-ready] .map-key {
+    transition: none !important;
+  }
+}

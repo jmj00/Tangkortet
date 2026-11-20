@@ -27,7 +27,7 @@ import {
 import { fetchRain, type RainSummary } from "./rain";
 import { groupNearby, riskItems, type RiskItem } from "./risk";
 import type { Manifest } from "./types";
-import { evaluate, LEVEL_TEXT, RULES } from "./verdict";
+import { evaluate, LEVEL_TEXT, RULES, type Level } from "./verdict";
 import {
   compass,
   daysAgo,
@@ -48,6 +48,9 @@ export const DISCLAIMER =
 export interface RiskPanelHooks {
   onItems(pin: [number, number], radiusM: number, items: RiskItem[]): void;
   onFocus(item: RiskItem): void;
+  /** The traffic light for `pin` each time the panel draws it ("pending"
+   * until its inputs have answered); the pin's card (tapcard.ts) shows it. */
+  onVerdict?(pin: [number, number], level: Level | "pending"): void;
 }
 
 type Pending<T> = T | "loading" | "error";
@@ -198,6 +201,7 @@ export class RiskPanel {
       (v) => v !== "loading",
     );
     if (!settled) {
+      if (this.pin) this.hooks.onVerdict?.(this.pin, "pending");
       return h("section", { class: "verdict verdict--pending" }, h("p", {}, "Vurderer…"));
     }
     const soil = this.soil as LiveResult<SoilSite> | "error";
@@ -209,6 +213,7 @@ export class RiskPanel {
         soil !== "error" && soil.ok ? soil.items.filter((i) => i.level === "V2").length : null,
       streams: this.streams(),
     });
+    if (this.pin) this.hooks.onVerdict?.(this.pin, verdict.level);
     const text = LEVEL_TEXT[verdict.level];
     return h(
       "section",

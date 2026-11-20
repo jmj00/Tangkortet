@@ -1,6 +1,64 @@
 // Ported from Svampekortet (0024b43): OSM base + the Skærmkort WMS when a key is set.
-import type { IControl, Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
+import type {
+  IControl,
+  Map as MapLibreMap,
+  RasterLayerSpecification,
+  StyleSpecification,
+} from "maplibre-gl";
+import "./map.css";
+import { prefersDark, restyleLayers } from "./layers";
 import { LocateControl } from "./locatecontrol";
+
+type RasterPaint = NonNullable<RasterLayerSpecification["paint"]>;
+
+/**
+ * The basemap is a full-colour road map; under the finds, the risk markers
+ * and the pin it has to step back. Light: desaturated and softened. Dark: the
+ * same tiles inverted (brightness min above max) with their hues turned back
+ * by 180 degrees, so land goes dark, labels light and water stays blue.
+ * Adapted from Svampekortet 624fb8b (web/src/map.ts basemapPaint). Less grey
+ * than there: this is a coastal map, and water against land must stay
+ * obvious, so some of OSM's blue is kept in both themes.
+ */
+export function basemapPaint(dark: boolean, reducedMotion = false): RasterPaint {
+  const fade = reducedMotion ? 0 : 300;
+  return dark
+    ? {
+        "raster-brightness-min": 0.86,
+        "raster-brightness-max": 0.12,
+        "raster-hue-rotate": 180,
+        "raster-saturation": -0.3,
+        "raster-contrast": -0.05,
+        "raster-fade-duration": fade,
+      }
+    : {
+        "raster-brightness-min": 0.05,
+        "raster-brightness-max": 1,
+        "raster-hue-rotate": 0,
+        "raster-saturation": -0.45,
+        "raster-contrast": -0.1,
+        "raster-fade-duration": fade,
+      };
+}
+
+const reducedMotion = (): boolean =>
+  globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+
+const currentBasemapPaint = (): RasterPaint => basemapPaint(prefersDark(), reducedMotion());
+
+/** The raster layers that make up the basemap: OSM, and Skærmkort over it
+ * when a key is set. */
+const BASEMAP_LAYERS = ["osm", "sdfi"] as const;
+
+function applyBasemapTheme(map: MapLibreMap): void {
+  const paint = currentBasemapPaint();
+  for (const id of BASEMAP_LAYERS) {
+    if (!map.getLayer(id)) continue;
+    for (const [name, value] of Object.entries(paint)) {
+      map.setPaintProperty(id, name, value);
+    }
+  }
+}
 
 const OSM_STYLE: StyleSpecification = {
   version: 8,
@@ -13,8 +71,16 @@ const OSM_STYLE: StyleSpecification = {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     },
   },
-  layers: [{ id: "osm", type: "raster", source: "osm" }],
+  layers: [],
 };
+
+/** The style with the basemap painted for the current theme. */
+function osmStyle(): StyleSpecification {
+  return {
+    ...OSM_STYLE,
+    layers: [{ id: "osm", type: "raster", source: "osm", paint: currentBasemapPaint() }],
+  };
+}
 
 // Roughly the centre of Denmark (Storebælt), so the opening view frames the
 // whole country from Jutland to Bornholm.
@@ -63,7 +129,7 @@ function addSdfiBasemap(map: MapLibreMap): void {
     tileSize: 256,
     attribution: SDFI_ATTRIBUTION,
   });
-  map.addLayer({ id: "sdfi", type: "raster", source: "sdfi" });
+  map.addLayer({ id: "sdfi", type: "raster", source: "sdfi", paint: currentBasemapPaint() });
 
   const onError = (e: { error?: Error; sourceId?: string }): void => {
     const decodeError = /could not be decoded/i.test(String(e?.error?.message ?? ""));
@@ -128,7 +194,7 @@ export async function createMap(
 
   const map = new maplibregl.Map({
     container,
-    style: OSM_STYLE,
+    style: osmStyle(),
     center: DENMARK_CENTER,
     zoom: 6.4,
     attributionControl: { compact: true },
@@ -161,6 +227,19 @@ export async function createMap(
     map.once("style.load", ready);
     map.once("load", ready);
   });
+
+  // The page's theme follows the OS setting; the map follows it without a
+  // reload (from Svampekortet 624fb8b, web/src/map.ts).
+  globalThis.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
+    void loaded.then(() => {
+      applyBasemapTheme(map);
+      restyleLayers(map);
+    });
+  });
+
+  // Dev server only (dropped from production builds): lets the screenshot
+  // harness drive the map (from Svampekortet 624fb8b, web/src/map.ts).
+  if (import.meta.env.DEV) (window as unknown as { __map?: MapLibreMap }).__map = map;
 
   return { map, geolocate, maplibregl, loaded };
 }

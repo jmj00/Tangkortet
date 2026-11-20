@@ -777,3 +777,63 @@ export function loadedPlaceIndex(): PlaceIndex | null {
 export function loadPlaceIndex(): Promise<PlaceIndex> {
   return placeLoader.load();
 }
+
+// --- the nearest named place, for the pin's card (tapcard.ts) ---
+
+export interface NearestPlace {
+  name: string;
+  kind: "town" | "coast";
+  /** Metres from the point: to a bathing site's point, or to the edge of a
+   * town's circle (0 inside it). */
+  distanceM: number;
+}
+
+/** A bathing site this close wins over a town: it names the very beach. */
+export const COAST_PREFERRED_M = 400;
+
+/** Bathing sites named by where they are ("100 m nord for ...", "Ved ...")
+ * read badly after "Ved"; they are left out. */
+const DESCRIBED_SITE = /^(\d|ved\s)/i;
+
+/**
+ * The named place nearest `[lon, lat]`: a coastal bathing site within
+ * COAST_PREFERRED_M, else the nearest town, part of a town or bathing site
+ * (towns measured to the edge of their area). Null when nothing lies within
+ * `maxM` (open sea).
+ */
+export function nearestPlace(
+  index: PlaceIndex,
+  [lon, lat]: [number, number],
+  maxM = 15_000,
+): NearestPlace | null {
+  const dLat = maxM / 111_320;
+  const dLon = maxM / (111_320 * Math.cos((lat * Math.PI) / 180));
+  const near = (pLon: number, pLat: number, extraM = 0): boolean =>
+    Math.abs(pLat - lat) <= dLat + extraM / 111_320 &&
+    Math.abs(pLon - lon) <= dLon + extraM / 111_320 / Math.cos((lat * Math.PI) / 180);
+
+  let coast: NearestPlace | null = null;
+  for (const site of index.coast) {
+    if (DESCRIBED_SITE.test(site.name) || !near(site.lon, site.lat)) continue;
+    const d = distanceM([lon, lat], [site.lon, site.lat]);
+    if (d <= maxM && (!coast || d < coast.distanceM))
+      coast = { name: site.name, kind: "coast", distanceM: d };
+  }
+  if (coast && coast.distanceM <= COAST_PREFERRED_M) return coast;
+
+  let best = coast;
+  // inside several towns (a city and its parts): the one whose centre is nearest
+  let bestCentre = Infinity;
+  for (const town of index.towns) {
+    const radiusM = town.radiusKm * 1000;
+    if (!near(town.lon, town.lat, radiusM)) continue;
+    const centre = distanceM([lon, lat], [town.lon, town.lat]);
+    const d = Math.max(0, centre - radiusM);
+    if (d > maxM) continue;
+    if (!best || d < best.distanceM || (d === best.distanceM && centre < bestCentre)) {
+      best = { name: town.name, kind: "town", distanceM: d };
+      bestCentre = centre;
+    }
+  }
+  return best;
+}
