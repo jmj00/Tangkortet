@@ -43,22 +43,70 @@ ABOUT = (
 _SMALL = {"ved", "v", "for", "og", "fra", "til", "i", "på", "af", "med", "mod", "ud", "mellem"}
 # Abbreviations spelled out where they are unambiguous.
 _EXPAND = {"str": "Strand", "camp": "Camping", "off": "Offentlig"}
+# Compass abbreviations, where they are directions ("200 M. Ø. F. BØNNERUP HAVN").
+_DIRS = {
+    "N": "nord",
+    "S": "syd",
+    "Ø": "øst",
+    "V": "vest",
+    "NØ": "nordøst",
+    "NV": "nordvest",
+    "SØ": "sydøst",
+    "SV": "sydvest",
+}
+_DIR = r"(NØ|NV|SØ|SV|N|S|Ø|V)\.?"
+_DIR_WORD = r"(NORD|SYD|ØST|VEST|NØ|NV|SØ|SV|N|S|Ø|V)\.?"
+# Names the rules can't read, as people would write them (keys: raw, upper case).
+_OVERRIDES = {
+    "Å Å N": "Å Nord",
+    "Å Å 150M S (FRA 1990)": "Å, 150 m syd",
+    "V CAMPINGPLADS SV FOR NIBE": "Campingplads sydvest for Nibe",
+    "STAUNINGS Ø": "Staunings Ø",  # an island, not "øst"
+    "AARHUS Ø, OPEN WATER": "Aarhus Ø, Open Water",  # the district
+    "FALSLED S F. HAVN": "Falsled, syd for havnen",
+    "LUNDEBORG N F. HAVN": "Lundeborg, nord for havnen",
+    "LØKKEBY STRAND M": "Løkkeby Strand Midt",
+}
+# A street address or a number alone says nothing without the district.
+_BARE = re.compile(r"(?i)strand \d+|\S+(?:vej|vejen|alle|alleen|allé|gade) \d+\w?")
 
 Postal = list[Any]  # [postnr, name, west, south, east, north]
 Town = list[Any]  # [name, lon, lat, radiusKm, postal index, type]
 Coast = list[Any]  # [name, lon, lat, postal index]
 
 
+def _dir(m: re.Match[str], group: int = 1) -> str:
+    word = m.group(group).upper()
+    return _DIRS.get(word, word.lower())
+
+
 def tidy_name(raw: str) -> str:
     """A bathing site's name as people write it: "VEMMETOFTE STRAND" ->
     "Vemmetofte Strand", "HULSIG V/KARREDVEJ" -> "Hulsig v/Karredvej",
     "GNIBEN,SEJERØ" -> "Gniben, Sejerø", "STIBJERG HUSE STR." -> "Stibjerg Huse
-    Strand"."""
-    s = re.sub(r"\s+", " ", raw.strip())
+    Strand", "200 M. Ø. F. BØNNERUP HAVN" -> "200 m øst for Bønnerup Havn";
+    station codes and years are dropped."""
+    s = re.sub(r"\s+", " ", raw.strip()).upper()
+    if s in _OVERRIDES:
+        return _OVERRIDES[s]
+    s = re.sub(r"\s*\((?:FRA )?\d{4}\)", "", s)  # "(FRA 1990)", "(4261)"
+    s = re.sub(r"(?<=[^\W\d_]) (?:19|20)\d\d$", "", s)  # "ENDELAVE HAVNEMOLE 2015"
+    s = re.sub(r"UNDERSTATION DKBW\d+\s*", "", s)
     s = re.sub(r"\bSTR\.VEJ\b", "STRANDVEJ", s)
     s = re.sub(r",(?=\S)", ", ", s)  # "GNIBEN,SEJERØ"
     s = re.sub(r"\.(?=[^\W\d_]{2})", ". ", s)  # "FR.HAVN" -> "FR. HAVN" (not "S.")
     s = re.sub(r"\(\s+", "(", s)
+    s = re.sub(r"\bØ\. ?HURUP\b", "ØSTER HURUP", s)
+    s = re.sub(r"\bML\.", "mellem", s)
+    s = re.sub(r"\bAFGRÆNS\.", "AFGRÆNSNING", s)
+    # distances: "100 M.", "150M", "100 METER" -> "100 m"
+    s = re.sub(r"\b(\d+) ?(?:METER|M)\b\.?", r"\1 m", s)
+    # a direction after a distance or before "for": "50 m syd", "N F. HAVN"
+    s = re.sub(rf"(\d+ m) {_DIR_WORD}(?=[ ,]|$)", lambda m: f"{m.group(1)} {_dir(m, 2)}", s)
+    s = re.sub(rf"\b{_DIR} (?:FOR|F\.)(?= )", lambda m: f"{_dir(m)} for", s)
+    s = re.sub(r"(?<=[a-zø]) F\. ", " for ", s)  # "200 m øst F. BØNNERUP"
+    # a direction at the end is part of the name: "DAGELÆKKE S" -> "Dagelække Syd"
+    s = re.sub(rf"(?<=\S) {_DIR}$", lambda m: " " + _dir(m).upper(), s)
     out: list[str] = []
     for i, word in enumerate(s.split(" ")):
         out.append(_tidy_word(word, first=i == 0))
@@ -66,14 +114,14 @@ def tidy_name(raw: str) -> str:
 
 
 def _tidy_word(word: str, *, first: bool) -> str:
+    if word != word.upper():  # spelled out above, already as it should read
+        return word[:1].upper() + word[1:] if first else word
     letters = re.sub(r"[^\w]", "", word).lower()
     if letters in _EXPAND and word.lower().rstrip(",)").endswith("."):
         tail = word[len(word.rstrip(",)")) :]
         lead = "(" if word.startswith("(") else ""
         return f"{lead}{_EXPAND[letters]}{tail}"
     if not first and letters in _SMALL and not word.startswith("("):
-        return word.lower()
-    if re.fullmatch(r"\d+M", word):  # "150M" -> "150 m" would change the token count
         return word.lower()
     # capitalise the first letter of each part ("HALBJERG-VANGEN", "V/KARREDVEJ")
     parts = re.split(r"([-/(\"])", word.lower())
@@ -89,27 +137,65 @@ def distance_km(a: Sequence[float], b: Sequence[float]) -> float:
     return math.hypot((a[0] - b[0]) * 111.32 * math.cos(lat), (a[1] - b[1]) * 110.57)
 
 
-def nearest_postal(point: Sequence[float], towns: Sequence[Town]) -> int:
-    """The postal district of the town nearest the point (a town proper before
-    a part of one or a holiday-home area within 1 km more), or -1."""
-    best = -1
-    best_d = math.inf
+def bbox_gap(point: Sequence[float], p: Postal) -> float:
+    """How far (degrees) the point lies outside the district's box; 0 inside."""
+    dx = max(p[2] - point[0], 0.0, point[0] - p[4])
+    dy = max(p[3] - point[1], 0.0, point[1] - p[5])
+    return max(dx, dy)
+
+
+def nearest_town_postal(point: Sequence[float], towns: Sequence[Town]) -> int:
+    """The postal district of the town whose centre is nearest (a town proper
+    before a part of one or a holiday-home area within 1 km more), or -1."""
+    best, best_d = -1, math.inf
     for town in towns:
         if town[4] < 0:
             continue
-        d = distance_km(point, (town[1], town[2])) - town[3]
-        if town[5] != 0:
-            d += 1.0
+        d = distance_km(point, (town[1], town[2])) + (1.0 if town[5] != 0 else 0.0)
         if d < best_d:
-            best_d = d
-            best = town[4]
+            best, best_d = town[4], d
     return best
 
 
-def coast_sites(rows: Iterable[Sequence[Any]], towns: Sequence[Town]) -> list[Coast]:
+def postal_for(
+    point: Sequence[float], postal: Sequence[Postal], towns: Sequence[Town], name: str = ""
+) -> int:
+    """The postal district a point lies in, from the districts' boxes: among
+    the boxes that hold it, one the site's name names ("Nord for Espergærde
+    Havn"), else the nearest town's district if it is one of them, else the one
+    whose centre is nearest. A point in no box (a pier, a harbour bath) takes
+    the box it is nearest; with no boxes at all, the nearest town's district.
+    -1 when there is nothing to go by.
+
+    (Measuring to a town's *edge* let a big city win sites far from its
+    centre: Islands Brygge got 1879 Frederiksberg C that way.)"""
+    town = nearest_town_postal(point, towns)
+    inside = [i for i, p in enumerate(postal) if bbox_gap(point, p) == 0]
+    words = name.casefold()
+    named = [i for i in inside if re.search(rf"\b{re.escape(postal[i][1].casefold())}\b", words)]
+    if named:
+        return town if town in named else named[0]
+    if town in inside:
+        return town
+    if inside:
+
+        def centre_km(i: int) -> float:
+            p = postal[i]
+            return distance_km(point, ((p[2] + p[4]) / 2, (p[3] + p[5]) / 2))
+
+        return min(inside, key=centre_km)
+    if postal:
+        return min(range(len(postal)), key=lambda i: bbox_gap(point, postal[i]))
+    return town
+
+
+def coast_sites(
+    rows: Iterable[Sequence[Any]], towns: Sequence[Town], postal: Sequence[Postal] = ()
+) -> list[Coast]:
     """Bathing-site rows (``[lon, lat, name, ...]`` as risk.badevand_row gives
     them) as ``[name, lon, lat, postal index]``, tidied, sorted by name. Two
-    sites of one name within 2 km (two sampling points of one beach) are one."""
+    sites of one name within 2 km (two sampling points of one beach) are one.
+    A bare "Strand 1" or "Skansevej 13" gets its district: "Strand 1 (Nakskov)"."""
     out: list[Coast] = []
     for row in rows:
         lon, lat, name = row[0], row[1], row[2]
@@ -120,7 +206,9 @@ def coast_sites(rows: Iterable[Sequence[Any]], towns: Sequence[Town]) -> list[Co
             continue
         out.append([tidy, round(lon, 4), round(lat, 4), -1])
     for site in out:
-        site[3] = nearest_postal((site[1], site[2]), towns)
+        site[3] = postal_for((site[1], site[2]), postal, towns, site[0])
+        if postal and site[3] >= 0 and _BARE.fullmatch(site[0]):
+            site[0] = f"{site[0]} ({postal[site[3]][1]})"
     out.sort(key=lambda c: (c[0].casefold(), c[1]))
     return out
 
@@ -149,8 +237,8 @@ def build_index(
         "postal": postal,
         # [name, lon, lat, radiusKm, postal index (-1: none), type: 0 by, 1 bydel, 2 sommerhus]
         "towns": towns,
-        # [name, lon, lat, postal index of the nearest town (-1: none)]
-        "coast": coast_sites(bathing, towns),
+        # [name, lon, lat, postal index of the district it lies in (-1: none)]
+        "coast": coast_sites(bathing, towns, postal),
     }
 
 
