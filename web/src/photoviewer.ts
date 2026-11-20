@@ -18,24 +18,32 @@ export function anyUnreviewed(images: readonly SpeciesImage[]): boolean {
   return images.some((img) => !img.reviewed);
 }
 
-/** "Foto: Name · CC BY 4.0 · iNaturalist", the last part a link to the
- * observation (or the photo) on iNaturalist, as CC BY asks. */
+/** The licence deeds a credit links to (CC BY 4.0 §3(a)(1)(C)). */
+const LICENSE_URL: Record<string, string> = {
+  "CC BY 4.0": "https://creativecommons.org/licenses/by/4.0/",
+  "CC0 1.0": "https://creativecommons.org/publicdomain/zero/1.0/",
+};
+
+export function licenseUrl(license: string): string | null {
+  return LICENSE_URL[license.trim()] ?? null;
+}
+
+function link(href: string, text: string, title: string): HTMLAnchorElement {
+  return h("a", { href, target: "_blank", rel: "noopener", title }, text);
+}
+
+/** "Foto: Name · CC BY 4.0 · iNaturalist": the licence links to its deed, and
+ * iNaturalist to the observation (or the photo), as CC BY asks. */
 export function creditParts(img: SpeciesImage): (string | HTMLElement)[] {
-  const parts: (string | HTMLElement)[] = [`Foto: ${img.credit} · ${img.license} · `];
+  const deed = licenseUrl(img.license);
+  const parts: (string | HTMLElement)[] = [
+    `Foto: ${img.credit} · `,
+    deed ? link(deed, img.license, "Licensen (nyt vindue)") : img.license,
+    " · ",
+  ];
   const href = img.observation_url ?? img.photo_url;
   if (href) {
-    parts.push(
-      h(
-        "a",
-        {
-          href,
-          target: "_blank",
-          rel: "noopener",
-          title: "Se fundet og fotoet hos iNaturalist (nyt vindue)",
-        },
-        "iNaturalist",
-      ),
-    );
+    parts.push(link(href, "iNaturalist", "Se fundet og fotoet hos iNaturalist (nyt vindue)"));
   } else {
     parts.push("iNaturalist");
   }
@@ -99,6 +107,8 @@ export function openViewer(
       if (el === image) status.hidden = true;
     });
     el.addEventListener("error", () => {
+      // no broken-image icon or alt text over the message
+      el.hidden = true;
       if (el === image) status.textContent = "Fotoet kan ikke hentes lige nu.";
     });
     if (image) image.replaceWith(el);

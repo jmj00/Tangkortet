@@ -556,7 +556,11 @@ export function initStart(deps: StartDeps): StartScreen {
   views.species.replaceChildren(
     speciesTitle,
     backBar(),
-    h("p", { class: "start__lead" }, "Vælg en art, og se på kortet, hvor den er fundet."),
+    h(
+      "p",
+      { class: "start__lead" },
+      "Vælg en art, og se på kortet, hvor den er fundet. Fotoene er ikke fagligt gennemgået endnu.",
+    ),
     picker,
   );
   let manifestState: "loading" | "ready" | "failed" = "loading";
@@ -580,6 +584,7 @@ export function initStart(deps: StartDeps): StartScreen {
       s.group,
       s.thumbnail,
       "(max-width: 559.98px) 45vw, 12rem",
+      true, // sharp on 2-3x screens
     );
     button.append(photo, text);
     // on the corner of the photo (start.css), but outside its aria-hidden box

@@ -1664,3 +1664,64 @@
   width: 0.95rem;
   height: 0.95rem;
 }
+
+/* --- photos under the warning (species with a "Vigtigt" warning) ---
+   The heading stays as without photos, so the warning starts exactly where it
+   did; the strip follows it, without the name on it, a little taller. */
+.spp-photos {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.spp-hero--strip {
+  --spp-hero-h: min(14rem, 40svh);
+  grid-template-rows: auto;
+}
+
+@media (max-width: 559.98px), (max-width: 719.98px) and (min-height: 520.02px) {
+  .spp-hero--strip {
+    --spp-hero-h: clamp(9rem, 26svh, 14rem);
+  }
+}
+
+.spp-hero--strip :is(.spp-hero__title, .spp-hero__scrim) {
+  display: none;
+}
+
+.spp-hero--strip[hidden] {
+  display: none;
+}
+
+.spp-credit__note {
+  display: block;
+  color: var(--ink);
+}
+
+.spp-credit__note[hidden] {
+  display: none;
+}
+
+/* Focus on a photo: a white ring with a dark one on each side, so it shows
+   on pale and dark photos alike (3:1 either way). */
+.spp-hero__open:focus-visible {
+  outline: none;
+}
+
+.spp-hero__open:focus-visible::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 2px #0d1a1b,
+    inset 0 0 0 5px #fff,
+    inset 0 0 0 7px #0d1a1b;
+  pointer-events: none;
+}
+
+.spp-hero__arrow:focus-visible {
+  box-shadow: 0 0 0 7px #0d1a1b;
+}

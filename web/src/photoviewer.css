@@ -52,6 +52,10 @@
   object-fit: contain;
 }
 
+.photo-viewer__img[hidden] {
+  display: none;
+}
+
 .photo-viewer__status {
   position: absolute;
   inset: 0;

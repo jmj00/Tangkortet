@@ -627,12 +627,18 @@ export class SpeciesPanel {
 
   /** Back button + heading, shared by the sheet and its loading/error states.
    * `verified` is null while the species document is not there yet. */
+  /** Back bar and heading. With photos, either the hero (a species without a
+   * "Vigtigt" warning) or, when there is a warning, the plain heading, so the
+   * warning starts exactly where it did
+   * before there were photos, at every screen size and text size. The photo
+   * strip and its credit then go under the warning (`after`). */
   private head(
     summary: SpeciesSummary,
     verified: boolean | null,
     lookalikes = 0,
     images: readonly SpeciesImage[] = [],
-  ): HTMLElement[] {
+    compact = false,
+  ): { nodes: HTMLElement[]; after: HTMLElement | null } {
     // Opened from a lookalike: "back" goes one step, and "Alle arter" sits beside it.
     const from = this.sel.trail[this.sel.trail.length - 1];
     const back = h(
@@ -700,7 +706,30 @@ export class SpeciesPanel {
       : null;
     const nav = h("div", { class: "spp-nav" }, back, home);
     if (images.length === 0) {
-      return [nav, h("header", { class: "spp-head" }, title, subtitle, tagList, nameNote)];
+      return {
+        nodes: [nav, h("header", { class: "spp-head" }, title, subtitle, tagList, nameNote)],
+        after: null,
+      };
+    }
+    if (compact) {
+      // The heading as without photos; the strip (no name on it) and its
+      // credit, with the full "not reviewed" sentence, follow the warning.
+      const source = h("span", { class: "spp-credit__source" });
+      const note = anyUnreviewed(images)
+        ? h("span", { class: "spp-credit__note" }, ` ${UNREVIEWED_NOTE}`)
+        : null;
+      const credit = h("p", { class: "spp-credit" }, source, note);
+      const strip = this.hero(summary, images, [], source, note);
+      strip.classList.add("spp-hero--strip");
+      return {
+        nodes: [nav, h("header", { class: "spp-head" }, title, subtitle, tagList, nameNote)],
+        after: h(
+          "figure",
+          { class: "spp-photos", "aria-label": `Fotos af ${shownName(summary)}` },
+          strip,
+          h("figcaption", {}, credit),
+        ),
+      };
     }
     // With photos the name and the tags sit on them, and a single line under
     // them credits the photo: a compact head, so "Vigtigt" still shows on a
@@ -723,7 +752,10 @@ export class SpeciesPanel {
     }
     const credit = h("p", { class: "spp-credit" }, source, note);
     const hero = this.hero(summary, images, [title, subtitle, tagList], source, note);
-    return [nav, h("header", { class: "spp-head spp-head--photos" }, hero, credit, nameNote)];
+    return {
+      nodes: [nav, h("header", { class: "spp-head spp-head--photos" }, hero, credit, nameNote)],
+      after: null,
+    };
   }
 
   /** The hero: a swipeable photo strip with the species name over it. From
@@ -764,7 +796,11 @@ export class SpeciesPanel {
     const setCurrent = (i: number) => {
       current = i;
       countText.textContent = n > 1 ? `${i + 1}/${n}` : "";
-      if (root.dataset.photos !== "failed") credit.replaceChildren(...creditParts(images[i]));
+      if (root.dataset.photos !== "failed") {
+        if (slides[i]?.dataset.failed === "true")
+          credit.textContent = "Fotoet kan ikke hentes lige nu.";
+        else credit.replaceChildren(...creditParts(images[i]));
+      }
       // one tab stop for the whole strip: only the photo in view is tabbable
       slides.forEach((slide, k) =>
         slide.querySelector("button")?.setAttribute("tabindex", k === i ? "0" : "-1"),
@@ -832,10 +868,13 @@ export class SpeciesPanel {
         if (slides.every((sl) => sl.dataset.failed === "true") || (i === 0 && none)) {
           // nothing to show: the plain heading, and a line saying why
           root.dataset.photos = "failed";
-          root.closest<HTMLElement>(".spp-sheet")?.setAttribute("data-hero", "failed");
+          if (root.classList.contains("spp-hero--strip")) root.hidden = true;
+          else root.closest<HTMLElement>(".spp-sheet")?.setAttribute("data-hero", "failed");
           credit.textContent = "Fotos af arten kan ikke hentes lige nu.";
           if (note) note.hidden = true;
           this.root.removeAttribute("data-spp-past-hero");
+        } else if (i === current) {
+          credit.textContent = "Fotoet kan ikke hentes lige nu.";
         }
       });
       slides.push(figure);
@@ -933,15 +972,17 @@ export class SpeciesPanel {
         retry,
       );
     }
-    return this.article(summary, ...this.head(summary, null), body);
+    return this.article(summary, ...this.head(summary, null).nodes, body);
   }
 
   private sheet(summary: SpeciesSummary, doc: SpeciesDoc): HTMLElement {
     const m = sheetModel(doc, this.manifest.species, this.pin);
     const images = doc.images ?? [];
+    const warned = m.warnings.length > 0;
+    const head = this.head(summary, doc.danish_name_verified, m.lookalikes.length, images, warned);
     const article = this.article(
       summary,
-      ...this.head(summary, doc.danish_name_verified, m.lookalikes.length, images),
+      ...head.nodes,
       m.warnings.length
         ? h(
             "section",
@@ -955,6 +996,7 @@ export class SpeciesPanel {
             ),
           )
         : null,
+      head.after,
       this.findsSection(doc, m),
       this.section(
         "Høst",
@@ -985,7 +1027,7 @@ export class SpeciesPanel {
       m.lookalikes.length ? this.lookalikesSection(m) : null,
       this.sourcesSection(doc, m),
     );
-    if (images.length) article.dataset.hero = "photos";
+    if (images.length) article.dataset.hero = warned ? "compact" : "photos";
     return article;
   }
 
@@ -1114,6 +1156,15 @@ export class SpeciesPanel {
       "Forveksling",
       "spp-sec-lookalikes",
       h("p", { class: "spp-lead" }, "Kan forveksles med:"),
+      m.lookalikes.some(
+        (r) => r.slug && this.manifest.species.find((x) => x.slug === r.slug)?.thumbnail,
+      )
+        ? h(
+            "p",
+            { class: "spp-note" },
+            "Fotoene er ikke fagligt gennemgået – sammenlign ikke kun ud fra dem.",
+          )
+        : null,
       h("ul", { class: "spp-looks" }, ...items),
     );
   }

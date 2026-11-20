@@ -20,14 +20,15 @@ export interface PhotoSources {
 }
 
 /** Thumbnail renditions: the square for 1x screens, the small one for dense
- * screens and bigger boxes. A few kB each. */
-export function thumbSources(url: string): PhotoSources {
+ * screens and bigger boxes, a few kB each. `medium` adds the 500 px one
+ * (~200 kB) for boxes that are large on dense screens (the picker tiles). */
+export function thumbSources(url: string, medium = false): PhotoSources {
   const match = INAT_VARIANT.exec(url);
   if (!match) return { src: url };
   const [, base, ext] = match;
   return {
     src: `${base}square${ext}`,
-    srcset: `${base}square${ext} 75w, ${base}small${ext} 240w`,
+    srcset: `${base}square${ext} 75w, ${base}small${ext} 240w${medium ? `, ${base}medium${ext} 500w` : ""}`,
   };
 }
 
@@ -75,6 +76,7 @@ export function thumbBox(
   group: string,
   url: string | null | undefined,
   sizes: string,
+  medium = false,
 ): HTMLSpanElement {
   const box = h("span", {
     class: `sp-thumb ${className}`,
@@ -83,7 +85,7 @@ export function thumbBox(
   });
   box.innerHTML = `<svg class="sp-thumb__icon" viewBox="0 0 20 20" focusable="false">${SEAWEED_PATHS}</svg>`;
   if (!url) return box;
-  const img = photoImg(thumbSources(url), sizes);
+  const img = photoImg(thumbSources(url, medium), sizes);
   img.addEventListener("load", () => img.classList.add("is-loaded"));
   img.addEventListener("error", () => img.remove());
   box.append(img);
