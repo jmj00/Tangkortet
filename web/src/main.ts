@@ -2,7 +2,7 @@ import type maplibregl from "maplibre-gl";
 import "./style.css";
 import { openAbout } from "./about";
 import { maybeWelcome } from "./welcome";
-import { searchAddresses, type AddressSuggestion } from "./addresses";
+import { initPlaceSearch, type ChosenPlace } from "./placesearch";
 import { loadAllSpecies, loadManifest, loadSpecies } from "./data";
 import { formatDistance } from "./geo";
 import { renderGuide } from "./guide";
@@ -211,102 +211,14 @@ window.addEventListener("hashchange", () => {
   if (next.species) speciesPanel?.selectBySlug(next.species);
 });
 
-// --- address autocomplete (Adressevælgeren), an ARIA combobox; from Svampekortet ---
-const input = document.getElementById("q") as HTMLInputElement;
-const results = document.getElementById("results") as HTMLUListElement;
-let debounce: number | undefined;
-let inFlight: AbortController | null = null;
-let suggestions: AddressSuggestion[] = [];
-let activeIndex = -1;
-
-function closeResults(): void {
-  results.replaceChildren();
-  suggestions = [];
-  activeIndex = -1;
-  input.setAttribute("aria-expanded", "false");
-  input.removeAttribute("aria-activedescendant");
-}
-
-function selectSuggestion(item: AddressSuggestion): void {
-  const a = item.adgangsadresse;
-  if (!a || typeof a.x !== "number" || typeof a.y !== "number") return;
-  const target: [number, number] = [a.x, a.y];
+// --- place search (placesearch.ts): towns, postal districts, bathing sites
+// and, with a key, addresses. A chosen place becomes the pin.
+function onPlaceChosen({ lngLat, label, zoom }: ChosenPlace): void {
+  // shell: call locateGate.superseded() here
   void mapReady.then(({ geolocate }) => {
-    if (geolocateActive) geolocate.trigger();
+    if (geolocateActive) geolocate.trigger(); // the user picked a spot; stop following
   });
-  setPin(target, item.tekst);
-  void flyTo(target, 14);
-  input.value = item.tekst;
-  closeResults();
+  setPin(lngLat, label);
+  void flyTo(lngLat, zoom);
 }
-
-function highlight(next: number): void {
-  const opts = [...results.children] as HTMLLIElement[];
-  if (opts.length === 0) return;
-  activeIndex = (next + opts.length) % opts.length;
-  opts.forEach((li, i) => {
-    const on = i === activeIndex;
-    li.classList.toggle("is-active", on);
-    li.setAttribute("aria-selected", String(on));
-    if (on) {
-      input.setAttribute("aria-activedescendant", li.id);
-      li.scrollIntoView({ block: "nearest" });
-    }
-  });
-}
-
-input.addEventListener("input", () => {
-  window.clearTimeout(debounce);
-  debounce = window.setTimeout(runSearch, 250);
-});
-
-input.addEventListener("keydown", (e) => {
-  if (results.children.length === 0) return;
-  if (e.key === "ArrowDown") {
-    e.preventDefault();
-    highlight(activeIndex + 1);
-  } else if (e.key === "ArrowUp") {
-    e.preventDefault();
-    highlight(activeIndex - 1);
-  } else if (e.key === "Enter" && activeIndex >= 0) {
-    e.preventDefault();
-    selectSuggestion(suggestions[activeIndex]);
-  } else if (e.key === "Escape") {
-    closeResults();
-  }
-});
-
-input.addEventListener("blur", () => window.setTimeout(closeResults, 150));
-
-async function runSearch(): Promise<void> {
-  inFlight?.abort();
-  inFlight = new AbortController();
-  let items: AddressSuggestion[] = [];
-  try {
-    items = await searchAddresses(input.value, inFlight.signal);
-  } catch (err) {
-    if ((err as Error).name !== "AbortError") console.error(err);
-    return;
-  }
-  suggestions = items;
-  activeIndex = -1;
-  results.replaceChildren();
-  items.forEach((item, i) => {
-    const li = document.createElement("li");
-    li.textContent = item.tekst;
-    li.id = `addr-opt-${i}`;
-    li.setAttribute("role", "option");
-    li.setAttribute("aria-selected", "false");
-    li.addEventListener("mousedown", (e) => e.preventDefault());
-    li.addEventListener("click", () => selectSuggestion(item));
-    results.appendChild(li);
-  });
-  input.setAttribute("aria-expanded", String(items.length > 0));
-}
-
-document.getElementById("search")?.addEventListener("submit", (e) => e.preventDefault());
-// Address search needs Tangkortet's own Datafordeler key (web/.env.example);
-// without one, hide the box rather than offer a search that never answers.
-if (!import.meta.env.VITE_DATAFORDELER_API_KEY) {
-  (document.getElementById("search") as HTMLElement).hidden = true;
-}
+initPlaceSearch(onPlaceChosen);

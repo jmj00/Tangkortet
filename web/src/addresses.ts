@@ -1,26 +1,41 @@
 import { utm32nToWgs84 } from "./proj";
+import {
+  isPlaceName,
+  loadPlaceIndex,
+  normalizeName,
+  parseAddressQuery,
+  type AddressQuery,
+  type PlaceSuggestion,
+} from "./placeindex";
 
-// Ported from Svampekortet (0024b43).
-// Adressevælgeren -- Klimadatastyrelsens replacement for DAWA, which shuts
+// Ported from Svampekortet (624fb8b; first 0024b43).
+// Adressevælgeren -- Klimadatastyrelsens replacement for DAWA, which shut
 // down permanently 2026-10-01 (docs/data-sources.md). Two calls where DAWA's
 // autocomplete needed one: a phonetic search returns candidate ids with no
-// coordinates, so each candidate needs a follow-up lookup by id. Both use the
+// coordinates, then one lookup gives the addresses behind them. Both use the
 // same VITE_DATAFORDELER_API_KEY as the basemap (web/src/map.ts) -- a plain
-// API-Key, safe to ship in client code (unlike an OAuth Shared Secret), scoped
-// to Datafordeler's public/unprotected data.
+// API-Key, safe to ship in client code, scoped to Datafordeler's public data.
+// Without a key nothing is asked: the place search then offers towns, postal
+// districts and bathing sites from the app's own list only (placeindex.ts).
 //
-// Lookup responses carry coordinates in EPSG:25832 (UTM zone 32N) -- all of
-// Denmark falls in one UTM zone, so utm32nToWgs84 below hard-codes it rather
-// than handling zones generally. Converted here since the rest of this
-// codebase works in WGS84 [lon, lat] (matches GeoJSON convention).
+// What the service offers (Svampekortet checked it 2026-11-19; it has no
+// public documentation): `/soeg?tekst=` returns up to 100 hits of three kinds
+// -- `vejnavn`, `navngivenvejpostnummer` and `husnummer` -- sorted by postal
+// number, not by how well they match; spelling is matched phonetically. A
+// postal number after the address ("Vestergade 10, 8600") narrows the search
+// to that district; a town name does not, and a town alone finds nothing. So
+// a town or postal number in the query is turned into "…, <postnr>" here
+// (placeindex.ts parseAddressQuery). `/husnumre?id_lokalids=a,b` looks up
+// several addresses in one request. Coordinates come in EPSG:25832.
 
 const TOKEN = import.meta.env.VITE_DATAFORDELER_API_KEY;
 const SEARCH_ENDPOINT = "https://adressevaelger.dk/soeg";
 const LOOKUP_ENDPOINT = "https://adressevaelger.dk/husnumre";
 const MAX_RESULTS = 6;
 
-// Shape kept close to DAWA's `adgangsadresser/autocomplete` item so the rest
-// of the app (main.ts) didn't need to change.
+/** Whether addresses can be searched at all (Tangkortet's own key is set). */
+export const ADDRESSES_ENABLED = Boolean(TOKEN);
+
 export interface AddressSuggestion {
   tekst: string;
   adgangsadresse: {
@@ -37,6 +52,8 @@ export interface AddressSuggestion {
 interface SearchHit {
   type: string;
   id: string;
+  /** "Vestergade 10, 8600 Silkeborg" */
+  titel?: string;
 }
 
 interface SearchResponse {
@@ -44,54 +61,136 @@ interface SearchResponse {
   fund: SearchHit[];
 }
 
+interface LookupItem {
+  id_lokalid: string;
+  husnummertekst: string;
+  adgangsadressebetegnelse: string;
+  vejnavn: string;
+  postnummer: { navn: string; postnr: string };
+  adgangspunkt: { koordinater: { x: number; y: number } };
+}
+
 interface LookupResponse {
   status: string;
-  husnummer: {
-    husnummertekst: string;
-    adgangsadressebetegnelse: string;
-    vejnavn: string;
-    postnummer: { navn: string; postnr: string };
-    adgangspunkt: { koordinater: { x: number; y: number } };
-  };
+  husnumre: LookupItem[];
 }
 
-async function lookup(id: string, signal?: AbortSignal): Promise<AddressSuggestion | null> {
-  const res = await fetch(`${LOOKUP_ENDPOINT}/${id}?token=${TOKEN}`, { signal });
-  if (!res.ok) return null;
-  const detail = (await res.json()) as LookupResponse;
-  const { x, y } = detail.husnummer.adgangspunkt.koordinater;
-  const [lon, lat] = utm32nToWgs84(x, y);
-  return {
-    tekst: detail.husnummer.adgangsadressebetegnelse,
-    adgangsadresse: {
-      id,
-      vejnavn: detail.husnummer.vejnavn,
-      husnr: detail.husnummer.husnummertekst,
-      postnr: detail.husnummer.postnummer.postnr,
-      postnrnavn: detail.husnummer.postnummer.navn,
-      x: lon,
-      y: lat,
-    },
-  };
+/** How long the address service may take, all requests of one search together. */
+export const ADDRESS_TIMEOUT_MS = 10_000;
+
+/** `signal`, also aborted after `ms` (where the browser can combine signals). */
+export function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal | undefined {
+  if (typeof AbortSignal.timeout !== "function") return signal;
+  const timeout = AbortSignal.timeout(ms);
+  if (!signal) return timeout;
+  return typeof AbortSignal.any === "function" ? AbortSignal.any([signal, timeout]) : signal;
 }
 
-export async function searchAddresses(
-  query: string,
-  signal?: AbortSignal,
-): Promise<AddressSuggestion[]> {
-  const q = query.trim();
-  if (q.length < 3 || !TOKEN) return [];
+/** The addresses behind the ids, in one request, in the order given. */
+async function lookup(ids: string[], signal?: AbortSignal): Promise<AddressSuggestion[]> {
+  if (ids.length === 0) return [];
+  const res = await fetch(`${LOOKUP_ENDPOINT}?id_lokalids=${ids.join(",")}&token=${TOKEN}`, {
+    signal,
+  });
+  if (!res.ok) throw new Error(`Adressevælgeren responded ${res.status}`);
+  const data = (await res.json()) as LookupResponse;
+  const byId = new Map((data.husnumre ?? []).map((item) => [item.id_lokalid, item]));
+  const out: AddressSuggestion[] = [];
+  for (const id of ids) {
+    const item = byId.get(id);
+    const point = item?.adgangspunkt?.koordinater;
+    if (!item || !point) continue;
+    const [lon, lat] = utm32nToWgs84(point.x, point.y);
+    out.push({
+      tekst: item.adgangsadressebetegnelse,
+      adgangsadresse: {
+        id,
+        vejnavn: item.vejnavn,
+        husnr: item.husnummertekst,
+        postnr: item.postnummer.postnr,
+        postnrnavn: item.postnummer.navn,
+        x: lon,
+        y: lat,
+      },
+    });
+  }
+  return out;
+}
 
-  const res = await fetch(`${SEARCH_ENDPOINT}?tekst=${encodeURIComponent(q)}&token=${TOKEN}`, {
+/** The ids of the addresses one search finds. */
+async function soeg(text: string, signal?: AbortSignal, prefer: string[] = []): Promise<string[]> {
+  const res = await fetch(`${SEARCH_ENDPOINT}?tekst=${encodeURIComponent(text)}&token=${TOKEN}`, {
     signal,
   });
   if (!res.ok) throw new Error(`Adressevælgeren responded ${res.status}`);
   const data = (await res.json()) as SearchResponse;
+  const hits = (data.fund ?? []).filter((hit) => hit.type === "husnummer");
+  return preferHits(hits, prefer).map((hit) => hit.id);
+}
 
-  const ids = data.fund
-    .filter((hit) => hit.type === "husnummer")
-    .slice(0, MAX_RESULTS)
-    .map((hit) => hit.id);
-  const found = await Promise.all(ids.map((id) => lookup(id, signal)));
-  return found.filter((item): item is AddressSuggestion => item !== null);
+/** Pure: the hits in a preferred postal district first (by the district name
+ * at the end of each title, "Vestergade 10, 1456 København K"), otherwise
+ * in the service's order. */
+export function preferHits<T extends { titel?: string }>(hits: T[], prefer: string[]): T[] {
+  if (prefer.length === 0) return hits;
+  const inPreferred = (hit: T): boolean => {
+    const district = normalizeName((hit.titel ?? "").replace(/^.*,\s*\d{4}\s+/, ""));
+    return prefer.includes(district);
+  };
+  return [...hits.filter(inPreferred), ...hits.filter((hit) => !inPreferred(hit))];
+}
+
+/** Pure: the hits of several searches as one list, each search's own order
+ * kept and its turn taken in order (the first search is the best guess), no
+ * address twice. */
+export function mergeHits(lists: string[][], max: number): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const list of lists) {
+    for (const id of list) {
+      if (out.length >= max) return out;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
+}
+
+/** What an address search found. `missed`: a town or postal number was read
+ * out of the query and has no such address; what is listed is from anywhere. */
+export interface AddressResult {
+  addresses: AddressSuggestion[];
+  missed?: { street: string; town: string; place: PlaceSuggestion | null };
+}
+
+/**
+ * Addresses for what is typed. A town or postal number in the query narrows
+ * the search to its postal district; when that finds nothing, the street is
+ * tried nationwide, and the result says so. A query that is just a place's
+ * name asks nothing: the service would only answer with streets that sound
+ * alike. Only the typed text goes to the service. Without a key: nothing.
+ */
+export async function searchAddresses(query: string, caller?: AbortSignal): Promise<AddressResult> {
+  const q = query.trim();
+  if (q.length < 3 || !TOKEN) return { addresses: [] };
+  // a service that never answers fails (as "TimeoutError") instead of hanging
+  const signal = withTimeout(caller, ADDRESS_TIMEOUT_MS);
+
+  const index = await loadPlaceIndex().catch(() => null); // without it: the query as typed
+  if (index && isPlaceName(index, q)) return { addresses: [] };
+  const parsed: AddressQuery = index ? parseAddressQuery(index, q) : { texts: [q], scoped: false };
+  const prefer = parsed.prefer ?? [];
+  let ids = mergeHits(
+    await Promise.all(parsed.texts.map((t) => soeg(t, signal, prefer))),
+    MAX_RESULTS,
+  );
+  let missed: AddressResult["missed"];
+  if (ids.length === 0 && parsed.scoped && parsed.texts.length > 0) {
+    ids = mergeHits([await soeg(parsed.street ?? q, signal)], MAX_RESULTS);
+    if (parsed.street && parsed.town) {
+      missed = { street: parsed.street, town: parsed.town, place: parsed.place ?? null };
+    }
+  }
+  return { addresses: await lookup(ids, signal), missed };
 }

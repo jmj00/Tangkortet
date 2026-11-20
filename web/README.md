@@ -36,7 +36,9 @@ around Aarhus Bugt, Mols and Djursland only (`py -m pipeline.build --out
 web/public/data --sample`). Try `#pin=56.15100,10.21900&tab=risiko`.
 
 Without `VITE_DATAFORDELER_API_KEY` (see `.env.example`) the map uses
-OpenStreetMap and the address search is hidden.
+OpenStreetMap and the search box finds towns, postal districts and coastal
+bathing sites only (`src/placesearch.ts`, list `src/data/places.json` from
+`py -m pipeline.places`); with the key it finds addresses too.
 
 ## Live sources (called from the browser)
 
