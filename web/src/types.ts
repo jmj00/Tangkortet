@@ -25,6 +25,22 @@ export interface SpeciesSummary {
   file: string;
   /** A small rendition of the first photo (iNaturalist `small`), or null. */
   thumbnail?: string | null;
+  /** Finds per calendar month (index 0 = January); absent in older payloads. */
+  finds_by_month?: FindsByMonth;
+  /** The expert's best harvest months (1-12), null until answered. */
+  season_months?: number[] | null;
+  /** Copies of the document's expert accumulation, warnings and sign-off, for
+   * the list's species-level risk badges (season.ts riskFlags). */
+  accumulation?: ExpertFields["accumulation"];
+  warnings?: string[];
+  expert_verified?: boolean;
+}
+
+/** When finds were *recorded*, per calendar month (index 0 = January): not
+ * when the species is good to collect. */
+export interface FindsByMonth {
+  all: number[];
+  attached: number[];
 }
 
 export interface RiskLayerInfo {
@@ -90,6 +106,8 @@ export interface SpeciesDoc {
   observed_depth: { n: number; p10: number; median: number; p90: number } | null;
   attachment_counts: Record<Attachment, number>;
   observation_count: number;
+  /** Absent in payloads from before the month counts. */
+  finds_by_month?: FindsByMonth;
   datasets: { title: string; license: string }[];
   observations: ObservationRow[];
   /** Absent in payloads from before the photos. */

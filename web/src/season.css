@@ -1,0 +1,318 @@
+/* Season and species-level risk (speciespanel.ts, logic in season.ts): the
+   list rows' badges, "Risiko for arten", and the "Sæson" block with the
+   expert's months and the finds per month. Neutral colours throughout: the
+   species' own risk must not look like the spot's traffic light. */
+
+/* --- list rows: badges on the second line, so a row keeps its height --- */
+.spp-row__sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.1rem 0.35rem;
+  overflow: visible;
+  white-space: normal;
+}
+
+/* The scientific name gives way first (down to about 4.5rem), then the
+   badges drop under it instead of widening the row. */
+.spp-row__sci {
+  flex: 1 1 4.5rem;
+  max-width: max-content;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spp-row__flags {
+  display: flex;
+  flex: none;
+  gap: 0.25rem;
+}
+
+.spp-row__flags .spp-tag {
+  padding: 0 0.4rem;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+/* A substance the species can hold: ink text and a small "Vigtigt"-coloured
+   triangle (never red/yellow/green). */
+.spp-tag--risk {
+  color: var(--ink);
+  border-color: var(--border-strong, var(--border));
+  background: var(--bg);
+}
+
+.spp-tag--risk::before {
+  content: "";
+  flex: none;
+  width: 0.5rem;
+  height: 0.45rem;
+  background: var(--warn);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.spp-tag--season {
+  color: var(--accent);
+  background: var(--surface);
+}
+
+.spp-tag--season.spp-tag--provisional {
+  color: var(--provisional);
+}
+
+.spp-list-note {
+  margin: 0.75rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.spp-list[data-density="tiny"] .spp-list-note {
+  margin-top: 0.5rem;
+}
+
+/* --- "Risiko for arten" --- */
+.spp-risk {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.spp-risk__item {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.spp-risk__item > .spp-tag {
+  position: relative;
+  top: -0.05rem;
+}
+
+.spp-jumplink {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.spp-jumplink:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* Scrolled to from "Se Vigtigt": clear the sticky back bar. */
+.spp-warn__title {
+  scroll-margin-top: 4rem;
+}
+
+.spp-warn__title:focus {
+  outline: none; /* programmatic focus target (tabindex -1) */
+}
+
+/* Touch: each item is a 44px row and the whole row is the link's target, so
+   neighbouring targets never overlap. */
+@media (pointer: coarse) {
+  .spp-risk {
+    gap: 0;
+  }
+
+  .spp-risk__item {
+    align-items: center;
+    min-height: 2.75rem;
+  }
+
+  .spp-risk__item:has(.spp-jumplink) {
+    cursor: pointer;
+  }
+
+  .spp-jumplink::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+}
+
+/* --- "Sæson" --- */
+.spp-months,
+.spp-chart__plot {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 0.2rem;
+}
+
+.spp-months {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.spp-months__cell {
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.9;
+  text-align: center;
+}
+
+/* One of the expert's months: filled (a change in lightness, not hue only). */
+.spp-months__cell[data-state="in"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--surface);
+  font-weight: 700;
+}
+
+.spp-months__cell[data-current] {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.spp-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0.35rem 0 0;
+}
+
+.spp-chart__caption {
+  display: flex;
+  flex-direction: column;
+}
+
+.spp-chart__title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.spp-chart__sub {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.spp-chart__plot {
+  margin-top: 0.2rem;
+}
+
+.spp-chart__col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.spp-chart__track {
+  display: flex;
+  align-items: flex-end;
+  height: 4.5rem;
+  border-bottom: 1px solid var(--border-strong, var(--border));
+  border-radius: 4px 4px 0 0;
+}
+
+.spp-chart__col[data-current] .spp-chart__track {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+/* All finds: an outlined bar; the attached ones: its solid lower part. */
+.spp-chart__bar {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: var(--h);
+  min-height: 3px;
+  overflow: hidden;
+  border: 1.5px solid var(--accent);
+  border-bottom: none;
+  border-radius: 3px 3px 0 0;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+
+.spp-chart__bar[data-zero] {
+  height: 0;
+  min-height: 0;
+  border: none;
+}
+
+.spp-chart__att {
+  width: 100%;
+  height: var(--a);
+  background: var(--accent);
+}
+
+.spp-chart__label {
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.spp-chart__col[data-current] .spp-chart__label {
+  background: var(--ink);
+  color: var(--surface);
+  font-weight: 700;
+}
+
+.spp-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.9rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.spp-chart__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.spp-chart__key::before {
+  content: "";
+  flex: none;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 2px;
+}
+
+.spp-chart__key--att::before {
+  background: var(--accent);
+}
+
+.spp-chart__key--all::before {
+  border: 1.5px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+
+.spp-chart__key--now::before {
+  width: 0.8rem;
+  border-radius: 3px;
+  background: var(--ink);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .spp-chart__bar {
+    animation: spp-bar-grow 360ms var(--ease-out, ease-out) both;
+    transform-origin: bottom;
+  }
+}
+
+@keyframes spp-bar-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
