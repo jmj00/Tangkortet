@@ -169,9 +169,8 @@ def main(argv: list[str] | None = None) -> None:
     rows = fetch_bathing_rows()
     index = build_index(postal, towns, rows, date.today())
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(
-        json.dumps(index, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8"
-    )
+    with args.out.open("w", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(index, ensure_ascii=False, separators=(",", ":")) + "\n")
     print(
         f"wrote {args.out}: {len(postal)} postal districts, {len(towns)} towns, "
         f"{len(index['coast'])} coastal bathing sites (from {len(rows)})"
