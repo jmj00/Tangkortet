@@ -138,8 +138,9 @@ export function initSheet(opts: SheetOptions): Sheet {
 
   let active = false;
   let current: Snap = "half";
-  /** The snap last asked for. On a two-stop screen "half" is shown as peek or
-   * full; this remembers it, so half comes back when there is room again. */
+  /** The stop the sheet should be at after a relayout: the one last shown.
+   * (A "half" shown as full on a two-stop screen stays full.) Before the
+   * first layout it is the opening stop. */
   let wanted: Snap = "half";
   let heights: SnapHeights = { peek: 0, half: 0, full: 0 };
   let visible = 0;
@@ -178,8 +179,8 @@ export function initSheet(opts: SheetOptions): Sheet {
   /** `halfMeans`: where a request for "half" goes when there are only two stops. */
   function snapTo(next: Snap, animate = true, halfMeans: "peek" | "full" = "full"): void {
     if (!active) return;
-    wanted = next;
     if (next === "half" && twoStops()) next = halfMeans;
+    wanted = next;
     const rising = heights[next] > visible;
     if (next === "peek" && body.contains(document.activeElement)) handle.focus();
     current = next;
@@ -225,8 +226,15 @@ export function initSheet(opts: SheetOptions): Sheet {
       laidOut = true;
       return;
     }
+    const first = !wasActive || !laidOut;
     laidOut = true;
+    const before = heights;
     measure();
+    const same =
+      before.peek === heights.peek && before.half === heights.half && before.full === heights.full;
+    // Nothing moved: leave the sheet alone (a re-snap would cut an animation
+    // that is running and re-place it for nothing).
+    if (!first && same) return;
     snapTo(wanted, false, "peek"); // a short screen opens on the map, not the list
     opts.onLayout?.();
     // Transitions only switch on after the first placement, so the sheet does

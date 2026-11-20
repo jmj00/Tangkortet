@@ -4,7 +4,7 @@ import "./shell.css";
 import { openAbout } from "./about";
 import { maybeWelcome } from "./welcome";
 import { searchAddresses, type AddressSuggestion } from "./addresses";
-import { flyCamera, fitCamera, mapInsets, popupAnchor, ringBounds, visibleTest } from "./camera";
+import { flyCamera, fitCamera, mapInsets, popupAnchor, ringBounds } from "./camera";
 import { loadAllSpecies, loadManifest, loadSpecies } from "./data";
 import { formatDistance } from "./geo";
 import { renderGuide } from "./guide";
@@ -76,12 +76,12 @@ const sheet = initSheet({
  * camera.ts mapInsets() reads). */
 let appliedPadding = { top: -1, bottom: -1 };
 function applyMapPadding(map: maplibregl.Map): void {
-  const searchShown = !searchForm.hidden && sheet.isActive();
-  const status = document.getElementById("search-status");
-  const statusBottom =
-    status && !status.hidden && status.offsetHeight > 0 ? status.getBoundingClientRect().bottom : 0;
+  const field = searchForm.querySelector("input");
+  const searchShown = !searchForm.hidden && sheet.isActive() && field !== null;
+  // The field and a status line that is really showing; never the whole
+  // form, whose suggestion list opens in its flow and must not move the map.
   const top = searchShown
-    ? Math.round(Math.max(searchForm.getBoundingClientRect().bottom, statusBottom) + 8)
+    ? Math.round(field.getBoundingClientRect().bottom + searchStatusHeight() + 8)
     : 0;
   const bottom = sheet.halfHeight();
   appRoot.style.setProperty("--map-inset-top", `${top}px`);
@@ -123,33 +123,42 @@ const shellReady: Promise<MapBundle> = mapReady.then((bundle) => {
  * change height; the sheet's full snap, the map's padding and the sidebar's
  * room for the status line all follow it. The search area owns
  * #search-status (right after the form, role=status); this only measures it. */
-function measureSearch(): void {
+/** Height (with a 6 px gap) of the search's status line while it shows a
+ * message, else 0. The search area keeps it in the form, never hidden: when
+ * empty it is a 1×1 clipped box with .is-empty. */
+function searchStatusHeight(): number {
   const status = document.getElementById("search-status");
-  const statusH = status && !status.hidden && status.offsetHeight > 0 ? status.offsetHeight + 6 : 0;
-  appRoot.style.setProperty("--search-status-h", `${statusH}px`);
+  if (!status || status.hidden || status.classList.contains("is-empty")) return 0;
+  const h = status.offsetHeight;
+  return h > 2 ? h + 6 : 0;
+}
+
+function measureSearch(): void {
+  appRoot.style.setProperty("--search-status-h", `${searchStatusHeight()}px`);
   const fieldH = searchForm.hidden ? 0 : (searchForm.querySelector("input")?.offsetHeight ?? 0);
   if (fieldH > 0) appRoot.style.setProperty("--search-h", `${fieldH}px`);
   sheet.relayout();
   onShellLayout();
 }
 {
+  // Sizes, not the form's: the field (0 when the form is hidden) and the
+  // status line (1 px while .is-empty). The suggestion list is an overlay.
   let watchedStatus: HTMLElement | null = null;
   const resized = "ResizeObserver" in window ? new ResizeObserver(() => measureSearch()) : null;
-  const changed = new MutationObserver(() => {
-    watchStatus();
-    measureSearch();
-  });
-  // Only the search's own nodes: the panels change constantly.
   const watchStatus = (): void => {
     const status = document.getElementById("search-status");
     if (!status || status === watchedStatus) return;
+    if (watchedStatus) resized?.unobserve(watchedStatus);
     watchedStatus = status;
     resized?.observe(status);
-    changed.observe(status, { attributes: true, attributeFilter: ["hidden"] });
   };
-  resized?.observe(searchForm);
-  changed.observe(searchForm, { attributes: true, attributeFilter: ["hidden"], childList: true });
-  changed.observe(appRoot, { childList: true }); // #search-status added after the form
+  const field = searchForm.querySelector("input");
+  if (field) resized?.observe(field);
+  // the status line added later (by the search area's code)
+  new MutationObserver(() => {
+    watchStatus();
+    measureSearch();
+  }).observe(searchForm, { childList: true });
   watchStatus();
   measureSearch();
 }
@@ -186,6 +195,8 @@ for (const button of tabButtons) {
     sheet.atLeast("half");
     setTab(tab);
     writeHash();
+    // Risiko opened by hand: show the whole ring around the pin.
+    if (tab === "risiko" && pin) void frameRing(pin);
   });
   button.addEventListener("keydown", (e) => {
     const i = tabButtons.indexOf(button);
@@ -397,14 +408,8 @@ mapReady
       }
       locateGate.superseded(); // the user picked a spot; a late position must not undo it
       const { lng, lat } = e.lngLat;
+      // A tap never moves the camera: the user is looking at that spot.
       setPin([lng, lat], pinLabel([lng, lat]));
-      // On Risiko the ring around the new pin should show whole; the map
-      // moves only when it does not already.
-      if (appRoot.dataset.tab === "risiko") {
-        const [[west, south], [east, north]] = ringBounds([lng, lat], riskRadiusM);
-        const inView = visibleTest(map, mapInsets(map, { controls: true }));
-        if (!inView([west, south]) || !inView([east, north])) void frameRing([lng, lat]);
-      }
     });
     map.on("mouseenter", "observations", () => (map.getCanvas().style.cursor = "pointer"));
     map.on("mouseleave", "observations", () => (map.getCanvas().style.cursor = ""));
