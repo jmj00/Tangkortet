@@ -95,6 +95,24 @@ def thumbnail(images: list[dict[str, Any]]) -> str | None:
     return f"{match.group(1)}small{match.group(2)}" if match else url
 
 
+def finds_by_month(obs: list[Observation]) -> dict[str, list[int]]:
+    """Finds per calendar month (index 0 = January), all and attached only.
+
+    When people *recorded* the species, not when it is good to collect: shore
+    visits and diving follow the weather, so summer is over-represented. The
+    app labels it that way; harvest months are the expert's (``season_months``).
+    """
+    every, attached = [0] * 12, [0] * 12
+    for o in obs:
+        month = o.get("month")
+        if month is None:
+            continue
+        every[month - 1] += 1
+        if o["attachment"] == "attached":
+            attached[month - 1] += 1
+    return {"all": every, "attached": attached}
+
+
 def species_doc(sp: Species, obs: list[Observation]) -> dict[str, Any]:
     datasets: list[dict[str, str]] = []
     index: dict[tuple[str, str], int] = {}
@@ -139,6 +157,7 @@ def species_doc(sp: Species, obs: list[Observation]) -> dict[str, Any]:
         "observed_depth": observed_depth(obs),
         "attachment_counts": {k: counts.get(k, 0) for k in ATTACHMENT_CODE},
         "observation_count": len(obs),
+        "finds_by_month": finds_by_month(obs),
         "datasets": datasets,
         "observations": packed,
     }
@@ -161,6 +180,8 @@ def species_summary(doc: dict[str, Any]) -> dict[str, Any]:
         "thumbnail": doc.get("thumbnail"),
         "observation_count": doc["observation_count"],
         "attachment_counts": doc["attachment_counts"],
+        "finds_by_month": doc.get("finds_by_month"),
+        "season_months": doc["expert"]["season_months"],
         "file": f"species/{doc['slug']}.json",
     }
 
