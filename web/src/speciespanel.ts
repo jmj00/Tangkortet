@@ -625,13 +625,12 @@ export class SpeciesPanel {
 
   // --- species sheet -------------------------------------------------------
 
-  /** Back button + heading, shared by the sheet and its loading/error states.
-   * `verified` is null while the species document is not there yet. */
-  /** Back bar and heading. With photos, either the hero (a species without a
-   * "Vigtigt" warning) or, when there is a warning, the plain heading, so the
-   * warning starts exactly where it did
-   * before there were photos, at every screen size and text size. The photo
-   * strip and its credit then go under the warning (`after`). */
+  /** Back bar and heading, shared by the sheet and its loading/error states
+   * (`verified` is null while the species document is not there yet). With
+   * photos, either the hero (a species without a "Vigtigt" warning) or, when
+   * there is a warning, the plain heading, so the warning starts exactly where
+   * it did before there were photos, at every screen size and text size. The
+   * photo strip and its credit then go under the warning (`after`). */
   private head(
     summary: SpeciesSummary,
     verified: boolean | null,

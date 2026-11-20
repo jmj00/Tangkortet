@@ -1682,7 +1682,8 @@
 
 @media (max-width: 559.98px), (max-width: 719.98px) and (min-height: 520.02px) {
   .spp-hero--strip {
-    --spp-hero-h: clamp(9rem, 26svh, 14rem);
+    /* low, so depth / harvest / Fund still follow the warning closely */
+    --spp-hero-h: clamp(6.5rem, 17svh, 10rem);
   }
 }
 
