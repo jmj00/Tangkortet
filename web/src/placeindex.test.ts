@@ -339,3 +339,26 @@ describe("nearestPlace between beaches and towns", () => {
     expect(nearestPlace(index, [10.0, 56.0])?.name).toBe("Kystby");
   });
 });
+
+describe("nearestPlace with its town proper", () => {
+  const index = buildPlaceIndex({
+    postal: [],
+    towns: [
+      ["Havneby", 10.0, 56.0, 2.0, -1, 0],
+      ["Klostervang", 10.001, 56.001, 0.4, -1, 1],
+    ],
+    coast: [["Bugten", 10.0, 56.03, -1]],
+  });
+
+  it("says the town after a part of it", () => {
+    expect(nearestPlace(index, [10.001, 56.001])).toMatchObject({
+      name: "Klostervang",
+      town: "Havneby",
+    });
+  });
+
+  it("says the town after a beach just outside it", () => {
+    // ~550 m from Bugten, ~900 m from Havneby's edge
+    expect(nearestPlace(index, [10.0, 56.025])).toMatchObject({ name: "Bugten", town: "Havneby" });
+  });
+});

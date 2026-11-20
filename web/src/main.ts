@@ -22,7 +22,7 @@ import {
 } from "./layers";
 import { createLocateGate, locateErrorMessage, LOCATION_UNSUPPORTED_MESSAGE } from "./locate";
 import { createMap, DENMARK_BOUNDS, type MapBundle } from "./map";
-import { legendCovers, legendFor, legendInsets } from "./maplegend";
+import { legendInsets } from "./maplegend";
 import { initNavigation, readNavState, type Navigation, type Snapshot } from "./nav";
 import { registerServiceWorker } from "./register-sw";
 import { RiskPanel } from "./riskpanel";
@@ -127,8 +127,6 @@ const shellReady: Promise<MapBundle> = mapReady.then((bundle) => {
     appRoot.toggleAttribute("data-map-rotated", map.getBearing() !== 0 || map.getPitch() !== 0);
   };
   map.on("rotate", markRotated);
-  // the key opened over the ring: bring the ring out from under it
-  legendFor(map).onOpened = () => ringUnderKey(map);
   map.on("pitch", markRotated);
   onShellLayout = () => {
     applyMapPadding(map);
@@ -333,8 +331,6 @@ loadManifest()
         onMap((map) => showRisk(map, p, radiusM, items));
         // 1/2/5 km chosen: keep the whole ring in view.
         if (resized) void frameRing(p);
-        // The key, open, may have appeared over the ring: bring it out.
-        else void cameraSettled.then(() => onMap((map) => ringUnderKey(map)));
       },
       onFocus: (item) => {
         tapCard.setFocus(`${item.title} – ${formatDistance(item.distanceM)} fra nålen`);
@@ -414,16 +410,10 @@ function frameRing(center: [number, number], lowerSheet = true): Promise<void> {
     fitCamera(map, ringBounds(center, riskRadiusM), {
       maxZoom: 15,
       margin: 16,
-      // clear of the map key too, when it is open (maplegend.ts)
+      // clear of the map key too, open or closed (maplegend.ts)
       padding: legendInsets(map, mapInsets(map, { controls: true })),
     }),
   );
-}
-
-/** On Risiko, reframe when the open map key covers part of the ring. */
-function ringUnderKey(map: maplibregl.Map): void {
-  if (!pin || appRoot.dataset.tab !== "risiko") return;
-  if (legendCovers(map, pin, riskRadiusM)) void frameRing(pin, false);
 }
 
 /** Take the camera to a new pin: on Risiko the whole ring around it must

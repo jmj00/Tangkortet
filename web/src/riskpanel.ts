@@ -7,7 +7,7 @@
 import { loadRiskCell } from "./data";
 import { h, extLink } from "./dom";
 import { bboxAround, cellKeys, formatDistance } from "./geo";
-import { RISK_COLOR } from "./layers";
+import { riskColor } from "./layers";
 import {
   queryProtected,
   querySoil,
@@ -25,7 +25,7 @@ import {
   type WaterBody,
 } from "./live";
 import { fetchRain, type RainSummary } from "./rain";
-import { groupNearby, riskItems, type RiskItem } from "./risk";
+import { groupNearby, riskItems, type GroupKey, type RiskItem } from "./risk";
 import type { Manifest } from "./types";
 import { evaluate, LEVEL_TEXT, RULES, type Level } from "./verdict";
 import {
@@ -79,6 +79,11 @@ export class RiskPanel {
     private hooks: RiskPanelHooks,
   ) {
     this.render();
+    // The group dots match the markers on the map, which follow the theme.
+    globalThis.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
+      for (const dot of this.root.querySelectorAll<HTMLElement>(".dot[data-group]"))
+        dot.style.background = riskColor(dot.dataset.group as GroupKey);
+    });
   }
 
   setPin(pin: [number, number]): void {
@@ -456,7 +461,11 @@ export class RiskPanel {
             h(
               "summary",
               {},
-              h("span", { class: "dot", style: `background:${RISK_COLOR[g.key]}` }),
+              h("span", {
+                class: "dot",
+                "data-group": g.key,
+                style: `background:${riskColor(g.key)}`,
+              }),
               h("span", { class: "group__label" }, g.label),
               h(
                 "span",

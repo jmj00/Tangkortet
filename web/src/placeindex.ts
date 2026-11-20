@@ -796,6 +796,8 @@ export const COAST_PREFERRED_M = 400;
 /** A bathing site this close wins over a part of a town or a town the point
  * lies outside ("Amager Strandpark" before "Sundbyøster"). */
 export const COAST_NEAR_M = 800;
+/** A town proper this near is said after a beach or a part of a town. */
+export const TOWN_CONTEXT_M = 1000;
 
 /** A bathing site's name that is a description of where it is ("100 m nord
  * for ...", "Syd for Humlebæk Havn", "Ud for Tværvej", "Ved Lunden"). */
@@ -859,6 +861,9 @@ export function nearestPlace(
   let town: (NearestPlace & { type: Town["type"] }) | null = null;
   // inside several towns (a city and its parts): the one whose centre is nearest
   let townCentre = Infinity;
+  /** The nearest town proper (not a part of a town or a holiday-home area). */
+  let proper: NearestPlace | null = null;
+  let properCentre = Infinity;
   for (const t of index.towns) {
     const radiusM = t.radiusKm * 1000;
     if (!near(t.lon, t.lat, maxM + radiusM)) continue;
@@ -869,9 +874,18 @@ export function nearestPlace(
       town = { name: t.name, kind: "town", distanceM: d, type: t.type };
       townCentre = centre;
     }
+    if (
+      t.type === 0 &&
+      (!proper || d < proper.distanceM || (d === proper.distanceM && centre < properCentre))
+    ) {
+      proper = { name: t.name, kind: "town", distanceM: d };
+      properCentre = centre;
+    }
   }
 
-  const inTownProper = town !== null && town.distanceM === 0 && town.type === 0;
+  const inTownProper = proper !== null && proper.distanceM === 0;
+  /** A town proper this close names where a beach or a part of a town is. */
+  const properNear = proper !== null && proper.distanceM <= TOWN_CONTEXT_M ? proper.name : null;
   const coastWins =
     coast !== null &&
     (coast.distanceM <= COAST_PREFERRED_M ||
@@ -879,10 +893,22 @@ export function nearestPlace(
       !town ||
       coast.distanceM < town.distanceM);
   if (coast && coastWins) {
-    const context =
-      town && town.distanceM <= 3000 && isGenericCoastName(coast.name) ? town.name : undefined;
+    // a generic beach always gets its town; another one when a town proper
+    // is close and the name does not already say where ("Kronborgbugten,
+    // Helsingør", not "Amager Strandpark, Øresund, Kastrup")
+    const context = isGenericCoastName(coast.name)
+      ? town && town.distanceM <= 3000
+        ? town.name
+        : null
+      : properNear && !coast.name.includes(",") && !coast.name.includes(properNear)
+        ? properNear
+        : null;
     return context ? { ...coast, town: context } : coast;
   }
   if (!town) return null;
-  return { name: town.name, kind: "town", distanceM: town.distanceM };
+  // a part of a town with its town: "Klostervænget, Svendborg"
+  const context =
+    town.type !== 0 && properNear && !town.name.includes(properNear) ? properNear : null;
+  const place: NearestPlace = { name: town.name, kind: "town", distanceM: town.distanceM };
+  return context ? { ...place, town: context } : place;
 }

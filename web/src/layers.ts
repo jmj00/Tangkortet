@@ -35,9 +35,10 @@ export function algaeColor(group: string, dark = prefersDark()): string {
   return (dark ? ALGAE_COLOR_DARK : ALGAE_COLOR)[group] ?? (dark ? ACCENT.dark : ACCENT.light);
 }
 
-/** The pin and the dashed risk ring: the app's accent, per theme. */
+/** The pin and the dashed risk ring, per theme. Dark: a saturated cyan, apart
+ * from the pale blue of the dark Regnvand markers (#9cc8e6). */
 export function pinColor(dark = prefersDark()): string {
-  return dark ? ACCENT.dark : ACCENT.light;
+  return dark ? "#22d3ee" : ACCENT.light;
 }
 
 /** Halo round a solid mark: white on the light map, near-black on the dark
