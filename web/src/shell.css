@@ -486,6 +486,62 @@
   color: var(--ink);
 }
 
+/* "Luftfoto" (basemapcontrol.ts): a labelled toggle in the button column on
+   a desktop, an icon-only round button on a phone (the media query above).
+   Pressed: filled with the accent, so the state shows without the label. */
+#map .basemap-ctrl__button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  width: auto;
+  min-width: 29px;
+  padding: 0 0.55rem;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+#map .basemap-ctrl__button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+#map .basemap-ctrl__button[aria-pressed="true"]:hover {
+  background: color-mix(in srgb, var(--accent) 85%, var(--ink));
+}
+
+#map .basemap-ctrl__button svg {
+  flex: none;
+}
+
+@media (pointer: coarse) {
+  #map .maplibregl-ctrl-group .basemap-ctrl__button {
+    width: auto;
+    min-width: 44px;
+  }
+}
+
+@media (max-width: 559.98px), (max-width: 719.98px) and (min-height: 520.02px) {
+  #map .maplibregl-ctrl-group .basemap-ctrl__button {
+    width: 44px;
+    padding: 0;
+    border-radius: 50%;
+  }
+
+  /* the name stays for screen readers; the icon and the fill show the state */
+  #map .basemap-ctrl__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
 /* Phones and short landscape screens: no room for a footer. */
 @media (max-width: 559.98px),
   (max-width: 719.98px) and (min-height: 520.02px),

@@ -46,6 +46,7 @@ const locateGate = createLocateGate();
 const mapReady: Promise<MapBundle> = createMap("map", {
   onLocateAsk: () => locateGate.asked(),
   onAbout: () => openAbout(manifest),
+  onNotice: (text) => showMapStatus(text),
 });
 const readout = document.getElementById("readout") as HTMLElement;
 const appRoot = document.getElementById("app") as HTMLElement;

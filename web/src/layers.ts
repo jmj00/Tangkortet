@@ -102,6 +102,47 @@ function riskLegend(dark = prefersDark()) {
 const OBS = "observations";
 const RISK = "risk";
 const RING = "risk-radius";
+/** A halo-coloured band under the dashed ring, shown on the aerial photo
+ * only: there the ring crosses dark water and bright sand alike. */
+const RING_CASING = "risk-radius-casing";
+
+/** Whether the basemap is the aerial photo (map.ts). On the photo the marks
+ * keep the theme's colours (so the key still matches) but get stronger
+ * halos, and washed-up rings a halo-coloured core. */
+let photoBase = false;
+
+export const onPhoto = (): boolean => photoBase;
+
+/** Called by map.ts when the basemap switches between map and photo. */
+export function setPhotoBasemap(map: maplibregl.Map, photo: boolean): void {
+  if (photoBase === photo) return;
+  photoBase = photo;
+  paintMarks(map);
+}
+
+function paintMarks(map: maplibregl.Map): void {
+  const dark = prefersDark();
+  if (map.getLayer(OBS)) {
+    map.setPaintProperty(
+      OBS,
+      "circle-stroke-width",
+      photoBase ? ["match", ["get", "a"], "drift", 3, 2] : ["match", ["get", "a"], "drift", 2, 1],
+    );
+    map.setPaintProperty(
+      OBS,
+      "circle-opacity",
+      photoBase
+        ? ["match", ["get", "a"], "attached", 0.95, "drift", 0.55, 0.6]
+        : ["match", ["get", "a"], "attached", 0.9, "drift", 0, 0.35],
+    );
+    if (shownGroup) paintObservations(map, shownGroup);
+  }
+  if (map.getLayer(RISK)) map.setPaintProperty(RISK, "circle-stroke-width", photoBase ? 2.5 : 1.5);
+  if (map.getLayer(RING_CASING)) {
+    map.setPaintProperty(RING_CASING, "line-color", haloColor(dark));
+    map.setPaintProperty(RING_CASING, "line-opacity", photoBase ? 0.75 : 0);
+  }
+}
 
 function setGeoJson(map: maplibregl.Map, id: string, data: GeoJSON.FeatureCollection): boolean {
   const source = map.getSource(id) as maplibregl.GeoJSONSource | undefined;
@@ -119,7 +160,12 @@ let shownGroup: string | null = null;
 function paintObservations(map: maplibregl.Map, group: string): void {
   const dark = prefersDark();
   const color = algaeColor(group, dark);
-  map.setPaintProperty(OBS, "circle-color", color);
+  // on the photo a washed-up ring gets a translucent halo-coloured core
+  map.setPaintProperty(
+    OBS,
+    "circle-color",
+    photoBase ? ["match", ["get", "a"], "drift", haloColor(dark), color] : color,
+  );
   map.setPaintProperty(OBS, "circle-stroke-color", [
     "match",
     ["get", "a"],
@@ -155,11 +201,11 @@ export function showObservations(
           "circle-opacity": ["match", ["get", "a"], "attached", 0.9, "drift", 0, 0.35],
         },
       },
-      map.getLayer(RING) ? RING : undefined,
+      [RING_CASING, RING].find((id) => map.getLayer(id)),
     );
   }
   shownGroup = doc.group;
-  paintObservations(map, doc.group);
+  paintMarks(map);
   shownFinds = {
     name: shownName(doc),
     kinds: ATTACHMENTS.filter((a) => visible.has(a) && doc.attachment_counts[a] > 0),
@@ -182,12 +228,12 @@ export function setPinInLegend(map: maplibregl.Map, shown: boolean): void {
  * when the OS switches between light and dark). */
 export function restyleLayers(map: maplibregl.Map): void {
   const dark = prefersDark();
-  if (map.getLayer(OBS) && shownGroup) paintObservations(map, shownGroup);
   if (map.getLayer(RING)) map.setPaintProperty(RING, "line-color", pinColor(dark));
   if (map.getLayer(RISK)) {
     map.setPaintProperty(RISK, "circle-stroke-color", haloColor(dark));
     map.setPaintProperty(RISK, "circle-color", riskColorExpression(dark));
   }
+  paintMarks(map);
   legendFor(map).update({
     finds: shownFinds && shownGroup ? { ...shownFinds, color: algaeColor(shownGroup, dark) } : null,
     pin: pinShown ? pinColor(dark) : null,
@@ -307,6 +353,12 @@ export function showRisk(
   const dark = prefersDark();
   if (setGeoJson(map, RING, ring)) {
     map.addLayer({
+      id: RING_CASING,
+      type: "line",
+      source: RING,
+      paint: { "line-color": haloColor(dark), "line-width": 5, "line-opacity": 0 },
+    });
+    map.addLayer({
       id: RING,
       type: "line",
       source: RING,
@@ -326,13 +378,14 @@ export function showRisk(
       },
     });
   }
+  paintMarks(map);
   const present = new Set(inside.map((i) => i.group));
   shownRisk = { radiusM, groups: [...present] as GroupKey[] };
   legendFor(map).update({ risk: riskLegend(dark) });
 }
 
 export function clearRisk(map: maplibregl.Map): void {
-  for (const id of [RISK, RING]) {
+  for (const id of [RISK, RING_CASING, RING]) {
     if (map.getLayer(id)) map.removeLayer(id);
     if (map.getSource(id)) map.removeSource(id);
   }

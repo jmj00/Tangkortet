@@ -1,4 +1,6 @@
-// Ported from Svampekortet (0024b43): OSM base + the Skærmkort WMS when a key is set.
+// Ported from Svampekortet (0024b43): OSM base + the Skærmkort WMS when a key
+// is set. The Datafordeler layers (Skærmkort, and the aerial photo) load
+// through a retrying protocol (tileretry.ts).
 import type {
   IControl,
   Map as MapLibreMap,
@@ -6,8 +8,16 @@ import type {
   StyleSpecification,
 } from "maplibre-gl";
 import "./map.css";
-import { prefersDark, restyleLayers } from "./layers";
+import {
+  BasemapControl,
+  readBasemapMode,
+  storeBasemapMode,
+  type BasemapMode,
+} from "./basemapcontrol";
+import { repaintCoast } from "./coastmap";
+import { prefersDark, restyleLayers, setPhotoBasemap } from "./layers";
 import { LocateControl } from "./locatecontrol";
+import { emptyStats, fetchTile, TileHealth, type RetryStats, type TileResult } from "./tileretry";
 
 type RasterPaint = NonNullable<RasterLayerSpecification["paint"]>;
 
@@ -46,14 +56,28 @@ const reducedMotion = (): boolean =>
 
 const currentBasemapPaint = (): RasterPaint => basemapPaint(prefersDark(), reducedMotion());
 
-/** The raster layers that make up the basemap: OSM, and Skærmkort over it
- * when a key is set. */
-const BASEMAP_LAYERS = ["osm", "sdfi"] as const;
+/** The aerial photo stays a photo: no desaturation or inversion. Dark mode
+ * only takes the glare off, so the page around it doesn't flash. */
+export function photoPaint(dark: boolean, reducedMotion = false): RasterPaint {
+  return {
+    "raster-brightness-min": 0,
+    "raster-brightness-max": dark ? 0.8 : 1,
+    "raster-saturation": dark ? -0.1 : 0,
+    "raster-contrast": 0,
+    "raster-hue-rotate": 0,
+    "raster-fade-duration": reducedMotion ? 0 : 300,
+  };
+}
+
+/** The raster layers that make up the basemap, bottom up: OSM (always, so a
+ * missing tile is never blank), Skærmkort and the aerial photo. */
+const BASEMAP_LAYERS = ["osm", "sdfi", "orto"] as const;
 
 function applyBasemapTheme(map: MapLibreMap): void {
-  const paint = currentBasemapPaint();
   for (const id of BASEMAP_LAYERS) {
     if (!map.getLayer(id)) continue;
+    const paint =
+      id === "orto" ? photoPaint(prefersDark(), reducedMotion()) : currentBasemapPaint();
     for (const [name, value] of Object.entries(paint)) {
       map.setPaintProperty(id, name, value);
     }
@@ -92,55 +116,219 @@ export const DENMARK_BOUNDS: [[number, number], [number, number]] = [
   [15.2, 57.75],
 ];
 
-const SDFI_TOKEN = import.meta.env.VITE_DATAFORDELER_API_KEY;
+const DATAFORDELER_KEY = import.meta.env.VITE_DATAFORDELER_API_KEY;
 
-// GeoDanmark Skaermkort, CC BY 4.0. Must be shown to the user (map + an "Om data"
-// screen). See docs/data-sources.md.
+const LINK = (href: string, text: string): string =>
+  `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
+const CC_BY = LINK("https://creativecommons.org/licenses/by/4.0/deed.da", "CC BY 4.0");
+
+// GeoDanmark data, CC BY 4.0 (Klimadatastyrelsen's terms for free data). Must
+// be shown to the user (map + "Om Tangkortet"). See docs/data-sources.md.
 const SDFI_ATTRIBUTION =
-  'Kort: <a href="https://www.geodanmark.dk" target="_blank" rel="noopener">GeoDanmark</a> ' +
-  '(<a href="https://creativecommons.org/licenses/by/4.0/deed.da" target="_blank" rel="noopener">CC BY 4.0</a>), ' +
-  '<a href="https://datafordeler.dk" target="_blank" rel="noopener">Datafordeler</a>';
+  `Kort: ${LINK("https://www.geodanmark.dk", "GeoDanmark")} (${CC_BY}), ` +
+  LINK("https://datafordeler.dk", "Datafordeler");
+const ORTO_ATTRIBUTION =
+  `Luftfoto: ${LINK("https://www.geodanmark.dk", "GeoDanmark")} Ortofoto forår, ` +
+  `Klimadatastyrelsen (${CC_BY}), ${LINK("https://datafordeler.dk", "Datafordeler")}`;
+
+type WmsId = "sdfi" | "orto";
+
+interface WmsSpec {
+  /** Path on wms.datafordeler.dk. */
+  path: string;
+  layers: string;
+  format: string;
+  attribution: string;
+  /** For console messages. */
+  name: string;
+}
 
 /**
- * Klimadatastyrelsens "Skærmkort" via its Datafordeler WMS (the WMTS is
- * UTM32N-only). Same underlying map as before this moved off DAWA/legacy
- * Dataforsyningen (docs/data-sources.md) -- same layer name, same on-the-fly
- * EPSG:3857 reprojection, so MapLibre can use it as a raster source with the
- * {bbox-epsg-3857} token unchanged. If the token is missing the layer is never
- * added; if the tiles fail to decode (a rejected request answers with an XML
- * ServiceException at HTTP 200 -- e.g. an invalid/expired key), the layer is
- * removed on the first error so the map falls back cleanly to the OSM base
- * instead of flooding decode errors.
+ * Klimadatastyrelsen's WMS services on Datafordeler, both reprojected on the
+ * fly to EPSG:3857 (confirmed in their GetCapabilities, 2026-11-20).
  *
- * Note: this WMS enforces the WMS 1.3.0 spelling of TRANSPARENT (uppercase
- * TRUE/FALSE) and rejects `transparent=false` outright, so the parameter is
- * omitted -- its default is FALSE, which is what an opaque basemap wants.
+ * - Skærmkort ("dtk_skaermkort"): the topographic screen map. Its WMTS is
+ *   UTM32N-only, hence the WMS.
+ * - Ortofoto forår ("orto_foraar"): the newest spring aerial photo, JPEG.
+ *
+ * These WMS enforce the WMS 1.3.0 spelling of TRANSPARENT and reject
+ * `transparent=false`, so the parameter is left out (default FALSE: opaque).
  */
-function addSdfiBasemap(map: MapLibreMap): void {
-  if (!SDFI_TOKEN) return;
-  const url =
-    "https://wms.datafordeler.dk/Dkskaermkort/topo_skaermkort/1.0.0/wms?service=WMS&version=1.3.0" +
-    "&request=GetMap&layers=dtk_skaermkort&styles=&format=image/png" +
-    `&crs=EPSG:3857&width=256&height=256&bbox={bbox-epsg-3857}&apikey=${SDFI_TOKEN}`;
-
-  map.addSource("sdfi", {
-    type: "raster",
-    tiles: [url],
-    tileSize: 256,
+const WMS: Record<WmsId, WmsSpec> = {
+  sdfi: {
+    path: "Dkskaermkort/topo_skaermkort/1.0.0/wms",
+    layers: "dtk_skaermkort",
+    format: "image/png",
     attribution: SDFI_ATTRIBUTION,
-  });
-  map.addLayer({ id: "sdfi", type: "raster", source: "sdfi", paint: currentBasemapPaint() });
+    name: "Skærmkort",
+  },
+  orto: {
+    path: "GeoDanmarkOrto/orto_foraar/1.0.0/WMS",
+    layers: "orto_foraar",
+    format: "image/jpeg",
+    attribution: ORTO_ATTRIBUTION,
+    name: "Ortofoto",
+  },
+};
 
-  const onError = (e: { error?: Error; sourceId?: string }): void => {
-    const decodeError = /could not be decoded/i.test(String(e?.error?.message ?? ""));
-    if (e?.sourceId !== "sdfi" && !decodeError) return;
-    if (!map.getLayer("sdfi")) return;
-    console.warn("SDFI basemap unavailable — falling back to OpenStreetMap", e?.error);
-    map.off("error", onError);
-    map.removeLayer("sdfi");
-    map.removeSource("sdfi");
-  };
-  map.on("error", onError);
+/** The real GetMap URL. The key goes last, so a log line cut short never
+ * shows it; MapLibre itself only ever sees the `datafordeler://` URL. */
+function wmsUrl(spec: WmsSpec, bbox: string): string {
+  return (
+    `https://wms.datafordeler.dk/${spec.path}?service=WMS&version=1.3.0&request=GetMap` +
+    `&layers=${spec.layers}&styles=&format=${encodeURIComponent(spec.format)}` +
+    `&crs=EPSG:3857&width=256&height=256&bbox=${bbox}&apikey=${DATAFORDELER_KEY}`
+  );
+}
+
+/** Tiles are requested as `datafordeler://<id>/<bbox>` and fetched here with
+ * retries (tileretry.ts): Datafordeler's random 401s, which carry no CORS
+ * headers, would otherwise leave holes or (before this) drop the whole layer. */
+const PROTOCOL = "datafordeler";
+
+/** Per-layer counts for the session (window.__tileStats in dev). */
+const tileStats: Record<WmsId, RetryStats> = { sdfi: emptyStats(), orto: emptyStats() };
+
+interface Tracked {
+  health: TileHealth;
+  /** Given up already: later results don't count. */
+  done: boolean;
+  onGiveUp: (result: TileResult) => void;
+}
+
+/** The layers currently on the map, by id. */
+const tracked = new Map<WmsId, Tracked>();
+
+let protocolAdded = false;
+
+function addProtocolOnce(lib: typeof import("maplibre-gl")): void {
+  if (protocolAdded) return;
+  protocolAdded = true;
+  lib.addProtocol(PROTOCOL, async (params, abortController) => {
+    const match = /^[a-z]+:\/\/([a-z]+)\/(.+)$/.exec(params.url);
+    const id = match?.[1] as WmsId | undefined;
+    if (!match || !id || !(id in WMS)) throw new Error("unknown basemap tile");
+    const spec = WMS[id];
+    // throws AbortedError when the tile is no longer wanted: not counted
+    const r = await fetchTile(wmsUrl(spec, match[2]), abortController.signal);
+    const stats = tileStats[id];
+    stats.tiles += 1;
+    stats.attempts += r.attempts;
+    if (r.attempts > 1) stats.retried += 1;
+    if (r.attempts > 1 && r.result === "loaded") stats.recovered += 1;
+    if (r.result !== "loaded") stats.failed += 1;
+    const t = tracked.get(id);
+    if (t && !t.done && t.health.record(r.result) === "give-up") {
+      t.done = true;
+      t.onGiveUp(r.result);
+    }
+    if (r.data) return { data: r.data };
+    // no URL in the message: it carries the key
+    throw new Error(`${spec.name}: tile not available after ${r.attempts} attempts`);
+  });
+}
+
+/**
+ * The Datafordeler basemap over OSM: Skærmkort, or the aerial photo when the
+ * user picks it (BasemapControl, remembered per device). OSM stays underneath
+ * either way, so a tile that fails after its retries shows OSM, not a hole.
+ * A layer is dropped only when the service clearly doesn't work: an invalid
+ * key (a ServiceException), or no tile at all after several failed ones.
+ */
+class Basemap {
+  readonly control: BasemapControl;
+  private mode: BasemapMode;
+
+  constructor(
+    private readonly map: MapLibreMap,
+    private readonly lib: typeof import("maplibre-gl"),
+    private readonly notice?: (text: string) => void,
+  ) {
+    this.mode = readBasemapMode();
+    this.control = new BasemapControl({
+      photo: this.mode === "photo",
+      onToggle: (photo) => {
+        this.mode = photo ? "photo" : "map";
+        storeBasemapMode(this.mode);
+        this.apply();
+      },
+    });
+  }
+
+  /** Once the style is ready. */
+  start(): void {
+    addProtocolOnce(this.lib);
+    // A tile that fails after its retries is expected now and then (OSM
+    // shows through): keep it out of the console. With a listener MapLibre
+    // no longer logs errors itself, so everything else is logged here.
+    this.map.on("error", (e: { error?: unknown; sourceId?: string }) => {
+      if (e.sourceId === "sdfi" || e.sourceId === "orto") return;
+      console.error(e.error ?? e);
+    });
+    this.add("sdfi");
+    this.apply();
+  }
+
+  private add(id: WmsId): void {
+    tracked.set(id, {
+      health: new TileHealth(),
+      done: false,
+      onGiveUp: (result) => this.giveUp(id, result),
+    });
+    this.map.addSource(id, {
+      type: "raster",
+      tiles: [`${PROTOCOL}://${id}/{bbox-epsg-3857}`],
+      tileSize: 256,
+      attribution: WMS[id].attribution,
+    });
+    // above the other basemap layers, under everything the app draws
+    const before = this.map
+      .getStyle()
+      .layers.find((l) => !(BASEMAP_LAYERS as readonly string[]).includes(l.id))?.id;
+    this.map.addLayer(
+      {
+        id,
+        type: "raster",
+        source: id,
+        paint: id === "orto" ? photoPaint(prefersDark(), reducedMotion()) : currentBasemapPaint(),
+      },
+      before,
+    );
+  }
+
+  private remove(id: WmsId): void {
+    tracked.delete(id);
+    if (this.map.getLayer(id)) this.map.removeLayer(id);
+    if (this.map.getSource(id)) this.map.removeSource(id);
+  }
+
+  private giveUp(id: WmsId, result: TileResult): void {
+    const why = result === "invalid" ? "the key was rejected" : "no tile loaded";
+    console.warn(`${WMS[id].name} unavailable (${why}): falling back to OpenStreetMap`);
+    this.remove(id);
+    if (id !== "orto") return;
+    // Back to the map, and remembered, so the next visit doesn't fail again;
+    // pressing "Luftfoto" again is the retry.
+    this.mode = "map";
+    storeBasemapMode("map");
+    this.apply();
+    this.notice?.(
+      "Luftfotoet kunne ikke hentes lige nu. Kortet vises i stedet – prøv igen senere.",
+    );
+  }
+
+  private apply(): void {
+    const photo = this.mode === "photo";
+    if (photo && !this.map.getLayer("orto")) this.add("orto");
+    if (this.map.getLayer("orto"))
+      this.map.setLayoutProperty("orto", "visibility", photo ? "visible" : "none");
+    // hidden, Skærmkort fetches nothing
+    if (this.map.getLayer("sdfi"))
+      this.map.setLayoutProperty("sdfi", "visibility", photo ? "none" : "visible");
+    this.control.setPhoto(photo);
+    setPhotoBasemap(this.map, photo);
+    repaintCoast(this.map);
+  }
 }
 
 /** "Om Tangkortet og data" as a map button. On the phone it stands in for the
@@ -187,7 +375,12 @@ export interface MapBundle {
  */
 export async function createMap(
   container: string,
-  options: { onLocateAsk?: () => void; onAbout?: () => void } = {},
+  options: {
+    onLocateAsk?: () => void;
+    onAbout?: () => void;
+    /** A short message over the map (main.ts showMapStatus). */
+    onNotice?: (text: string) => void;
+  } = {},
 ): Promise<MapBundle> {
   const maplibregl = await import("maplibre-gl");
   await import("maplibre-gl/dist/maplibre-gl.css");
@@ -210,6 +403,9 @@ export async function createMap(
 
   map.addControl(new maplibregl.NavigationControl(), "top-right");
   if (options.onAbout) map.addControl(aboutControl(options.onAbout), "top-right");
+  // Map or aerial photo, only with a key (both come from Datafordeler).
+  const basemap = DATAFORDELER_KEY ? new Basemap(map, maplibregl, options.onNotice) : null;
+  if (basemap) map.addControl(basemap.control, "top-right");
   map.addControl(geolocate, "top-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
 
@@ -221,7 +417,7 @@ export async function createMap(
     const ready = () => {
       if (done) return;
       done = true;
-      addSdfiBasemap(map);
+      basemap?.start();
       resolve();
     };
     map.once("style.load", ready);
@@ -239,7 +435,11 @@ export async function createMap(
 
   // Dev server only (dropped from production builds): lets the screenshot
   // harness drive the map (from Svampekortet 624fb8b, web/src/map.ts).
-  if (import.meta.env.DEV) (window as unknown as { __map?: MapLibreMap }).__map = map;
+  if (import.meta.env.DEV) {
+    const w = window as unknown as { __map?: MapLibreMap; __tileStats?: unknown };
+    w.__map = map;
+    w.__tileStats = tileStats;
+  }
 
   return { map, geolocate, maplibregl, loaded };
 }
