@@ -59,7 +59,9 @@ describe("the pin's card", () => {
     );
     expect(findsText({ species: 1, attached: 1, drift: 0, unknown: 0 })).toBe("1 art");
     expect(findsText({ species: 0, attached: 0, drift: 0, unknown: 0 })).toBe("Ingen fund");
-    expect(splitText({ species: 0, attached: 0, drift: 0, unknown: 0 })).toBe("Inden for 10 km");
+    expect(splitText({ species: 0, attached: 0, drift: 0, unknown: 0 })).toBe(
+      "Ingen inden for 10 km – se steder med fund under Arter",
+    );
     expect(findsText("loading")).toBe("Finder arter…");
     expect(findsNearText("loading")).toBe("");
   });

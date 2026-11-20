@@ -11,6 +11,8 @@ import "./species.css";
 
 import { forgetPendingSpecies } from "./data";
 import { h, extLink } from "./dom";
+import { nearestFindM, nearestSpots, type Spot } from "./elsewhere";
+import { formatDistance } from "./geo";
 import {
   filterSpecies,
   findsNear,
@@ -89,6 +91,13 @@ export interface SpeciesPanelHooks {
   /** Called on open/close and when the visible find types change. */
   onSelect(doc: SpeciesDoc | null, visible: Set<Attachment>): void;
   loadDoc(summary: SpeciesSummary): Promise<SpeciesDoc>;
+  /** The coastal bathing sites, `[lon, lat]` (placeindex.ts): the places a
+   * suggestion may send the user to. */
+  beaches?(): Promise<[number, number][]>;
+  /** A place name for a suggested spot ("Ved Juelsminde"), or null. */
+  nameSpot?(lngLat: [number, number]): Promise<string | null>;
+  /** Move the pin to a suggested spot (elsewhere.ts). */
+  goToSpot?(lngLat: [number, number], label: string | null): void;
 }
 
 const DENSITIES = ["full", "compact", "tiny"] as const;
@@ -424,13 +433,108 @@ export class SpeciesPanel {
     }
     // Re-parenting a focused row blurs it; put focus back.
     const focused = document.activeElement;
-    this.results.replaceChildren(list);
+    const elsewhere = this.elsewhereBox(near);
+    if (elsewhere) this.results.replaceChildren(elsewhere, list);
+    else this.results.replaceChildren(list);
     if (focused instanceof HTMLElement && focused !== document.activeElement) {
       if (list.contains(focused)) focused.focus({ preventScroll: true });
     }
     // Measure only once the rows are in the page: a detached list has no row
     // to measure, and the fallback height made typing flip the density.
     this.chooseDensity();
+  }
+
+  /** Coastal bathing sites for the suggestions; undefined = not asked yet
+   * (or the last try failed). */
+  private beaches: [number, number][] | "loading" | undefined = undefined;
+  /** The nearest spots with finds for the last pin (elsewhereBox). */
+  private awayFor: { pin: string; spots: Spot[] } | null = null;
+  /** Spot names already looked up, by "lon,lat". */
+  private readonly spotNames = new Map<string, string | null>();
+
+  /** Nothing found near the pin (e.g. inland): the nearest places that do
+   * have finds, to go to. Only once every species is loaded, so "nothing
+   * near" is known, not guessed. */
+  private elsewhereBox(near: Map<string, number> | null): HTMLElement | null {
+    if (!this.pin || !near || near.size < this.manifest.species.length) return null;
+    if ([...near.values()].some((n) => n > 0)) return null;
+    const docs = this.manifest.species
+      .map((s) => this.sel.doc(s.slug))
+      .filter((d): d is SpeciesDoc => d !== undefined);
+    // The beaches come with the place list: fetch it, then draw again. No
+    // suggestions without it (raw finds can lie inland, in lakes); a failed
+    // fetch is tried again on the next refresh.
+    if (this.beaches === undefined && this.hooks.beaches) {
+      this.beaches = "loading";
+      void this.hooks.beaches().then(
+        (list) => {
+          this.beaches = list;
+          if (this.sel.view.kind === "list") this.refreshList();
+        },
+        () => {
+          this.beaches = undefined;
+        },
+      );
+    }
+    if (!Array.isArray(this.beaches)) return null;
+    // the same pin gives the same spots: work them out once, not per keystroke
+    const pinKey = this.pin.join(",");
+    if (this.awayFor?.pin !== pinKey)
+      this.awayFor = { pin: pinKey, spots: nearestSpots(docs, this.pin, this.beaches) };
+    const spots = this.awayFor.spots;
+    if (spots.length === 0) return null;
+    const km = NEAR_PIN_M / 1000;
+    const list = h("ul", { class: "spp-away__list" });
+    for (const spot of spots) list.append(h("li", {}, this.spotButton(spot)));
+    return h(
+      "section",
+      { class: "spp-away", "aria-labelledby": "spp-away-title" },
+      h("h3", { class: "spp-away__title", id: "spp-away-title" }, "Nærmeste steder med fund"),
+      h(
+        "p",
+        { class: "spp-away__lead" },
+        `Der er ingen fund inden for ${km} km af nålen. Her er tang fundet nærmest:`,
+      ),
+      list,
+      h(
+        "p",
+        { class: "spp-away__note" },
+        "Et fund siger ikke, at stedet er rent. Se risikoen, når nålen er flyttet.",
+      ),
+    );
+  }
+
+  private spotButton(spot: Spot): HTMLButtonElement {
+    const key = spot.lngLat.join(",");
+    const name = h("span", { class: "spp-away__name" }, this.spotNames.get(key) ?? "Sted med fund");
+    const what = `${spot.species} ${spot.species === 1 ? "art" : "arter"}${
+      spot.attached ? `, ${spot.attached} fastsiddende` : ""
+    }`;
+    const button = h(
+      "button",
+      { type: "button", class: "spp-away__spot" },
+      icon("pin", "spp-away__icon"),
+      h(
+        "span",
+        { class: "spp-away__text" },
+        name,
+        h("span", { class: "spp-away__meta" }, `${formatDistance(spot.distanceM)} væk · ${what}`),
+      ),
+      icon("chevron", "spp-row__chevron"),
+    );
+    button.addEventListener("click", () =>
+      this.hooks.goToSpot?.(spot.lngLat, this.spotNames.get(key) ?? null),
+    );
+    if (!this.spotNames.has(key) && this.hooks.nameSpot) {
+      void this.hooks.nameSpot(spot.lngLat).then(
+        (label) => {
+          this.spotNames.set(key, label);
+          if (label) name.textContent = label;
+        },
+        () => {},
+      );
+    }
+    return button;
   }
 
   private emptyState(): HTMLElement {
@@ -706,7 +810,11 @@ export class SpeciesPanel {
   private nearText(doc: SpeciesDoc): string {
     if (!this.pin) return "Sæt en nål ved kysten for at se fund i nærheden.";
     const near = findsNear(doc, this.pin);
-    if (near.total === 0) return `Ingen fund inden for ${NEAR_PIN_M / 1000} km af nålen.`;
+    if (near.total === 0) {
+      const nearest = nearestFindM([doc], this.pin);
+      const more = nearest === null ? "" : ` Nærmeste fund er ${formatDistance(nearest)} væk.`;
+      return `Ingen fund inden for ${NEAR_PIN_M / 1000} km af nålen.${more}`;
+    }
     return `Inden for ${NEAR_PIN_M / 1000} km af nålen: ${near.attached} fastsiddende, ${near.drift} opskyllede, ${near.unknown} ukendte.`;
   }
 

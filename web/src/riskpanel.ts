@@ -158,7 +158,7 @@ export class RiskPanel {
         h(
           "p",
           { class: "hint" },
-          "Sæt en nål ved kysten – tryk på kortet eller søg en adresse – for at se mulige forureningskilder i nærheden.",
+          "Sæt en nål ved kysten – zoom ind og tryk på kortet, eller søg et sted – for at se mulige forureningskilder i nærheden.",
         ),
         h("p", { class: "disclaimer" }, DISCLAIMER),
       );

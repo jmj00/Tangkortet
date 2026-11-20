@@ -103,6 +103,8 @@ export function findsNearText(finds: FindsSummary | "loading" | "error"): string
  * a zero part left out); the sidebar shows it under the count, the phone
  * reads it out. */
 export function splitText(finds: FindsSummary): string {
+  // the species list then suggests the nearest beaches with finds (elsewhere.ts)
+  if (finds.species === 0) return `Ingen inden for ${KM} – se steder med fund under Arter`;
   const where = `Inden for ${KM}`;
   const parts = [
     finds.attached ? `${finds.attached} fastsiddende` : "",

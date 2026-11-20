@@ -105,14 +105,14 @@ export function searchMessage(
         : `Skriv mindst ${MIN_QUERY} bogstaver.`;
     case "empty":
       return addresses
-        ? `Ingen byer, strande eller adresser matcher „${q}“. Prøv et vejnavn med by, fx „Vestergade 10, Silkeborg“, eller ${verb} på kortet.`
-        : `Ingen byer, postnumre eller badestrande matcher „${q}“. Prøv et bynavn eller et postnummer, fx „Silkeborg“ eller „8600“, eller ${verb} på kortet.`;
+        ? `Ingen byer, strande eller adresser matcher „${q}“. Prøv et vejnavn med by, fx „Vestergade 10, Silkeborg“, eller zoom ind, og ${verb} på kysten.`
+        : `Ingen byer, postnumre eller badestrande matcher „${q}“. Prøv et bynavn eller et postnummer, fx „Silkeborg“ eller „8600“, eller zoom ind, og ${verb} på kysten.`;
     case "failed":
       return outcome.shown > 0
         ? "Adressesøgningen svarer ikke lige nu, så her er kun byer og strande."
-        : `Adressesøgningen svarer ikke lige nu. Tjek forbindelsen og prøv igen – eller ${verb} på kortet.`;
+        : `Adressesøgningen svarer ikke lige nu. Tjek forbindelsen og prøv igen – eller zoom ind, og ${verb} på kysten.`;
     case "offline":
-      return `Listen over byer og strande kunne ikke hentes. Tjek forbindelsen og prøv igen – eller ${verb} på kortet.`;
+      return `Listen over byer og strande kunne ikke hentes. Tjek forbindelsen og prøv igen – eller zoom ind, og ${verb} på kysten.`;
     case "results":
       // said, not shown: the list is there to see
       return outcome.shown === 1 ? "1 forslag" : `${outcome.shown} forslag`;

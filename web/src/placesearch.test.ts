@@ -28,9 +28,9 @@ describe("searchMessage", () => {
 
   it("says what to try when nothing matches, with the device's verb", () => {
     expect(said("empty", "xqz")).toContain("„xqz“");
-    expect(said("empty", "xqz")).toContain("tryk på kortet");
+    expect(said("empty", "xqz")).toContain("tryk på kysten");
     expect(searchMessage({ state: "empty", query: "x", shown: 0 }, "klik", false)).toContain(
-      "klik på kortet",
+      "klik på kysten",
     );
     expect(said("empty", "xqz", 0, true)).toContain("Vestergade 10, Silkeborg");
   });
