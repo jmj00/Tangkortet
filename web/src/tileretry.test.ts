@@ -67,10 +67,19 @@ describe("TileHealth", () => {
     expect(h.record("loaded")).toBe("ok");
     for (let i = 0; i < 50; i++) expect(h.record("failed")).toBe("ok");
   });
-  it("gives up at once on an invalid key, even after tiles loaded", () => {
+  it("gives up at once on a ServiceException before anything has loaded", () => {
+    const h = new TileHealth();
+    h.record("failed");
+    expect(h.record("invalid")).toBe("give-up");
+    expect(h.invalid).toBe(true);
+  });
+  it("keeps a working layer on a stray ServiceException, counting it as one failed tile", () => {
     const h = new TileHealth();
     h.record("loaded");
-    expect(h.record("invalid")).toBe("give-up");
+    expect(h.record("invalid")).toBe("ok");
+    expect(h.invalid).toBe(false);
+    expect(h.failed).toBe(1);
+    for (let i = 0; i < 10; i++) expect(h.record("invalid")).toBe("ok");
   });
 });
 

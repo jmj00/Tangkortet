@@ -57,7 +57,9 @@ export type Verdict = "pending" | "ok" | "give-up";
 export const GIVE_UP_AFTER = 4;
 
 /** A layer's track record. Once a tile has loaded the service works: later
- * failures only leave gaps (the OSM base shows through), never a fallback. */
+ * failures, a stray ServiceException included, only leave gaps (the map's
+ * land/water background shows through), never a fallback. A ServiceException
+ * before anything has loaded means a wrong key or layer: give up at once. */
 export class TileHealth {
   loaded = 0;
   failed = 0;
@@ -66,7 +68,8 @@ export class TileHealth {
   record(result: TileResult): Verdict {
     if (result === "loaded") this.loaded += 1;
     else if (result === "failed") this.failed += 1;
-    else this.invalid = true;
+    else if (this.loaded === 0) this.invalid = true;
+    else this.failed += 1;
     return this.verdict();
   }
 
