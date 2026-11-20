@@ -28,8 +28,26 @@ jobs:
           python-version: "3.12"
       - run: pip install -e .
 
-      - name: Build the payload (GBIF + MiljøGIS)
-        run: python -m pipeline.build --out web/public/data
+      # The coast cells come from Geofabrik's OpenStreetMap extract for
+      # Denmark (~500 MB, ODbL). One download per ISO week, kept in the
+      # Actions cache; with a warm cache the coast adds about half a minute.
+      - name: Week of the OpenStreetMap extract
+        id: osm-week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+      - name: Cache the OpenStreetMap extract
+        id: osm-cache
+        uses: actions/cache@v4
+        with:
+          path: build/osm/denmark-latest.osm.pbf
+          key: osm-denmark-${{ steps.osm-week.outputs.week }}
+      - name: Download the OpenStreetMap extract (Geofabrik)
+        if: steps.osm-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p build/osm
+          curl -fsSL --retry 3 -o build/osm/denmark-latest.osm.pbf https://download.geofabrik.de/europe/denmark-latest.osm.pbf
+
+      - name: Build the payload (GBIF + MiljøGIS + OpenStreetMap coast)
+        run: python -m pipeline.build --out web/public/data --coast build/osm/denmark-latest.osm.pbf
 
       - uses: actions/setup-node@v4
         with:

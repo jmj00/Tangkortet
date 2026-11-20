@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A made-up stretch of coast for pipeline/tests/test_coast.py: the
+     coastline runs north along 10.2 E (land on its left, to the west). -->
+<osm version="0.6" generator="hand">
+  <node id="1" version="1" lat="56.1400" lon="10.2000"/>
+  <node id="2" version="1" lat="56.1500" lon="10.2000"/>
+  <node id="3" version="1" lat="56.1600" lon="10.2000"/>
+  <!-- a thin beach just inside the coastline -->
+  <node id="10" version="1" lat="56.1450" lon="10.19990"/>
+  <node id="11" version="1" lat="56.1450" lon="10.19998"/>
+  <node id="12" version="1" lat="56.1460" lon="10.19998"/>
+  <node id="13" version="1" lat="56.1460" lon="10.19990"/>
+  <!-- a bathing jetty -->
+  <node id="20" version="1" lat="56.1470" lon="10.2000"/>
+  <node id="21" version="1" lat="56.1470" lon="10.2010"/>
+  <!-- sand 3 km inland (a sand pit) and sand on the shore -->
+  <node id="30" version="1" lat="56.1500" lon="10.1500"/>
+  <node id="31" version="1" lat="56.1500" lon="10.1510"/>
+  <node id="32" version="1" lat="56.1510" lon="10.1510"/>
+  <node id="33" version="1" lat="56.1520" lon="10.1990"/>
+  <node id="34" version="1" lat="56.1520" lon="10.1998"/>
+  <node id="35" version="1" lat="56.1530" lon="10.1998"/>
+  <!-- a tidal flat (a multipolygon) off the coast -->
+  <node id="40" version="1" lat="56.1410" lon="10.2010"/>
+  <node id="41" version="1" lat="56.1410" lon="10.2030"/>
+  <node id="42" version="1" lat="56.1430" lon="10.2030"/>
+  <node id="43" version="1" lat="56.1430" lon="10.2010"/>
+  <!-- a harbour mapped as a node -->
+  <node id="50" version="1" lat="56.1550" lon="10.2005">
+    <tag k="harbour" v="yes"/>
+    <tag k="name" v="Testby Havn"/>
+  </node>
+  <!-- an inland cliff (a gravel pit) and a groyne -->
+  <node id="60" version="1" lat="56.1500" lon="10.1000"/>
+  <node id="61" version="1" lat="56.1505" lon="10.1000"/>
+  <node id="70" version="1" lat="56.1480" lon="10.2000"/>
+  <node id="71" version="1" lat="56.1480" lon="10.2004"/>
+  <!-- an untagged node and a lake jetty without tags of interest -->
+  <node id="80" version="1" lat="56.1500" lon="10.1800"/>
+
+  <way id="100" version="1">
+    <nd ref="1"/><nd ref="2"/><nd ref="3"/>
+    <tag k="natural" v="coastline"/>
+  </way>
+  <way id="101" version="1">
+    <nd ref="10"/><nd ref="11"/><nd ref="12"/><nd ref="13"/><nd ref="10"/>
+    <tag k="natural" v="beach"/>
+    <tag k="surface" v="Sand"/>
+    <tag k="name" v="Testby Strand"/>
+  </way>
+  <way id="102" version="1">
+    <nd ref="20"/><nd ref="21"/>
+    <tag k="man_made" v="pier"/>
+    <tag k="name" v="Testby Badebro"/>
+  </way>
+  <way id="103" version="1">
+    <nd ref="30"/><nd ref="31"/><nd ref="32"/><nd ref="30"/>
+    <tag k="natural" v="sand"/>
+  </way>
+  <way id="104" version="1">
+    <nd ref="33"/><nd ref="34"/><nd ref="35"/><nd ref="33"/>
+    <tag k="natural" v="sand"/>
+  </way>
+  <way id="105" version="1">
+    <nd ref="40"/><nd ref="41"/><nd ref="42"/><nd ref="43"/><nd ref="40"/>
+  </way>
+  <way id="106" version="1">
+    <nd ref="60"/><nd ref="61"/>
+    <tag k="natural" v="cliff"/>
+  </way>
+  <way id="107" version="1">
+    <nd ref="70"/><nd ref="71"/>
+    <tag k="man_made" v="groyne"/>
+  </way>
+  <relation id="200" version="1">
+    <member type="way" ref="105" role="outer"/>
+    <tag k="type" v="multipolygon"/>
+    <tag k="natural" v="wetland"/>
+    <tag k="wetland" v="tidalflat"/>
+  </relation>
+</osm>
