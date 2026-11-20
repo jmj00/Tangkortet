@@ -424,12 +424,12 @@ export async function createMap(
   map.addControl(geolocate, "top-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
 
-  // Phone: the opened credit (two lines with Skærmkort or the photo) covers
-  // the map key and the locate button. MapLibre folds it on the first drag; a
-  // phone user may only tap, so fold it after a few seconds too. It stays
-  // one tap away behind the (i).
+  // Phones, upright or on their side: the opened credit (two lines with
+  // Skærmkort or the photo) covers the map key and the locate button.
+  // MapLibre folds it on the first drag; a phone user may only tap, so fold
+  // it after a few seconds too. It stays one tap away behind the (i).
   const phone = globalThis.matchMedia?.(
-    "(max-width: 559.98px), (max-width: 719.98px) and (min-height: 520.02px)",
+    "(max-width: 559.98px), (max-width: 719.98px) and (min-height: 520.02px), (max-height: 520px)",
   );
   map.once("load", () => {
     window.setTimeout(() => {
