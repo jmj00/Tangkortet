@@ -237,10 +237,12 @@
     center / contain no-repeat;
 }
 
-/* --- Arter / Risiko / Før du går: a segmented control in the header --- */
+/* --- Arter / Risiko / Råd og regler: a segmented control in the header --- */
 #tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* "Råd og regler" is the longest label: a little more room keeps it on
+     one line in the narrow sidebar */
+  grid-template-columns: 1fr 1fr 1.45fr;
   gap: 2px;
   margin: 0.15rem var(--gutter) 0.5rem;
   padding: 2px;

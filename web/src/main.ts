@@ -191,7 +191,7 @@ function measureSearch(): void {
   measureSearch();
 }
 
-// --- tabs: Arter / Risiko / Før du går (a WAI-ARIA tablist) ---
+// --- tabs: Arter / Risiko / Råd og regler (a WAI-ARIA tablist) ---
 
 const tabButtons = [...document.querySelectorAll<HTMLButtonElement>("#tabs button")];
 

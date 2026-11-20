@@ -1,4 +1,4 @@
-// "Før du går" tab: the expert's checklist and advice, verbatim from the brief
+// "Råd og regler" tab: the expert's checklist and advice, verbatim from the brief
 // (§2, §4, §5; the brief itself is kept private). Marked "foreløbig" until the expert has
 // reviewed it as app text. Items the app helps with point to the Risiko tab.
 
