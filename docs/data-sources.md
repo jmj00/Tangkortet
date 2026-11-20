@@ -112,7 +112,7 @@ Third-party data keeps its own licence and is not restricted further.
 | `natural=beach` | 1,556 (ways, multipolygons, 10 nodes); 252 named; `surface` on about a third: sand 443, pebblestone 44, gravel 26, boulders 4, … | all |
 | `natural=sand` | 4,073 | 590 within 500 m of the coastline (the rest are sand pits and inland dunes) |
 | `wetland=saltmarsh` / `tidalflat` (with `natural=wetland`) | 572 / 99 | all |
-| `landuse=harbour` or `harbour=yes`; `leisure=marina` | 83; 554 | all (`leisure=marina` wins when both are set) |
+| `landuse=harbour`, `industrial=port` (Aarhus's terminals), `harbour=yes` or `seamark:type=harbour`; `leisure=marina` | 114 objects; 554 | all (`leisure=marina` wins when both are set) |
 | `man_made=pier` | 10,581 | 7,540 within 500 m of the coastline (the rest are mostly lake jetties). Bathing jetties are not tagged apart; a name with "badebro" (8) or `leisure=bathing_place` marks one |
 | `man_made=groyne` / `breakwater` | 3,163 / 1,440 | 3,124 / 1,417 (same coast rule) |
 | `natural=cliff` | 1,508 | 1,025 (same coast rule; inland ones are mostly gravel-pit edges) |

@@ -16,6 +16,8 @@ def test_classify():
     assert coast.classify({"leisure": "marina", "harbour": "yes"}) == "marina"
     assert coast.classify({"harbour": "yes"}) == "harbour"
     assert coast.classify({"landuse": "harbour"}) == "harbour"
+    assert coast.classify({"landuse": "industrial", "industrial": "port"}) == "harbour"
+    assert coast.classify({"seamark:type": "harbour", "leisure": "marina"}) == "marina"
     assert coast.classify({"man_made": "groyne"}) == "groyne"
     assert coast.classify({"man_made": "quay"}) is None
     assert coast.classify({"building": "yes"}) is None

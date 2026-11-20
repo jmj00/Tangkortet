@@ -5,7 +5,8 @@ the features that say what the shore is like and how to get to the water:
 
 * areas: ``natural=beach`` (with its ``surface``), ``natural=sand``, salt marsh
   and tidal flat (``natural=wetland`` + ``wetland=saltmarsh|tidalflat``),
-  harbours (``landuse=harbour`` or ``harbour=yes``) and marinas
+  harbours (``landuse=harbour``, ``industrial=port``, ``harbour=yes`` or
+  ``seamark:type=harbour``) and marinas
   (``leisure=marina``); beaches, harbours and marinas mapped as a node become
   points;
 * lines: the coastline (``natural=coastline``, land on its left), piers
@@ -71,6 +72,8 @@ FILTER_TAGS: tuple[tuple[str, str], ...] = (
     ("wetland", "saltmarsh"),
     ("wetland", "tidalflat"),
     ("landuse", "harbour"),
+    ("industrial", "port"),
+    ("seamark:type", "harbour"),
     ("harbour", "yes"),
     ("leisure", "marina"),
     ("man_made", "pier"),
@@ -84,8 +87,9 @@ Point = tuple[float, float]
 
 
 def classify(tags: Mapping[str, str]) -> str | None:
-    """The coast kind an object's tags describe, or None. A marina inside a
-    harbour often carries ``harbour=yes`` too, so ``leisure=marina`` wins."""
+    """The coast kind an object's tags describe, or None. A marina often
+    carries ``harbour=yes`` or ``seamark:type=harbour`` too, so
+    ``leisure=marina`` wins."""
     natural = tags.get("natural")
     if natural in ("coastline", "beach", "sand", "cliff"):
         return natural
@@ -96,7 +100,12 @@ def classify(tags: Mapping[str, str]) -> str | None:
         return man_made
     if tags.get("leisure") == "marina":
         return "marina"
-    if tags.get("landuse") == "harbour" or tags.get("harbour") == "yes":
+    if (
+        tags.get("landuse") == "harbour"
+        or tags.get("industrial") == "port"
+        or tags.get("harbour") == "yes"
+        or tags.get("seamark:type") == "harbour"
+    ):
         return "harbour"
     return None
 
