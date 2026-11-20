@@ -1,0 +1,1144 @@
+/* "Arter" tab: species list and species sheet (speciespanel.ts). Everything is
+   scoped to .spp / .spp-*; colours come from the tokens in style.css. Sizes are
+   in rem so the 150 % text setting scales them. Patterns follow Svampekortet's
+   specieslist / detail styles (624fb8b), adapted to seaweed. */
+
+.spp {
+  /* Algae group dots. Dark mode gets lighter tones so a dot keeps 3:1 against
+     the surface. The map keeps ALGAE_COLOR (layers.ts). */
+  --spp-brunalge: #8a5f1d;
+  --spp-rodalge: #b0405a;
+  --spp-gronalge: #3c8a3c;
+  --spp-radius: 10px;
+  /* Must match .tab's padding (style.css): the sticky bar and the fade reach
+     the scroller's edges through it. */
+  --spp-pad-top: 0.75rem;
+  --spp-pad-x: 1rem;
+  --spp-pad-bottom: 1rem;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  .spp {
+    --spp-brunalge: #c99b57;
+    --spp-rodalge: #e4849c;
+    --spp-gronalge: #74c274;
+  }
+}
+
+.spp p {
+  margin: 0;
+}
+
+.spp-sci {
+  font-style: italic;
+}
+
+.spp-dot {
+  flex: none;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.spp-dot[data-group="brunalge"] {
+  background: var(--spp-brunalge);
+}
+
+.spp-dot[data-group="rødalge"] {
+  background: var(--spp-rodalge);
+}
+
+.spp-dot[data-group="grønalge"] {
+  background: var(--spp-gronalge);
+}
+
+/* Small outlined status label: Invasiv, Foreløbig, Fra fund – afventer ekspert. */
+.spp-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: none;
+  padding: 0.05rem 0.5rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-style: normal;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+/* Invasive: calm (ink text), with a small warning-coloured dot. */
+.spp-tag--invasive {
+  color: var(--ink);
+  border-color: var(--border);
+  background: var(--bg);
+}
+
+.spp-tag--invasive::before {
+  content: "";
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.spp-tag--provisional,
+.spp-tag--data {
+  color: var(--provisional);
+}
+
+.spp-icon,
+.spp-search__icon,
+.spp-hint__icon,
+.spp-row__chevron,
+.spp-back__icon,
+.spp-warn__icon,
+.spp-info__icon,
+.spp-near__icon,
+.spp-look__chevron,
+.spp-state__icon,
+.spp-empty__icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.spp :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ===== list ===== */
+
+.spp-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.spp-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-bottom: 0.5rem;
+}
+
+.spp-search {
+  position: relative;
+}
+
+.spp-search__icon {
+  position: absolute;
+  left: 0.7rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.spp-search__input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.45rem 0.6rem 0.45rem 2.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--spp-radius);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: max(1rem, 16px); /* below 16px iOS zooms the page on focus */
+}
+
+.spp-search__input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+.spp-search__input:focus-visible {
+  outline-offset: 0;
+  background: var(--surface);
+}
+
+/* Group chips: one row, scrolls sideways on a narrow phone. */
+.spp-chips {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0 calc(-1 * var(--spp-pad-x));
+  padding: 0.3rem var(--spp-pad-x);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.spp-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.spp-chip {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.1rem;
+  padding: 0.2rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.87rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.spp-chip:hover {
+  background: var(--bg);
+}
+
+.spp-chip__n {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.spp-chip[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+  font-weight: 600;
+}
+
+.spp-chip[aria-pressed="true"] .spp-chip__n {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.spp-chip[aria-pressed="true"] .spp-dot {
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.spp-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 0.25rem;
+  min-height: 1.5rem;
+}
+
+.spp-sort-note {
+  flex-basis: 100%;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.spp-sort-note[hidden] {
+  display: none;
+}
+
+.spp-count {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.spp-count:focus {
+  outline: none; /* programmatic focus target only */
+}
+
+.spp-reset,
+.spp-empty__reset {
+  position: relative;
+  min-height: 1.75rem;
+  padding: 0 0.4rem;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.spp-reset[hidden] {
+  display: none;
+}
+
+.spp-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.spp-hint__icon {
+  margin-top: 0.05rem;
+  color: var(--muted);
+}
+
+.spp-hint__icon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.spp-hint[data-pinned="true"] .spp-hint__icon {
+  color: var(--accent);
+}
+
+/* --- rows --- */
+.spp-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+
+.spp-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  min-height: 3.25rem;
+  padding: 0.5rem 0.25rem 0.5rem 0.35rem;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.spp-row:hover {
+  background: var(--bg);
+}
+
+.spp-row:focus-visible {
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+.spp-row__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.spp-row__name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.45rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.spp-row__sub {
+  overflow: hidden;
+  font-size: 0.82rem;
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.spp-row__meta {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 0.82rem;
+  line-height: 1.3;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.spp-row__near {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.spp-row__near--none {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.spp-row__chevron {
+  color: var(--muted);
+  margin-left: -0.2rem;
+}
+
+.spp-row__chevron svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* Rows scroll in the tab; a short fade at the bottom edge says there is more. */
+.spp-fade {
+  position: sticky;
+  bottom: calc(-1 * var(--spp-pad-bottom));
+  height: 1.5rem;
+  margin: -1.5rem 0 0;
+  background: linear-gradient(to bottom, transparent, var(--surface) 90%);
+  pointer-events: none;
+}
+
+/* --- empty state --- */
+.spp-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 1.5rem 1rem 1.25rem;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--spp-radius);
+  margin-top: 0.25rem;
+}
+
+.spp-empty__icon {
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+
+.spp-empty__icon svg {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.spp-empty__title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.spp-empty__hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.spp-empty__reset {
+  margin-top: 0.35rem;
+}
+
+/* ===== species sheet ===== */
+
+.spp-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-bottom: 0.5rem;
+}
+
+/* The back button stays in view while the sheet scrolls. */
+.spp-nav {
+  position: sticky;
+  top: calc(-1 * var(--spp-pad-top));
+  z-index: 2;
+  margin: calc(-1 * var(--spp-pad-top)) calc(-1 * var(--spp-pad-x)) -0.75rem;
+  padding: 0.2rem calc(var(--spp-pad-x) - 0.5rem);
+  background: var(--surface);
+  border-bottom: 1px solid transparent;
+}
+
+.spp-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-height: 2.25rem;
+  padding: 0 0.6rem 0 0.25rem;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.spp-back:hover {
+  background: var(--bg);
+}
+
+.spp-back__icon svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.spp-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.spp-title {
+  margin: 0;
+  font-size: 1.35rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.spp-title:focus {
+  outline: none; /* programmatic focus target (tabindex -1) */
+}
+
+.spp-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.spp-subtitle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 0.45rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.spp-subtitle .spp-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+}
+
+.spp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  list-style: none;
+  margin: 0.3rem 0 0;
+  padding: 0;
+}
+
+.spp-name-note {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+/* --- "Vigtigt": the species warning, first and unmistakable --- */
+.spp-warn {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--warn) 55%, transparent);
+  border-left: 5px solid var(--warn);
+  border-radius: var(--spp-radius);
+  background: color-mix(in srgb, var(--warn) 9%, var(--surface));
+}
+
+.spp-warn__icon {
+  color: var(--warn);
+  margin-top: 0.05rem;
+}
+
+.spp-warn__icon svg {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+
+.spp-warn__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.spp-warn__title {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--warn);
+  text-transform: none;
+}
+
+.spp-warn p {
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+/* --- sections --- */
+.spp-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+.spp-sec__title {
+  display: block;
+  margin: 0;
+  font-size: 1.02rem;
+  line-height: 1.3;
+}
+
+.spp-note {
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.spp-none {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.spp-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.spp-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2.25rem;
+  padding: 0.15rem 0.55rem 0.15rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.84rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.spp-toggle:hover {
+  background: var(--bg);
+}
+
+.spp-toggle:has(input:checked) {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+}
+
+.spp-toggle:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.spp-toggle input {
+  margin: 0;
+  width: 0.95rem;
+  height: 0.95rem;
+  accent-color: var(--accent);
+}
+
+.spp-toggle input:focus-visible {
+  outline: none; /* the whole pill shows focus */
+}
+
+.spp-toggle__n {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Same marks as the map: filled = attached, ring = drift, faded = unknown. */
+/* Same colours as the list dots (3:1 in both themes) and the same idea as the
+   map marks: filled = attached, ring = drift, half-filled = unknown. The
+   unknown mark keeps a full-colour ring so it stays visible in dark mode. */
+.spp-swatch {
+  --c: var(--muted);
+  flex: none;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  background: var(--c);
+  border: 2px solid var(--c);
+}
+
+.spp-swatch[data-group="brunalge"] {
+  --c: var(--spp-brunalge);
+}
+
+.spp-swatch[data-group="rødalge"] {
+  --c: var(--spp-rodalge);
+}
+
+.spp-swatch[data-group="grønalge"] {
+  --c: var(--spp-gronalge);
+}
+
+.spp-toggle--drift .spp-swatch {
+  background: transparent;
+}
+
+.spp-toggle--unknown .spp-swatch {
+  background: color-mix(in srgb, var(--c) 35%, transparent);
+}
+
+.spp-near {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.spp-near[data-pinned="false"] {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.spp-near__icon {
+  margin-top: 0.1rem;
+  color: var(--accent);
+}
+
+.spp-near[data-pinned="false"] .spp-near__icon {
+  color: var(--muted);
+}
+
+.spp-near__icon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.spp-expert {
+  font-size: 0.86rem;
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+/* Expert fields: label + status on one line, the value below. */
+.spp-fields {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.spp-fields dt {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.spp-fields dt:not(:first-child) {
+  margin-top: 0.65rem;
+}
+
+.spp-fields dd {
+  margin: 0.1rem 0 0;
+}
+
+.spp-pending {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* The general note: neutral information, deliberately not a warning. */
+.spp-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.spp-info__icon svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.spp-info__icon {
+  margin-top: 0.1rem;
+}
+
+/* --- lookalikes --- */
+.spp-lead {
+  font-size: 0.9rem;
+}
+
+.spp-looks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.spp-look {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.4rem 0.5rem 0.4rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--spp-radius);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.spp-look:hover {
+  background: var(--bg);
+}
+
+.spp-look__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.spp-look__sci {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.spp-look__chevron {
+  color: var(--link);
+}
+
+.spp-look__chevron svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.spp-look__plain {
+  display: block;
+  padding: 0.4rem 0.7rem;
+  font-style: italic;
+}
+
+/* --- sources --- */
+.spp-sources {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.82rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.spp-license {
+  color: var(--muted);
+}
+
+.spp-more-sources summary {
+  min-height: 1.75rem;
+  display: list-item;
+  font-size: 0.85rem;
+  color: var(--link);
+  cursor: pointer;
+}
+
+.spp-more-sources[open] summary {
+  margin-bottom: 0.2rem;
+}
+
+.spp-gbif {
+  font-size: 0.85rem;
+}
+
+/* --- loading / error / offline --- */
+.spp-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  padding: 1rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--spp-radius);
+}
+
+.spp-state--loading {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
+  /* Appears only if loading takes a moment, so a quick load never flashes. */
+  animation: spp-appear 0.2s ease-out 0.3s both;
+}
+
+.spp-state__title {
+  font-weight: 600;
+}
+
+.spp-state--loading .spp-state__title {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.spp-state__text {
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.spp-state__icon {
+  color: var(--muted);
+}
+
+.spp-state--error .spp-state__icon {
+  color: var(--warn);
+}
+
+.spp-state__pulse {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: spp-pulse 1.1s ease-in-out infinite alternate;
+}
+
+.spp-btn {
+  margin-top: 0.35rem;
+  min-height: 2.5rem;
+  padding: 0.4rem 1.1rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (prefers-color-scheme: dark) {
+  .spp-btn {
+    color: #0d1a1b;
+  }
+}
+
+@keyframes spp-appear {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes spp-pulse {
+  from {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spp-state--loading,
+  .spp-state__pulse {
+    animation: none;
+  }
+}
+
+/* Touch: every control is a 44px target (by pointer, not by width). */
+@media (pointer: coarse) {
+  .spp-chip::after,
+  .spp-toggle::after {
+    content: "";
+    position: absolute;
+    inset: -0.35rem -0.1rem;
+  }
+
+  .spp-chip,
+  .spp-toggle {
+    min-height: 2.25rem;
+  }
+
+  .spp-toggles {
+    gap: 0.6rem 0.3rem;
+  }
+
+  .spp-reset::after {
+    content: "";
+    position: absolute;
+    inset: -0.5rem -0.25rem;
+  }
+
+  .spp-empty__reset,
+  .spp-back,
+  .spp-btn,
+  .spp-more-sources summary {
+    min-height: 2.75rem;
+  }
+
+  .spp-more-sources summary {
+    display: flex;
+    align-items: center;
+  }
+
+  .spp-gbif a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+  }
+}
+
+/* Narrow phones: the row gives up its chevron before it gives up text. */
+@media (max-width: 379.98px) {
+  .spp-row__chevron {
+    display: none;
+  }
+}
+
+/* "Kan forveksles med 2 arter ↓": a link-like tag down to Forveksling. */
+.spp-tag--jump {
+  position: relative;
+  color: var(--link);
+  background: none;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.spp-tag--jump:hover {
+  background: var(--bg);
+}
+
+.spp-sec__title:focus {
+  outline: none; /* programmatic focus target (tabindex -1) */
+}
+
+/* Scrolled to from the jump link: clear the sticky back bar. */
+.spp-sec__title {
+  scroll-margin-top: 3rem;
+}
+
+@media (pointer: coarse) {
+  .spp-tag--jump::after {
+    content: "";
+    position: absolute;
+    inset: -0.8rem -0.2rem;
+  }
+}
+
+[data-spp-scrolled] .spp-nav {
+  box-shadow: 0 1px 0 var(--border);
+}
+
+/* A chip cut off at the right edge fades out, hinting the row scrolls. */
+.spp-chips {
+  mask-image: linear-gradient(to right, #000 calc(100% - 1.25rem), transparent);
+}
+
+.spp-hint[hidden] {
+  display: none;
+}
+
+/* Room for the fade at the end, so it never covers the last row. */
+.spp-results {
+  padding-bottom: 1.5rem;
+}
+
+/* A chip with no species in the current search: still usable, visibly empty. */
+.spp-chip[data-empty]:not([aria-pressed="true"]) {
+  color: var(--muted);
+  border-style: dashed;
+}
+
+.spp-chip[data-empty]:not([aria-pressed="true"]) .spp-dot {
+  opacity: 0.45;
+}
+
+/* Back bar from a lookalike: "‹ Tilbage til Almindelig søsalat" + "Alle arter". */
+.spp-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.spp-back {
+  min-width: 0;
+}
+
+.spp-back__label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.spp-home {
+  position: relative;
+  flex: none;
+  margin-left: auto;
+  min-height: 2.25rem;
+  padding: 0 0.5rem;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.spp-home:hover {
+  background: var(--bg);
+}
+
+/* --- density: short sheets and large text (set from the scroller's height) ---
+   Search stays on top; the no-pin hint goes, the toolbar and rows tighten, so
+   at least one or two rows show. "tiny" also drops the chips. */
+.spp-list[data-density="compact"] .spp-toolbar,
+.spp-list[data-density="tiny"] .spp-toolbar {
+  gap: 0.25rem;
+  padding-bottom: 0.3rem;
+}
+
+.spp-list[data-density="compact"] .spp-hint,
+.spp-list[data-density="tiny"] .spp-hint,
+.spp-list[data-density="tiny"] .spp-chips,
+.spp-list[data-density="tiny"] .spp-sort-note {
+  display: none;
+}
+
+.spp-list[data-density="compact"] .spp-chips {
+  padding-block: 0.15rem;
+}
+
+.spp-list[data-density="compact"] .spp-chip {
+  min-height: 1.9rem;
+  padding-block: 0.1rem;
+}
+
+.spp-list[data-density="compact"] .spp-sort-note {
+  flex-basis: auto;
+  margin-left: 0.35rem;
+}
+
+.spp-list[data-density="compact"] .spp-row,
+.spp-list[data-density="tiny"] .spp-row {
+  min-height: 2.9rem;
+  padding-block: 0.3rem;
+}
+
+.spp-list[data-density="compact"] .spp-row__sub,
+.spp-list[data-density="tiny"] .spp-row__sub {
+  font-size: 0.78rem;
+}
+
+@media (pointer: coarse) {
+  .spp-list[data-density="compact"] .spp-chip::after {
+    inset: -0.45rem -0.1rem;
+  }
+
+  .spp-home {
+    min-height: 2.75rem;
+  }
+}

@@ -21,35 +21,115 @@
   <body>
     <div id="app" data-tab="arter">
       <h1 class="sr-only">Tangkortet – tang langs de danske kyster</h1>
-      <form id="search" autocomplete="off">
+      <!-- Place search (placesearch.ts): shown once wired up, so a page whose
+           script fails never offers a field that does nothing. -->
+      <form id="search" role="search" autocomplete="off" hidden>
         <input
           id="q"
           type="search"
-          placeholder="Søg adresse i Danmark…"
-          aria-label="Søg adresse"
+          enterkeyhint="search"
+          spellcheck="false"
+          placeholder="Søg by, postnummer eller strand…"
+          aria-label="Søg by, postnummer eller strand"
           role="combobox"
           aria-expanded="false"
           aria-controls="results"
           aria-autocomplete="list"
+          aria-describedby="search-status"
         />
-        <ul id="results" role="listbox" aria-label="Adresseforslag"></ul>
+        <ul id="results" role="listbox" aria-label="Forslag til byer og strande"></ul>
+        <div id="search-status" class="search-status is-empty" role="status">
+          <span class="search-status__text"></span>
+          <button type="button" class="search-status__retry" hidden>Prøv igen</button>
+        </div>
       </form>
       <div id="map"></div>
+      <!-- A message over the map (the locate button: refused, or no fix). The
+           status line is always rendered, so its text is announced; the box
+           shows only with data-open (main.ts showMapStatus). -->
+      <div id="map-status">
+        <p class="map-status__text" role="status"></p>
+        <button type="button" class="map-status__close" aria-label="Luk besked" hidden>×</button>
+      </div>
+      <!-- The sheet (phone) / sidebar (desktop): everything that is not the
+           map. Behaviour in src/sheet.ts, layout in src/style.css. -->
       <aside id="panel" aria-label="Arter, risiko og tjekliste">
-        <p id="readout" aria-live="polite">Tryk på kortet ved kysten for at sætte en nål.</p>
-        <nav id="tabs" role="tablist" aria-label="Visning">
-          <button type="button" role="tab" data-tab="arter" aria-selected="true">Arter</button>
-          <button type="button" role="tab" data-tab="risiko" aria-selected="false">Risiko</button>
-          <button type="button" role="tab" data-tab="guide" aria-selected="false">
-            Før du går
-          </button>
-        </nav>
-        <section id="tab-arter" class="tab" role="tabpanel">Indlæser…</section>
-        <section id="tab-risiko" class="tab" role="tabpanel" hidden></section>
-        <section id="tab-guide" class="tab" role="tabpanel" hidden></section>
-        <footer>
-          <button id="about" type="button" class="link">Om Tangkortet og data</button>
-        </footer>
+        <div id="sheet-header">
+          <button id="sheet-handle" type="button" aria-controls="sheet-body"></button>
+          <div id="brand" aria-hidden="true">
+            <!-- the two strands and the wave of public/favicon.svg -->
+            <svg class="brand-mark" viewBox="12 10 40 40" focusable="false">
+              <path class="brand-mark__wave" d="M8 46c6-4 10-4 16 0s10 4 16 0 10-4 16 0" />
+              <path d="M32 44C26 34 38 26 31 14M32 44c6-8 0-14 6-22" />
+            </svg>
+            <span class="brand-name">Tangkortet</span>
+          </div>
+          <p id="readout" aria-live="polite">Tryk på kortet ved kysten for at sætte en nål.</p>
+          <nav id="tabs" role="tablist" aria-label="Visning">
+            <button
+              type="button"
+              role="tab"
+              id="tabbtn-arter"
+              data-tab="arter"
+              aria-controls="tab-arter"
+              aria-selected="true"
+            >
+              Arter
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="tabbtn-risiko"
+              data-tab="risiko"
+              aria-controls="tab-risiko"
+              aria-selected="false"
+              tabindex="-1"
+            >
+              Risiko
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="tabbtn-guide"
+              data-tab="guide"
+              aria-controls="tab-guide"
+              aria-selected="false"
+              tabindex="-1"
+            >
+              Før du går
+            </button>
+          </nav>
+        </div>
+        <div id="sheet-body">
+          <section
+            id="tab-arter"
+            class="tab"
+            role="tabpanel"
+            aria-labelledby="tabbtn-arter"
+            tabindex="-1"
+          >
+            Indlæser…
+          </section>
+          <section
+            id="tab-risiko"
+            class="tab"
+            role="tabpanel"
+            aria-labelledby="tabbtn-risiko"
+            tabindex="-1"
+            hidden
+          ></section>
+          <section
+            id="tab-guide"
+            class="tab"
+            role="tabpanel"
+            aria-labelledby="tabbtn-guide"
+            tabindex="-1"
+            hidden
+          ></section>
+          <footer>
+            <button id="about" type="button" class="link">Om Tangkortet og data</button>
+          </footer>
+        </div>
       </aside>
     </div>
     <script type="module" src="/src/main.ts"></script>

@@ -54,6 +54,34 @@ and come in EPSG:25832 (MiljøGIS) unless noted.
 As in Svampekortet (Skærmkort WMS, Adressevælgeren, both Datafordeler API-Key),
 needing **Tangkortet's own** key. Not yet requested.
 
+Until then (and alongside it) the search box finds places from the app's own
+list, `web/src/data/places.json`, built by `py -m pipeline.places`
+(2026-11-20: 488 kB, **154 kB gzipped**, fetched lazily on the box's first
+focus as a hashed build asset the service worker caches):
+
+| Part | Source | Count | Licence |
+|---|---|---|---|
+| Towns, parts of towns, holiday-home areas | Danske Stednavne `sn:Bebyggelse` (types `by`, `bydel`, `sommerhusområde`), Klimadatastyrelsen | 10,528 | **CC BY 4.0** (Klimadatastyrelsen's terms for free data), credit "Indeholder data fra Klimadatastyrelsen" |
+| Postal districts (number, name, extent) | DAGI `dagi10:Postnummerinddeling`, Klimadatastyrelsen | 1,089 | **CC BY 4.0**, as above |
+| Named coastal bathing sites | MiljøGIS `vp4basis2026:vp4_ba_26_badevand` (the risk layer above), `coastalBathingWater` only; names tidied from capitals ("VEMMETOFTE STRAND" → "Vemmetofte Strand"), each given the postal district of the nearest town | 924 | **CC BY 4.0** (MST INSPIRE record) |
+
+The towns and districts need a Datafordeler key to fetch, which Tangkortet
+lacks, so they are taken from **Svampekortet's generated `places.json`**
+(commit 624fb8b, built 2026-11-19 by its `web/scripts/gen-places.mjs` from the
+two WFS services above): the file is public data under CC BY 4.0, and no key,
+secret or code path of Svampekortet is used at runtime. `pipeline.places`
+reads it with `--towns <path>`; without `--towns` it keeps the towns and
+districts already in the output and only refreshes the bathing sites (no key
+needed). Once Tangkortet has its own key, port the WFS fetch so the list is
+rebuilt from source. Postal districts change a few times a year and Stednavne
+has been frozen since 2025-09: rebuild at least yearly.
+
+Adressevælgeren behaviour (no public docs; Svampekortet's probe, 2026-11-19):
+results come sorted by postal number, not relevance; spelling is matched
+phonetically; a postal number after the street narrows the search, a town
+name does not. The app therefore ranks places itself and turns a town after
+an address into its postal number (`web/src/placeindex.ts`).
+
 ## Licences
 
 **This project's own material.** Code: PolyForm Strict 1.0.0 (`LICENSE`).
@@ -70,6 +98,7 @@ Third-party data keeps its own licence and is not restricted further.
 | MiljøGIS `vp3_2e2025_vandloeb_samlet` (named watercourses) + Miljøportalen `dai:bes_vandloeb` (protected watercourses) | live stream query at the pin (200 m, the expert's stream-mouth rule) | same publishers as above | nothing stored |
 | DKJord via Vejdirektoratet's ArcGIS mirror | live V1/V2 query at the pin | terms not stated on the service; **ask before launch** | nothing stored |
 | DMI metObs | live rain and wind | open data, credit "Data fra DMI" | nothing stored |
+| Klimadatastyrelsen: Danske Stednavne and DAGI (via Svampekortet's generated list) | towns and postal districts in the place search | **CC BY 4.0**, credit "Indeholder data fra Klimadatastyrelsen"; **add the credit line to the About dialog** | `web/src/data/places.json` |
 | OpenStreetMap | basemap | ODbL, credit "© OpenStreetMap-bidragydere" | nothing stored |
 | Literature (Holdt et al. and others) | accumulation proposals; kainic acid in søl (Jørgensen & Olesen 2018, doi:10.1080/19393210.2018.1462258) | cited by DOI; only short facts and numbers are reproduced | `docs/literature-accumulation.md` |
 | badevand.dk (DHI) | — | reCAPTCHA-protected, **not used**; the app only links to it | nothing stored |

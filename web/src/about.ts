@@ -36,6 +36,7 @@ export function openAbout(manifest: Manifest | null): void {
         extLink("https://kort.vd.dk", "Vejdirektoratets kortserver"),
       ),
       h("li", {}, "Naturbeskyttelse: Danmarks Miljøportal"),
+      h("li", {}, "Byer og postnumre: Indeholder data fra Klimadatastyrelsen (CC BY 4.0)"),
     ),
     manifest ? h("p", { class: "note" }, `Dataversion ${manifest.version}`) : null,
     h("form", { method: "dialog" }, h("button", { type: "submit", class: "primary" }, "Luk")),

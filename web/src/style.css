@@ -11,7 +11,6 @@
   --link: #1a5f67;
   --warn: #a8452a;
   --provisional: #9a5b00;
-  --sheet-h: 46dvh;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -64,31 +63,6 @@ a {
   color: var(--link);
 }
 
-#app {
-  position: relative;
-  height: 100dvh;
-}
-
-#map {
-  position: absolute;
-  inset: 0 0 var(--sheet-h) 0;
-}
-
-/* --- address search (from Svampekortet) --- */
-#search {
-  position: absolute;
-  z-index: 5;
-  top: max(0.75rem, env(safe-area-inset-top));
-  left: 0.75rem;
-  right: 3.5rem;
-  max-width: 26rem;
-  margin: 0;
-}
-
-#search[hidden] {
-  display: none;
-}
-
 #q {
   width: 100%;
   padding: 0.65rem 0.85rem;
@@ -128,87 +102,6 @@ a {
 #results li:hover,
 #results li.is-active {
   background: var(--bg);
-}
-
-/* --- panel: bottom sheet on phones, side panel on desktop --- */
-#panel {
-  position: absolute;
-  z-index: 3;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: var(--sheet-h);
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  border-radius: 14px 14px 0 0;
-  box-shadow: 0 -4px 20px rgb(0 0 0 / 0.16);
-  padding-bottom: env(safe-area-inset-bottom);
-}
-
-@media (min-width: 760px) {
-  :root {
-    --sheet-h: 0px;
-  }
-  #map {
-    inset: 0 400px 0 0;
-  }
-  #panel {
-    top: 0;
-    left: auto;
-    width: 400px;
-    height: auto;
-    border-top: none;
-    border-left: 1px solid var(--border);
-    border-radius: 0;
-    box-shadow: none;
-  }
-}
-
-#readout {
-  margin: 0;
-  padding: 0.6rem 1rem 0.2rem;
-  font-size: 0.82rem;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-#tabs {
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.3rem 0.75rem 0;
-  border-bottom: 1px solid var(--border);
-}
-
-#tabs button {
-  flex: 1;
-  font: inherit;
-  font-weight: 600;
-  padding: 0.5rem 0.3rem;
-  border: none;
-  border-bottom: 3px solid transparent;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-#tabs button[aria-selected="true"] {
-  color: var(--ink);
-  border-bottom-color: var(--accent);
-}
-
-.tab {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  padding: 0.75rem 1rem 1rem;
-}
-
-#panel footer {
-  border-top: 1px solid var(--border);
-  padding: 0.4rem 1rem;
 }
 
 button.link {
@@ -275,11 +168,6 @@ p {
   color: var(--provisional);
 }
 
-.pending {
-  color: var(--muted);
-  font-style: italic;
-}
-
 .dot {
   flex: none;
   width: 0.75rem;
@@ -287,117 +175,13 @@ p {
   border-radius: 50%;
 }
 
-/* --- species list --- */
-.rows,
+/* --- plain lists --- */
 .groups,
 .plain,
 .checklist {
   list-style: none;
   margin: 0;
   padding: 0;
-}
-
-.row {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.55rem 0.2rem;
-  font: inherit;
-  text-align: left;
-  color: inherit;
-  background: none;
-  border: none;
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-}
-
-.row:hover {
-  background: var(--bg);
-}
-
-.row__main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.row__name {
-  font-weight: 600;
-}
-
-.row__sci {
-  font-size: 0.82rem;
-  font-style: italic;
-  color: var(--muted);
-}
-
-.row__meta {
-  font-size: 0.82rem;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-/* --- species sheet --- */
-.sheet section,
-.sheet .field {
-  margin: 0.9rem 0;
-}
-
-.sci {
-  color: var(--muted);
-  font-style: italic;
-  margin-top: 0;
-}
-
-.back {
-  font: inherit;
-  font-size: 0.85rem;
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--link);
-  cursor: pointer;
-}
-
-.toggles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem 0.9rem;
-}
-
-.toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.88rem;
-  cursor: pointer;
-}
-
-.swatch {
-  width: 0.8rem;
-  height: 0.8rem;
-  border-radius: 50%;
-  background: var(--c);
-  border: 2px solid var(--c);
-}
-
-.toggle--drift .swatch {
-  background: transparent;
-}
-
-.toggle--unknown .swatch {
-  opacity: 0.4;
-}
-
-.sources ul {
-  list-style: none;
-  padding: 0;
-  font-size: 0.85rem;
-}
-
-.license {
-  color: var(--muted);
 }
 
 /* --- risk --- */
@@ -573,11 +357,6 @@ button.primary {
   cursor: pointer;
 }
 
-/* MapLibre controls clear the search box on phones */
-.maplibregl-ctrl-top-right {
-  top: env(safe-area-inset-top);
-}
-
 /* --- traffic light (ADR-0005) --- */
 .verdict {
   --light: var(--muted);
@@ -656,44 +435,20 @@ button.primary {
   font-size: 0.85rem;
 }
 
-.expert-note {
-  font-size: 0.86rem;
-  background: color-mix(in srgb, var(--accent) 9%, transparent);
-  border-left: 3px solid var(--accent);
-  padding: 0.45rem 0.6rem;
-  border-radius: 0 6px 6px 0;
-}
+/* Fingers need room: 44 px targets in the risk panel on a touch screen. */
+@media (pointer: coarse) {
+  .radius button {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
 
-/* --- species: warnings, invasive, lookalikes (expert round 2) --- */
-.warning-box {
-  border: 1px solid var(--warn);
-  border-left-width: 4px;
-  border-radius: 8px;
-  padding: 0.55rem 0.75rem;
-  margin: 0.7rem 0;
-  background: color-mix(in srgb, var(--warn) 8%, transparent);
-}
+  .group summary,
+  .verdict__rules summary {
+    min-height: 2.75rem;
+  }
 
-.warning-box h3 {
-  color: var(--warn);
-  margin: 0 0 0.2rem;
-}
-
-.warning-box p {
-  margin: 0.2rem 0;
-  font-size: 0.9rem;
-}
-
-.badge--invasive {
-  color: var(--warn);
-  margin-left: 0.35rem;
-  vertical-align: middle;
-}
-
-.row__name--sci {
-  font-style: italic;
-}
-
-.lookalikes {
-  font-size: 0.88rem;
+  /* padding, not flex: a flex summary loses its ▶ marker */
+  .verdict__rules summary {
+    padding-block: 0.6rem;
+  }
 }

@@ -1,0 +1,199 @@
+/* The place search (placesearch.ts, addresscombo.ts). Where the field sits is
+   the shell's layout (shell.css #search); this file styles what is inside it:
+   the field, the suggestions and the message under them. Sizes in rem so the
+   field grows with the reader's text size. */
+
+#q {
+  min-height: 2.75rem;
+  padding: 0.6rem 0.85rem 0.6rem 2.6rem;
+  font-size: 1rem; /* 16px or more: below this iOS zooms the page on focus */
+  line-height: 1.3;
+  /* a placeholder too long for large text ends in "…", not mid-word */
+  text-overflow: ellipsis;
+  background: var(--surface)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235b6b6c' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5l5 5'/%3E%3C/svg%3E")
+    no-repeat 0.8rem 50% / 1.15rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  #q {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2393a5a6' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5l5 5'/%3E%3C/svg%3E");
+  }
+}
+
+#q::placeholder {
+  color: var(--muted);
+  opacity: 1;
+  text-overflow: ellipsis;
+}
+
+#q:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* --- the suggestions ----------------------------------------------------- */
+#results {
+  margin-top: 0.375rem;
+  padding: 0.25rem;
+  max-height: min(55dvh, 26rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 10px;
+}
+
+#results li {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 2.75rem;
+  padding: 0.45rem 0.65rem;
+  border-top: none;
+  border-radius: 7px;
+  line-height: 1.3;
+}
+
+#results li + li[role="option"] {
+  margin-top: 1px;
+}
+
+#results li:hover,
+#results li.is-active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+#results li.is-active {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.opt-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.opt-name {
+  font-size: 1rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+#results li[data-kind="address"] .opt-name {
+  font-weight: 400;
+}
+
+.opt-meta {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.place-icon {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--accent);
+}
+
+#results li[data-kind="address"] .place-icon {
+  color: var(--muted);
+}
+
+/* "Ingen Hovedgaden 1 i Rold – adresser andre steder:" above addresses found
+   elsewhere than in the town typed. A line, not a choice. */
+#results li.results-note {
+  min-height: 0;
+  margin-top: 0.25rem;
+  padding: 0.45rem 0.65rem 0.2rem;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  cursor: default;
+  background: none;
+}
+
+/* --- what became of a search with nothing (or little) to list ------------ */
+.search-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.375rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.12);
+}
+
+.search-status__retry[hidden] {
+  display: none;
+}
+
+/* Empty: out of sight but still in the page, so the screen reader keeps
+   listening to it (a live region shown and filled at once may go unread). */
+.search-status.is-empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+  box-shadow: none;
+  white-space: nowrap;
+}
+
+.search-status__text {
+  flex: 1 1 8rem; /* "Prøv igen" stays on the same line on a phone */
+}
+
+.search-status[data-state="failed"],
+.search-status[data-state="offline"] {
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+  background: color-mix(in srgb, var(--warn) 9%, var(--surface));
+}
+
+.search-status__retry {
+  flex: none;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--link);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.search-status__retry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Fingers need room: 44 px targets on a touch screen, whatever its width. */
+@media (pointer: coarse) {
+  #q {
+    min-height: 2.75rem;
+  }
+
+  #results li[role="option"] {
+    min-height: 3rem;
+  }
+
+  .search-status__retry {
+    min-height: 2.75rem;
+  }
+}
+
+/* A short landscape phone: keep the list above the keyboard and the sheet. */
+@media (max-height: 480px) {
+  #results {
+    max-height: calc(100dvh - 5.5rem);
+  }
+}
