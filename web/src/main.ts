@@ -18,7 +18,7 @@ import { initErrorMonitoring } from "./sentry";
 import { initSheet } from "./sheet";
 import { SpeciesPanel } from "./speciespanel";
 import { initStart } from "./start";
-import { TAP_FLY_ZOOM, tapAgainMessage, tapIntent } from "./tapzoom";
+import { TAP_FLY_ZOOM, pointerKind, tapAgainMessage, tapIntent } from "./tapzoom";
 import { landingTarget, type Landing } from "./startstate";
 import type { Manifest } from "./types";
 
@@ -373,6 +373,7 @@ function framePin(center: [number, number], zoom: number): Promise<void> {
 
 // --- messages over the map (the locate button's refusals, a far-out tap) ---
 const finePointer = window.matchMedia("(hover: hover) and (pointer: fine)");
+const coarsePointer = window.matchMedia("(pointer: coarse)");
 let statusTimer: number | undefined;
 const mapStatusText = mapStatus.querySelector(".map-status__text") as HTMLElement;
 const mapStatusClose = mapStatus.querySelector(".map-status__close") as HTMLButtonElement;
@@ -430,8 +431,9 @@ mapReady
       // step asks for a species, not a place). From far out a tap means
       // "about here": fly in, and let a second tap set the pin.
       if (!start.allowsMapPin()) return;
-      if (tapIntent(map.getZoom()) === "zoom-in") {
-        void flyTo([e.lngLat.lng, e.lngLat.lat], TAP_FLY_ZOOM);
+      const pointer = pointerKind(coarsePointer.matches); // touch needs a closer view
+      if (tapIntent(map.getZoom(), pointer) === "zoom-in") {
+        void flyTo([e.lngLat.lng, e.lngLat.lat], TAP_FLY_ZOOM[pointer]);
         if (!start.sayZoomedIn())
           showMapStatus(tapAgainMessage(finePointer.matches ? "klik" : "tryk"));
         return;

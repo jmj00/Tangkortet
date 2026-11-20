@@ -463,8 +463,8 @@
 }
 
 /* Short screens and large text (start.ts sets data-compact): the safety line
-   is one line, the verbatim text cut with "…", which opens in full on a tap;
-   the guide link sits on the same line. */
+   is two lines at most, the verbatim text cut with "…", which opens in full
+   on a tap; the guide link sits beside it. */
 .start__disclaimer-toggle {
   display: none;
 }
@@ -488,18 +488,25 @@
   display: block;
   min-width: 0;
   min-height: 2.75rem;
-  padding: 0;
-  overflow: hidden;
+  padding: 0.2rem 0;
   border: none;
   background: none;
   color: var(--ink);
   font: inherit;
+  line-height: 1.35;
   text-align: left;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+/* the clamp is on the text, so the button keeps its 44px around it */
+#start[data-compact] .start__disclaimer-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
   text-decoration: underline dotted;
   text-underline-offset: 3px;
-  cursor: pointer;
 }
 
 #start[data-compact] .start__safety[data-expanded] {
@@ -508,7 +515,12 @@
 
 #start[data-compact] .start__safety[data-expanded] .start__disclaimer-toggle {
   padding: 0.6rem 0;
-  white-space: normal;
+}
+
+#start[data-compact] .start__safety[data-expanded] .start__disclaimer-text {
+  display: block;
+  -webkit-line-clamp: none;
+  line-clamp: none;
   text-decoration: none;
 }
 

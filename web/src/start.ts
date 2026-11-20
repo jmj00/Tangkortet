@@ -152,22 +152,26 @@ export function initStart(deps: StartDeps): StartScreen {
   (document.getElementById("start-welcome") as HTMLElement).replaceChildren(invitation);
   (document.getElementById("start-disclaimer") as HTMLElement).textContent = WELCOME_DISCLAIMER;
 
-  // On short screens and at large text the safety line is cut to one line;
+  // On short screens and at large text the safety line is cut to two lines;
   // the same verbatim text opens in full on a tap.
   const safety = root.querySelector<HTMLElement>(".start__safety") as HTMLElement;
   const disclaimerToggle = document.getElementById("start-disclaimer-toggle") as HTMLButtonElement;
-  disclaimerToggle.textContent = WELCOME_DISCLAIMER;
-  disclaimerToggle.addEventListener("click", () => {
-    const open = disclaimerToggle.getAttribute("aria-expanded") !== "true";
+  disclaimerToggle.replaceChildren(
+    h("span", { class: "start__disclaimer-text" }, WELCOME_DISCLAIMER),
+  );
+  const expandSafety = (open: boolean): void => {
     disclaimerToggle.setAttribute("aria-expanded", String(open));
     safety.toggleAttribute("data-expanded", open);
-  });
+  };
+  disclaimerToggle.addEventListener("click", () =>
+    expandSafety(disclaimerToggle.getAttribute("aria-expanded") !== "true"),
+  );
   const fitSafety = (): void => {
     const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-    root.toggleAttribute(
-      "data-compact",
-      compactSafety(app.clientHeight || window.innerHeight, rem),
-    );
+    const compact = compactSafety(app.clientHeight || window.innerHeight, rem);
+    if (compact === root.hasAttribute("data-compact")) return;
+    root.toggleAttribute("data-compact", compact);
+    expandSafety(false); // a new layout starts cut again
   };
   fitSafety();
   window.addEventListener("resize", fitSafety);
@@ -189,6 +193,7 @@ export function initStart(deps: StartDeps): StartScreen {
   }
 
   function setView(next: StartView | null): void {
+    if (next !== view) expandSafety(false);
     view = next;
     if (next) {
       app.dataset.start = next;
