@@ -362,3 +362,77 @@ describe("nearestPlace with its town proper", () => {
     expect(nearestPlace(index, [10.0, 56.025])).toMatchObject({ name: "Bugten", town: "Havneby" });
   });
 });
+
+describe("official coastal names (Danske Stednavne)", () => {
+  it("finds beaches, harbours, landforms and waters with their kind", () => {
+    expect(first("Helgenæs")).toMatchObject({ text: "Helgenæs", kind: "landform" });
+    expect(first("Helgenæs").meta).toBe("Halvø · 8420 Knebel");
+    // the bathing site and the harbour of that name, 360 m apart: one entry
+    const marina = matchPlaces(real, "Egå Marina").filter((s) => s.text === "Egå Marina");
+    expect(marina).toHaveLength(1);
+    expect(marina[0].meta).toBe("Badested og lystbådehavn · 8250 Egå");
+    expect(texts("Egå").filter((t) => t === "Egå Marina")).toHaveLength(1);
+    const kalo = matchPlaces(real, "Kalø");
+    expect(kalo[0]).toMatchObject({ text: "Kalø Vig", kind: "water", meta: "Bugt" });
+    expect(kalo.map((s) => s.text)).toContain("Kaløvig Bådehavn");
+  });
+
+  it("puts the town's own harbour before islets that only begin with its name", () => {
+    const ronne = texts("Rønne");
+    expect(ronne[0]).toBe("Rønne");
+    expect(ronne).toContain("Rønne Havn");
+    const islet = ronne.indexOf("Rønnen");
+    if (islet >= 0) expect(ronne.indexOf("Rønne Havn")).toBeLessThan(islet);
+  });
+
+  it("finds Århus Bugt spelled the Aarhus way, zoomed out to the bay", () => {
+    const s = first("Aarhus Bugt");
+    expect(s).toMatchObject({ text: "Århus Bugt", kind: "water" });
+    expect(s.zoom).toBeLessThan(10);
+  });
+
+  it("keeps the town first for a town's name", () => {
+    expect(first("Aarhus").text).toBe("Aarhus");
+    expect(isPlaceName(real, "Kalø Vig")).toBe(true);
+  });
+});
+
+describe("nearestPlace with landforms", () => {
+  const index = buildPlaceIndex({
+    postal: [],
+    towns: [["Bystad", 10.0, 56.0, 0.5, -1, 0]],
+    coast: [],
+    names: [
+      ["Prøve Pynt", 10.0, 56.03, 0, -1, "pynt"],
+      ["Holmø", 10.2, 56.0, 1.0, -1, "ø"],
+      ["Storø", 10.6, 56.0, 20, -1, "ø"],
+      ["Prøve Bugt", 10.0, 56.1, 5, -1, "bugt"],
+      ["Prøve Havn", 10.4, 56.0, 0.1, -1, "lystbådehavn"],
+    ],
+  });
+
+  it("names a landform nearer than any town", () => {
+    expect(nearestPlace(index, [10.0, 56.032])).toMatchObject({
+      name: "Prøve Pynt",
+      kind: "landform",
+    });
+    // nearer Bystad's edge than the point
+    expect(nearestPlace(index, [10.0, 56.008])?.name).toBe("Bystad");
+  });
+
+  it("is on an island inside it", () => {
+    expect(nearestPlace(index, [10.205, 56.001])).toMatchObject({ name: "Holmø", on: true });
+  });
+
+  it("names no island as large as Fyn, and no water", () => {
+    expect(nearestPlace(index, [10.6, 56.0])?.name).not.toBe("Storø");
+    expect(nearestPlace(index, [10.0, 56.1])?.name).not.toBe("Prøve Bugt");
+  });
+
+  it("names a harbour as it names a bathing site", () => {
+    expect(nearestPlace(index, [10.401, 56.0])).toMatchObject({
+      name: "Prøve Havn",
+      kind: "coast",
+    });
+  });
+});

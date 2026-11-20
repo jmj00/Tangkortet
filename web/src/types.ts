@@ -14,6 +14,8 @@ export interface Attribution {
   photos?: string;
   /** The OpenStreetMap coast cells (ODbL); absent in older payloads. */
   coast?: string;
+  /** Danske Stednavne (CC BY 4.0); absent in older payloads. */
+  names?: string;
 }
 
 export interface SpeciesSummary {
@@ -69,6 +71,31 @@ export interface Manifest {
   risk: RiskIndex | null;
   /** Absent in payloads from before the coast cells. */
   coast?: CoastIndex | null;
+  /** Absent in payloads from before the names cells. */
+  names?: NamesIndex | null;
+}
+
+/** Official coastal place names, Danske Stednavne (pipeline/ingest/stednavne.py). CC BY 4.0. */
+export interface NamesIndex {
+  cell_deg: number;
+  cells: string[];
+  coverage: string[] | null;
+  source: string;
+  license: string;
+  /** https://creativecommons.org/licenses/by/4.0/ */
+  license_url?: string;
+  fetched?: string | null;
+}
+
+/** `[id, kind, type, coords, name, area_ha?]`: kind the Stednavne type
+ * ("strand", "lystbådehavn", "pynt", "bugt", "tørtVedLavvande", "havbad",
+ * ...); type "p" (coords `[x, y]`), "l" (delta-encoded as the coast cells) or
+ * "a" (coords a list of delta-encoded rings, even-odd); area_ha the whole
+ * area's size. A water is clipped to the cell; it keeps its id everywhere. */
+export type NameRow = [number, string, "p" | "l" | "a", number[] | number[][], string, number?];
+
+export interface NameCell {
+  features: NameRow[];
 }
 
 /** The OpenStreetMap coast cells (pipeline/ingest/coast.py). ODbL. */

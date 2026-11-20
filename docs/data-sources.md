@@ -56,7 +56,7 @@ needing **Tangkortet's own** key. Not yet requested.
 
 Until then (and alongside it) the search box finds places from the app's own
 list, `web/src/data/places.json`, built by `py -m pipeline.places`
-(2026-11-20: 488 kB, **154 kB gzipped**, fetched lazily on the box's first
+(2026-11-20: 625 kB, **197 kB gzipped** with the coastal names, fetched lazily on the box's first
 focus as a hashed build asset the service worker caches):
 
 | Part | Source | Count | Licence |
@@ -64,6 +64,7 @@ focus as a hashed build asset the service worker caches):
 | Towns, parts of towns, holiday-home areas | Danske Stednavne `sn:Bebyggelse` (types `by`, `bydel`, `sommerhusområde`), Klimadatastyrelsen | 10,528 | **CC BY 4.0** (Klimadatastyrelsen's terms for free data), credit "Indeholder data fra Klimadatastyrelsen" |
 | Postal districts (number, name, extent) | DAGI `dagi10:Postnummerinddeling`, Klimadatastyrelsen | 1,089 | **CC BY 4.0**, as above |
 | Named coastal bathing sites | MiljøGIS `vp4basis2026:vp4_ba_26_badevand` (the risk layer above), `coastalBathingWater` only; names tidied from capitals ("VEMMETOFTE STRAND" → "Vemmetofte Strand"), each given the postal district of the nearest town | 924 | **CC BY 4.0** (MST INSPIRE record) |
+| Official coastal names: beaches, harbours, landforms (pynt, næs, odde, ø …), waters (bugt, fjord, sund …) | Danske Stednavne via `pipeline/ingest/stednavne.py` (below); a beach a bathing site of the same name within 2 km already names is left out | 2,696 | **CC BY 4.0**, credit "Indeholder data fra Klimadatastyrelsen" |
 
 The towns and districts need a Datafordeler key to fetch, which Tangkortet
 lacks, so they are taken from **Svampekortet's generated `places.json`**
@@ -102,6 +103,7 @@ Third-party data keeps its own licence and is not restricted further.
 | iNaturalist photos (Research-Grade observations, picked via GBIF by `scripts/pull_species_images.py`) | species photos: list thumbnails, start-screen tiles, the species page and its viewer | **CC BY 4.0** or **CC0** only, per photo; each shown with photographer, licence and a link to the iNaturalist observation (CC BY attribution). Hotlinked from `inaturalist-open-data.s3.amazonaws.com`, not copied; the service worker keeps up to 120 seen photos for offline use. Marked "not reviewed" in the app until the expert has checked the identification | `data/images/<slug>.json` (links and credits only) |
 | OpenStreetMap | basemap | ODbL, credit "© OpenStreetMap-bidragydere" | nothing stored |
 | OpenStreetMap, Geofabrik's Denmark extract (`denmark-latest.osm.pbf`, refreshed weekly in the deploy) | "Kysten her": beaches (with `surface`), sand by the shore, salt marsh, tidal flats, harbours, marinas, piers, groynes, breakwaters, cliffs and the coastline, around the pin and on the map from zoom 13 (`pipeline/ingest/coast.py`) | **ODbL 1.0**, credit "© OpenStreetMap-bidragydere" (in the manifest attribution, so "Om Tangkortet" shows it). **Share-alike:** the coast cells are a *derivative database* of OSM and stay under the ODbL, unlike the project's own CC BY-NC data; anyone may reuse them under the ODbL, and a public derivative of them must be offered under the ODbL too. They are kept as separate files (a "collective database" with the rest of the payload), so the ODbL does not reach the other data. Mapping is volunteer work and uneven: shown as "OpenStreetMap – kan være ufuldstændigt" | dev sample `web/public/data/coast/` (Aarhus Bugt, Mols, Djursland and a piece of the Wadden Sea around Mandø) |
+| Klimadatastyrelsen: Danske Stednavne (Datafordeler WFS `Stednavn/STEDNAVNE_BEARBEJDET_GML3SFP`, OAuth with Tangkortet's own IT system) | official names in "Kysten her" (the water the pin is in or by, unnamed OSM beaches and harbours, the nearest landform, shallow stones), the pin card ("I Århus Bugt", "På Helgenæs") and the place search (`pipeline/ingest/stednavne.py`) | **CC BY 4.0**, confirmed 2026-11-20 on <https://klimadatastyrelsen.dk/om-klimadatastyrelsen/vilkaar-og-priser> ("Anvendelsen af frie geografiske data reguleres af CC BY 4.0 licensen … Du skal kreditere Klimadatastyrelsen"); Danske Stednavne is listed as free basic data on <https://klimadatastyrelsen.dk/data/danske-stednavne>. Credit "Indeholder data fra Klimadatastyrelsen, Danske Stednavne (CC BY 4.0)" in the manifest attribution (About). Kept in their own files, apart from the ODbL coast cells | dev sample `web/public/data/names/`; coastal names in `web/src/data/places.json` |
 | Literature (Holdt et al. and others) | accumulation proposals; kainic acid in søl (Jørgensen & Olesen 2018, doi:10.1080/19393210.2018.1462258) | cited by DOI; only short facts and numbers are reproduced | `docs/literature-accumulation.md` |
 | badevand.dk (DHI) | — | reCAPTCHA-protected, **not used**; the app only links to it | nothing stored |
 
@@ -139,6 +141,61 @@ moves it into place. If Geofabrik is down, last week's cached extract is used
 (`restore-keys`); with none at all the build keeps the committed coast index
 (the dev sample), so "Kysten her" shows only inside that area and the card is
 hidden elsewhere.
+
+### Danske Stednavne: coastal names (2026-11-20)
+
+`py -m pipeline.ingest.stednavne --coast-pbf build/osm/denmark-latest.osm.pbf`
+(credentials from the environment or the git-ignored `.env`; `--raw-dir`
+keeps the WFS pages for reruns) writes `build/stednavne/stednavne.json`;
+`pipeline.build --names <file>` publishes `names/<cell>.json` on the risk
+grid, and `pipeline.places --names <file>` adds the search entries.
+
+Service notes: `propertyName` gives HTTP 400, so whole features are fetched;
+`cql_filter` with `IN (...)` works, but **adding `sortBy` makes the service
+drop the filter** (page 2 then returns every type), so paging is plain
+`count`/`startindex`, stopped by `numberMatched`. `EPSG::4326` answers are in
+lat, lon order. 25 requests, **about 90 s** for all of Denmark (the bays are
+100-500 kB of GML each; 82 MB of raw pages).
+
+| Type | Values | Fetched | Kept (the sea's waters; the rest within 1 km of the sea) |
+|---|---|---|---|
+| `sn:Naturareal` | strand / marsk / sandKlit / klippeIOverfladen | 268 / 28 / 164 / 51 | 257 / 14 / 111 / 51 |
+| `sn:Havnebassin` | lystbådehavn / fiskerihavn / trafikhavn | 415 / 31 / 102 | 396 / 31 / 100 |
+| `sn:Landskabsform` | pynt, næs, odde, klint, skræntNaturlig, skær, tange, hage, halvø, ø | 1,442 | 1,256 (pynt 383, ø 378, næs 130, odde 110, halvø 106, klint 68 …) |
+| `sn:Farvand` | bugt, fjord, sund, nor, bredning, løb, hav (not the 7 `sejlløb`) | 761 | 734 (bugt 331, løb 239, fjord 47, sund 46, nor 43, bredning 19, hav 9) |
+| `sn:UrentFarvand` | tørtVedLavvande / overskylledeSten (not the 1,092 `undersøiskGrund`) | 57 / 6 | all |
+| `sn:Friluftsbad` | hav (published as `havbad`) | 32 | all |
+
+The register's bugt, løb and nor also name bays of lakes (Valdemars Vig and
+the other Silkeborg lakes' vige, Kinabugten in Furesø, Ågabet in Arresø,
+Møllekrog in Esrum Sø), so a water counts as the sea only when it lies within
+300 m of the OpenStreetMap coastline, is a `hav`, or touches (150 m) a water
+already counted, grown outwards until nothing changes: a fjord behind a sluice
+(Ringkøbing Fjord, Nissum Fjord) stays. 27 waters are lakes'; Limfjorden,
+Mariager Fjord, Isefjord, Roskilde Fjord, Ringkøbing and Nissum Fjord, Kalø
+Vig and Ebeltoft Vig stay. "The sea" for the rest is then a sea water or the
+coastline: the lake bays no longer keep 36 lake islands, peninsulas and
+harbours (Borre Ø, Møgelø, Hattenæs, Silkeborg Sejlklub, Holte Havn, Næsset
+in Furesø). Without the extract every water counts, with a warning. A fetch
+keeping fewer than 500 waters or 800 landforms fails rather than replace good
+names.
+A water's name sometimes sits on `navn_2` with `brugsprioritet` "primær"
+(Løgstør Bredning and 23 other waters): the primary name is taken, whichever
+number it has. What the filter drops is
+mostly lake shore (Skanderborg Sø, Silkeborg Langsø, Maribo Søbadeanstalt),
+but also a few real harbours up a river or canal (Odense Havn, Ribe, Varde,
+Næstved): **known loss**. Waters are simplified at 25 m (the open sea 100 m)
+and clipped to each cell, so a cell of open sea holds just its square;
+islands over 5,000 m² stay holes. Islands and peninsulas over 200 km² (Fyn,
+Djursland, Den Jyske Halvø) are left out of the cells. **1.3 MB for Denmark
+in 866 cells (417 kB gzipped)**, 82 kB for the committed sample (sizes from
+before the lake filter, which made them a little smaller). In the
+search: 2,696 entries (beaches already named by a bathing site within 2 km
+are left out); `places.json` grew to 625 kB, 197 kB gzipped.
+
+**Deploy:** the fetch runs only when the month's cache is cold, with the
+secrets on that step alone; a failure or missing secrets keep the newest
+cached file, else the committed sample index (a warning, not a failed build).
 
 Raw source dumps are never committed: `build/` is git-ignored, and the repo
 holds only the small dev sample and the derived risk cells.

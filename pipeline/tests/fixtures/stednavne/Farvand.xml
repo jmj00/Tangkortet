@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?><wfs:FeatureCollection xmlns:wfs="http://www.opengis.net/wfs/2.0" xmlns:gml="http://www.opengis.net/gml/3.2" xmlns:sn="http://data.gov.dk/schemas/stednavne" numberMatched="1" numberReturned="1">
+<!-- A made-up bay (lat lon order, as the service sends EPSG:4326), 10.0-10.2 E, 56.0-56.1 N, with an island hole. -->
+  <wfs:member>
+    <sn:Farvand gml:id="sn.w1">
+      <sn:id.lokalId>water-1</sn:id.lokalId>
+      <sn:navn_1.skrivemaade>Prøve Bugt</sn:navn_1.skrivemaade>
+      <sn:navn_2.skrivemaade>Andet Navn</sn:navn_2.skrivemaade>
+      <sn:geometri>
+        <gml:Polygon gml:id="geo.w1" srsDimension="2" srsName="urn:ogc:def:crs:EPSG::4326">
+          <gml:exterior><gml:LinearRing><gml:posList>56.0 10.0 56.0 10.2 56.1 10.2 56.1 10.0 56.0 10.0</gml:posList></gml:LinearRing></gml:exterior>
+          <gml:interior><gml:LinearRing><gml:posList>56.04 10.09 56.04 10.11 56.06 10.11 56.06 10.09 56.04 10.09</gml:posList></gml:LinearRing></gml:interior>
+        </gml:Polygon>
+      </sn:geometri>
+      <sn:farvandstype>bugt</sn:farvandstype>
+    </sn:Farvand>
+  </wfs:member>
+</wfs:FeatureCollection>

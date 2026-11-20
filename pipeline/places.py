@@ -12,11 +12,17 @@ of places it can fly to without any service:
   towns and districts already in the output are kept, so refreshing the coast
   needs no key;
 - named coastal bathing sites (Miljøstyrelsen, MiljøGIS ``vp4basis2026``
-  badevand, CC BY 4.0), fetched anonymously: the beaches a forager names.
+  badevand, CC BY 4.0), fetched anonymously: the beaches a forager names;
+- official coastal names (Danske Stednavne, Klimadatastyrelsen, CC BY 4.0):
+  beaches, harbours, landforms (pynt, næs, odde, ø ...) and waters (bugt,
+  fjord, sund ...), from the file ``pipeline.ingest.stednavne`` writes
+  (``--names``). Without ``--names`` the ones already in the output are kept.
+  A beach of the same name as a bathing site within 2 km is left out (the
+  bathing site says it already).
 
 Run by hand (postal districts change a few times a year, bathing sites yearly)::
 
-    py -m pipeline.places [--towns PATH] [--out web/src/data/places.json]
+    py -m pipeline.places [--towns PATH] [--names PATH] [--out web/src/data/places.json]
 """
 
 from __future__ import annotations
@@ -35,9 +41,14 @@ DEFAULT_OUT = Path(__file__).resolve().parent.parent / "web" / "src" / "data" / 
 ABOUT = (
     "Byer, bydele og sommerhusområder (Danske Stednavne, sn:Bebyggelse) og postnumre "
     "(DAGI Postnummerinddeling), Klimadatastyrelsen, CC BY 4.0; badesteder ved kysten "
-    "(Miljøstyrelsen, MiljøGIS vp4basis2026 badevand, CC BY 4.0). "
+    "(Miljøstyrelsen, MiljøGIS vp4basis2026 badevand, CC BY 4.0); strande, havne, "
+    "pynter, næs, øer og farvande (Danske Stednavne, Klimadatastyrelsen, CC BY 4.0). "
     "Lavet af pipeline/places.py."
 )
+
+#: The Stednavne groups the search offers (pipeline/ingest/stednavne.py
+#: GROUPS); shore areas, shallow stones and sea baths are only for the card.
+NAME_GROUPS = ("beach", "harbour", "landform", "water")
 
 # Small words that stay lower case inside a name ("Syd for Marbækgaard").
 _SMALL = {"ved", "v", "for", "og", "fra", "til", "i", "på", "af", "med", "mod", "ud", "mellem"}
@@ -73,6 +84,7 @@ _BARE = re.compile(r"(?i)strand \d+|\S+(?:vej|vejen|alle|alleen|allé|gade) \d+\
 Postal = list[Any]  # [postnr, name, west, south, east, north]
 Town = list[Any]  # [name, lon, lat, radiusKm, postal index, type]
 Coast = list[Any]  # [name, lon, lat, postal index]
+Named = list[Any]  # [name, lon, lat, radiusKm, postal index, kind]
 
 
 def _dir(m: re.Match[str], group: int = 1) -> str:
@@ -213,6 +225,44 @@ def coast_sites(
     return out
 
 
+def named_places(
+    features: Iterable[Any],
+    towns: Sequence[Town],
+    postal: Sequence[Postal],
+    bathing: Sequence[Coast] = (),
+) -> list[Named]:
+    """Stednavne features (``pipeline.ingest.stednavne.NameFeature``) as
+    ``[name, lon, lat, radiusKm, postal index, kind]``: the radius of a
+    circle of the place's area (0 for a point), the postal district it lies
+    in (-1 for a water: a bay is in no district). One of a name and kind
+    within 2 km; no beach that repeats a bathing site's name within 2 km."""
+    from pipeline.ingest.stednavne import GROUP_OF
+
+    out: list[Named] = []
+    for f in features:
+        group = GROUP_OF.get(f.kind)
+        if group not in NAME_GROUPS:
+            continue
+        lon, lat = round(f.point[0], 4), round(f.point[1], 4)
+        key = f.name.casefold()
+        # a beach the bathing site names already (a harbour keeps its own
+        # entry: "Egå Marina" is a bathing site and a marina)
+        if group == "beach" and any(
+            b[0].casefold() == key and distance_km((b[1], b[2]), (lon, lat)) < 2 for b in bathing
+        ):
+            continue
+        if any(
+            n[5] == f.kind and n[0] == f.name and distance_km((n[1], n[2]), (lon, lat)) < 2
+            for n in out
+        ):
+            continue
+        radius = round(math.sqrt(max(f.area_m2, 0.0) / math.pi) / 1000, 2)
+        district = -1 if group == "water" else postal_for((lon, lat), postal, towns, f.name)
+        out.append([f.name, lon, lat, radius, district, f.kind])
+    out.sort(key=lambda n: (n[0].casefold(), n[5], n[1]))
+    return out
+
+
 def read_towns(path: Path) -> tuple[list[Postal], list[Town]]:
     raw = json.loads(path.read_text(encoding="utf-8"))
     postal, towns = raw["postal"], raw["towns"]
@@ -228,8 +278,17 @@ def read_towns(path: Path) -> tuple[list[Postal], list[Town]]:
 
 
 def build_index(
-    postal: list[Postal], towns: list[Town], bathing: Iterable[Sequence[Any]], today: date
+    postal: list[Postal],
+    towns: list[Town],
+    bathing: Iterable[Sequence[Any]],
+    today: date,
+    names: Iterable[Any] | list[Named] = (),
 ) -> dict[str, Any]:
+    coast = coast_sites(bathing, towns, postal)
+    names = list(names)
+    named = (
+        names if names and isinstance(names[0], list) else named_places(names, towns, postal, coast)
+    )
     return {
         "about": ABOUT,
         "generated": today.isoformat(),
@@ -238,7 +297,10 @@ def build_index(
         # [name, lon, lat, radiusKm, postal index (-1: none), type: 0 by, 1 bydel, 2 sommerhus]
         "towns": towns,
         # [name, lon, lat, postal index of the district it lies in (-1: none)]
-        "coast": coast_sites(bathing, towns, postal),
+        "coast": coast,
+        # [name, lon, lat, radiusKm, postal index (-1: none), kind (Stednavne
+        # type: "strand", "lystbådehavn", "pynt", "bugt", ...)]
+        "names": named,
     }
 
 
@@ -251,17 +313,27 @@ def fetch_bathing_rows() -> list[list[Any]]:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--towns", type=Path, help="towns + postal districts (places.json layout)")
+    parser.add_argument(
+        "--names", type=Path, help="coastal names from pipeline.ingest.stednavne (its JSON file)"
+    )
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args(argv)
     postal, towns = read_towns(args.towns or args.out)
     rows = fetch_bathing_rows()
-    index = build_index(postal, towns, rows, date.today())
+    if args.names:
+        from pipeline.ingest.stednavne import read
+
+        names: list[Any] = read(args.names)[1]
+    else:
+        names = json.loads(args.out.read_text(encoding="utf-8")).get("names", [])
+    index = build_index(postal, towns, rows, date.today(), names)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", encoding="utf-8", newline="\n") as f:
         f.write(json.dumps(index, ensure_ascii=False, separators=(",", ":")) + "\n")
     print(
         f"wrote {args.out}: {len(postal)} postal districts, {len(towns)} towns, "
-        f"{len(index['coast'])} coastal bathing sites (from {len(rows)})"
+        f"{len(index['coast'])} coastal bathing sites (from {len(rows)}), "
+        f"{len(index['names'])} coastal names"
     )
 
 

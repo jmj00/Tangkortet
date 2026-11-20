@@ -1,6 +1,7 @@
 /* "Kysten her" in the Risiko tab (riskpanel.ts coastCard): the water's
-   distance, then the nearest beach, harbour, pier, groyne, cliff, salt marsh
-   or tidal flat, each with its distance. */
+   distance (and name), then the nearest beach, harbour, pier, groyne, cliff,
+   salt marsh or tidal flat, landform and shallow stones, each with its
+   distance. */
 .coast:focus {
   outline: none;
 }
@@ -41,6 +42,11 @@
 .coast__name {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* what an official name is, when the name does not say it ("Næsset · pynt") */
+.coast__name--kind {
+  color: var(--muted);
 }
 
 /* the distance at the end of the row, or on its own line when the name is long */

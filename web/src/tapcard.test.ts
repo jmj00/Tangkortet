@@ -23,6 +23,14 @@ describe("the pin's card", () => {
     expect(placeText(null)).toBeNull();
   });
 
+  it("is on an island or a peninsula, by a headland", () => {
+    const helgenaes = { name: "Helgenæs", kind: "landform", distanceM: 0, on: true } as const;
+    expect(placeText(helgenaes, true)).toBe("På Helgenæs");
+    // the place list's circle alone is no proof: a pin in Ebeltoft Vig is in it
+    expect(placeText(helgenaes)).toBe("Ved Helgenæs");
+    expect(placeText({ name: "Næsset", kind: "landform", distanceM: 120 })).toBe("Ved Næsset");
+  });
+
   it("writes coordinates the Danish way", () => {
     expect(coordsText([10.219, 56.151])).toBe("56,1510° N, 10,2190° Ø");
   });

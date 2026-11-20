@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?><wfs:FeatureCollection xmlns:wfs="http://www.opengis.net/wfs/2.0" xmlns:gml="http://www.opengis.net/gml/3.2" xmlns:sn="http://data.gov.dk/schemas/stednavne" numberMatched="2" numberReturned="2">
+  <wfs:member>
+    <sn:Friluftsbad gml:id="sn.b1">
+      <sn:id.lokalId>bath-1</sn:id.lokalId>
+      <sn:navn_1.skrivemaade>Havbadet &amp; Broen</sn:navn_1.skrivemaade>
+      <sn:friluftsbadtype>hav</sn:friluftsbadtype>
+      <sn:geometri><gml:Point gml:id="geo.b1" srsDimension="2" srsName="urn:ogc:def:crs:EPSG::4326"><gml:pos>56.15 10.22</gml:pos></gml:Point></sn:geometri>
+    </sn:Friluftsbad>
+  </wfs:member>
+  <wfs:member>
+    <sn:Friluftsbad gml:id="sn.b2">
+      <sn:id.lokalId>bath-2</sn:id.lokalId>
+      <sn:navn_1.skrivemaade>Uden Geometri</sn:navn_1.skrivemaade>
+      <sn:friluftsbadtype>hav</sn:friluftsbadtype>
+    </sn:Friluftsbad>
+  </wfs:member>
+</wfs:FeatureCollection>

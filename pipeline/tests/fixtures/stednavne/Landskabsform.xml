@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?><wfs:FeatureCollection xmlns:wfs="http://www.opengis.net/wfs/2.0" xmlns:gml="http://www.opengis.net/gml/3.2" xmlns:sn="http://data.gov.dk/schemas/stednavne" numberMatched="3" numberReturned="3">
+  <wfs:member>
+    <sn:Landskabsform gml:id="sn.l1">
+      <sn:id.lokalId>land-1</sn:id.lokalId>
+      <sn:navn_1.skrivemaade>Prøve Pynt</sn:navn_1.skrivemaade>
+      <sn:geometri><gml:MultiSurface gml:id="geo.l1" srsDimension="2"><gml:surfaceMember><gml:Polygon gml:id="geo.l1.1" srsDimension="2">
+        <gml:exterior><gml:LinearRing><gml:posList>56.101 10.05 56.101 10.052 56.103 10.052 56.103 10.05 56.101 10.05</gml:posList></gml:LinearRing></gml:exterior>
+      </gml:Polygon></gml:surfaceMember></gml:MultiSurface></sn:geometri>
+      <sn:landskabsformtype>pynt</sn:landskabsformtype>
+    </sn:Landskabsform>
+  </wfs:member>
+  <wfs:member>
+    <sn:Landskabsform gml:id="sn.l2">
+      <sn:id.lokalId>land-2</sn:id.lokalId>
+      <sn:navn_1.skrivemaade>Indlandsnæs</sn:navn_1.skrivemaade>
+      <sn:geometri><gml:MultiSurface gml:id="geo.l2" srsDimension="2"><gml:surfaceMember><gml:Polygon gml:id="geo.l2.1" srsDimension="2">
+        <gml:exterior><gml:LinearRing><gml:posList>56.3 10.5 56.3 10.502 56.302 10.502 56.302 10.5 56.3 10.5</gml:posList></gml:LinearRing></gml:exterior>
+      </gml:Polygon></gml:surfaceMember></gml:MultiSurface></sn:geometri>
+      <sn:landskabsformtype>næs</sn:landskabsformtype>
+    </sn:Landskabsform>
+  </wfs:member>
+  <wfs:member>
+    <sn:Landskabsform gml:id="sn.l3">
+      <sn:id.lokalId>land-3</sn:id.lokalId>
+      <sn:navn_1.skrivemaade>En Bakke</sn:navn_1.skrivemaade>
+      <sn:geometri><gml:MultiSurface gml:id="geo.l3" srsDimension="2"><gml:surfaceMember><gml:Polygon gml:id="geo.l3.1" srsDimension="2">
+        <gml:exterior><gml:LinearRing><gml:posList>56.101 10.05 56.101 10.052 56.103 10.052 56.101 10.05</gml:posList></gml:LinearRing></gml:exterior>
+      </gml:Polygon></gml:surfaceMember></gml:MultiSurface></sn:geometri>
+      <sn:landskabsformtype>bakke</sn:landskabsformtype>
+    </sn:Landskabsform>
+  </wfs:member>
+</wfs:FeatureCollection>

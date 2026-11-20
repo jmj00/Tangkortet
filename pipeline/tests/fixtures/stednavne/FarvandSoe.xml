@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?><wfs:FeatureCollection xmlns:wfs="http://www.opengis.net/wfs/2.0" xmlns:gml="http://www.opengis.net/gml/3.2" xmlns:sn="http://data.gov.dk/schemas/stednavne" numberMatched="1" numberReturned="1">
+<!-- A made-up bay of a lake (as Valdemars Vig in Tissø: sn:Farvand, type bugt), 10.0-10.05 E, 56.0-56.02 N, 20 km from any coast. -->
+  <wfs:member>
+    <sn:Farvand gml:id="sn.w3">
+      <sn:id.lokalId>water-3</sn:id.lokalId>
+      <sn:navn_1.skrivemaade>Søvig</sn:navn_1.skrivemaade>
+      <sn:navn_1.brugsprioritet>primær</sn:navn_1.brugsprioritet>
+      <sn:geometri>
+        <gml:Polygon gml:id="geo.w3" srsDimension="2" srsName="urn:ogc:def:crs:EPSG::4326">
+          <gml:exterior><gml:LinearRing><gml:posList>56.0 10.0 56.0 10.05 56.02 10.05 56.02 10.0 56.0 10.0</gml:posList></gml:LinearRing></gml:exterior>
+        </gml:Polygon>
+      </sn:geometri>
+      <sn:farvandstype>bugt</sn:farvandstype>
+    </sn:Farvand>
+  </wfs:member>
+</wfs:FeatureCollection>

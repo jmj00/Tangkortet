@@ -5,17 +5,18 @@
 // reasoning behind it.
 
 import "./coast.css";
+import { cellsFor, COAST_RADIUS_M, NONE_TEXT, summarize, type CoastSummary } from "./coast";
+import { loadCoastCell, loadNameCell, loadRiskCell } from "./data";
 import {
-  cellsFor,
-  COAST_RADIUS_M,
-  metres,
-  NONE_TEXT,
-  shownName,
-  summarize,
-  waterText,
-  type CoastSummary,
-} from "./coast";
-import { loadCoastCell, loadRiskCell } from "./data";
+  cellNames,
+  distText,
+  nameCellsFor,
+  shoreRows,
+  showsOfficialName,
+  summarizeNames,
+  waterLine,
+  type ShoreRow,
+} from "./names";
 import { h, extLink } from "./dom";
 import { bboxAround, cellKeys, formatDistance } from "./geo";
 import { riskColor } from "./layers";
@@ -168,9 +169,26 @@ export class RiskPanel {
     set("loading");
     const index = this.manifest.coast;
     const keys = index ? cellsFor(index, pin) : null;
-    if (!keys) return set(null);
-    Promise.all(keys.map(loadCoastCell)).then(
-      (cells) => set(summarize(cells, pin)),
+    const names = this.manifest.names;
+    const nameKeys = names ? nameCellsFor(names, pin) : null;
+    if (!keys && !nameKeys) return set(null);
+    // The official names come along when they can; without them the card
+    // still has OpenStreetMap's coast (and the other way round).
+    const namesSummary = nameKeys
+      ? Promise.all(nameKeys.map(loadNameCell)).then(
+          (cells) => summarizeNames(cellNames(cells, names?.cell_deg ?? 0), pin),
+          () => undefined,
+        )
+      : Promise.resolve(undefined);
+    const coast = keys
+      ? Promise.all(keys.map(loadCoastCell)).then((cells) => summarize(cells, pin))
+      : Promise.resolve<CoastSummary>({ water: null, nearby: [] });
+    Promise.all([coast, namesSummary]).then(
+      ([summary, named]) => {
+        // the names alone: only when they say something (the pin is by the sea)
+        if (!keys && !named?.water && !named?.landform) return set(null);
+        set(named ? { ...summary, names: named } : summary);
+      },
       () => set("error"),
     );
   }
@@ -367,7 +385,15 @@ export class RiskPanel {
     const title = "Kysten her";
     const c = this.coast;
     if (c === null) return null;
-    const source = h("p", { class: "note" }, "OpenStreetMap – kan være ufuldstændigt.");
+    // Danske Stednavne only when the card shows one of its names
+    const official = typeof c === "object" && showsOfficialName(c, shoreRows(c));
+    const source = h(
+      "p",
+      { class: "note" },
+      official
+        ? "OpenStreetMap og Danske Stednavne (Klimadatastyrelsen) – kan være ufuldstændigt."
+        : "OpenStreetMap – kan være ufuldstændigt.",
+    );
     if (c === "loading") return this.card(title, h("p", { class: "loading" }, "Henter…"));
     if (c === "error") {
       const pin = this.pin;
@@ -391,23 +417,29 @@ export class RiskPanel {
           : null,
       );
     }
-    if (!c.water && c.nearby.length === 0)
+    const rows = shoreRows(c);
+    const water = waterLine(c);
+    if (!water && rows.length === 0)
       return this.card(title, h("p", { class: "coast__water" }, `${NONE_TEXT}.`), source);
-    const row = (n: CoastSummary["nearby"][number]): HTMLElement => {
-      const name = shownName(n.feature);
-      return h(
+    const row = (n: ShoreRow): HTMLElement =>
+      h(
         "li",
         {},
         h("span", { class: "coast__kind" }, n.label),
-        name ? h("span", { class: "coast__name" }, ` – ${name}`) : null,
-        h("span", { class: "coast__dist" }, n.distanceM < 15 ? "ved nålen" : metres(n.distanceM)),
+        n.name
+          ? h(
+              "span",
+              { class: n.joiner === " · " ? "coast__name coast__name--kind" : "coast__name" },
+              `${n.joiner}${n.name}`,
+            )
+          : null,
+        h("span", { class: "coast__dist" }, distText(n.distanceM)),
       );
-    };
     // The first few, the rest folded, so the risk factors below stay near.
     // never fold a single row: "+ 1 mere" hiding one line saves nothing
-    const fold = c.nearby.length > COAST_ROWS + 1;
-    const shown = fold ? c.nearby.slice(0, COAST_ROWS) : c.nearby.slice(0, COAST_ROWS + 1);
-    const more = fold ? c.nearby.slice(COAST_ROWS, 8) : [];
+    const fold = rows.length > COAST_ROWS + 1;
+    const shown = fold ? rows.slice(0, COAST_ROWS) : rows.slice(0, COAST_ROWS + 1);
+    const more = fold ? rows.slice(COAST_ROWS, 8) : [];
     const folded = more.length
       ? h(
           "details",
@@ -427,7 +459,7 @@ export class RiskPanel {
       : null;
     return this.card(
       title,
-      c.water ? h("p", { class: "coast__water" }, h("strong", {}, waterText(c.water))) : null,
+      water ? h("p", { class: "coast__water" }, h("strong", {}, water)) : null,
       shown.length
         ? h("ul", { class: "coast__list" }, ...shown.map(row))
         : h(

@@ -9,6 +9,7 @@
 // a place is good or safe to collect at.
 
 import { bboxAround, cellKeys } from "./geo";
+import type { NamesSummary } from "./names";
 import type { CoastCell, CoastIndex, CoastKind, CoastRow } from "./types";
 
 /** How far round the pin the card looks for features and for the water. */
@@ -106,7 +107,7 @@ function containsOrigin(ring: XY[]): boolean {
 }
 
 /** Metres from the pin to a feature; 0 inside an area. */
-export function featureDistance(f: CoastFeature, pin: LonLat): number {
+export function featureDistance(f: Pick<CoastFeature, "type" | "coords">, pin: LonLat): number {
   const proj = projector(pin);
   const pts = f.coords.map(proj);
   if (pts.length === 1) return Math.hypot(pts[0][0], pts[0][1]);
@@ -289,6 +290,8 @@ export function nearbyText(n: Nearby): string {
 export interface CoastSummary {
   water: Water | null;
   nearby: Nearby[];
+  /** Official names round the pin (names.ts), when the payload has them. */
+  names?: NamesSummary;
 }
 
 /** Shore that lies out in the sea, far from the mapped coastline: the
