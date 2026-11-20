@@ -64,7 +64,7 @@ focus as a hashed build asset the service worker caches):
 | Towns, parts of towns, holiday-home areas | Danske Stednavne `sn:Bebyggelse` (types `by`, `bydel`, `sommerhusområde`), Klimadatastyrelsen | 10,528 | **CC BY 4.0** (Klimadatastyrelsen's terms for free data), credit "Indeholder data fra Klimadatastyrelsen" |
 | Postal districts (number, name, extent) | DAGI `dagi10:Postnummerinddeling`, Klimadatastyrelsen | 1,089 | **CC BY 4.0**, as above |
 | Named coastal bathing sites | MiljøGIS `vp4basis2026:vp4_ba_26_badevand` (the risk layer above), `coastalBathingWater` only; names tidied from capitals ("VEMMETOFTE STRAND" → "Vemmetofte Strand"), each given the postal district of the nearest town | 924 | **CC BY 4.0** (MST INSPIRE record) |
-| Official coastal names: beaches, harbours, landforms (pynt, næs, odde, ø …), waters (bugt, fjord, sund …) | Danske Stednavne via `pipeline/ingest/stednavne.py` (below); a beach a bathing site of the same name within 2 km already names is left out | 2,758 | **CC BY 4.0**, credit "Indeholder data fra Klimadatastyrelsen" |
+| Official coastal names: beaches, harbours, landforms (pynt, næs, odde, ø …), waters (bugt, fjord, sund …) | Danske Stednavne via `pipeline/ingest/stednavne.py` (below); a beach a bathing site of the same name within 2 km already names is left out | 2,696 | **CC BY 4.0**, credit "Indeholder data fra Klimadatastyrelsen" |
 
 The towns and districts need a Datafordeler key to fetch, which Tangkortet
 lacks, so they are taken from **Svampekortet's generated `places.json`**
@@ -157,17 +157,28 @@ drop the filter** (page 2 then returns every type), so paging is plain
 lat, lon order. 25 requests, **about 90 s** for all of Denmark (the bays are
 100-500 kB of GML each; 82 MB of raw pages).
 
-| Type | Values | Fetched | Kept (within 1 km of the sea) |
+| Type | Values | Fetched | Kept (the sea's waters; the rest within 1 km of the sea) |
 |---|---|---|---|
-| `sn:Naturareal` | strand / marsk / sandKlit / klippeIOverfladen | 268 / 28 / 164 / 51 | 258 / 14 / 111 / 51 |
-| `sn:Havnebassin` | lystbådehavn / fiskerihavn / trafikhavn | 415 / 31 / 102 | 400 / 31 / 100 |
-| `sn:Landskabsform` | pynt, næs, odde, klint, skræntNaturlig, skær, tange, hage, halvø, ø | 1,442 | 1,281 (pynt 384, ø 386, næs 136, halvø 118, odde 114, klint 68 …) |
-| `sn:Farvand` | bugt, fjord, sund, nor, bredning, løb, hav (not the 7 `sejlløb`) | 761 | all (bugt 351, løb 244, fjord 47, sund 47, nor 43, bredning 20, hav 9) |
+| `sn:Naturareal` | strand / marsk / sandKlit / klippeIOverfladen | 268 / 28 / 164 / 51 | 257 / 14 / 111 / 51 |
+| `sn:Havnebassin` | lystbådehavn / fiskerihavn / trafikhavn | 415 / 31 / 102 | 396 / 31 / 100 |
+| `sn:Landskabsform` | pynt, næs, odde, klint, skræntNaturlig, skær, tange, hage, halvø, ø | 1,442 | 1,256 (pynt 383, ø 378, næs 130, odde 110, halvø 106, klint 68 …) |
+| `sn:Farvand` | bugt, fjord, sund, nor, bredning, løb, hav (not the 7 `sejlløb`) | 761 | 734 (bugt 331, løb 239, fjord 47, sund 46, nor 43, bredning 19, hav 9) |
 | `sn:UrentFarvand` | tørtVedLavvande / overskylledeSten (not the 1,092 `undersøiskGrund`) | 57 / 6 | all |
 | `sn:Friluftsbad` | hav (published as `havbad`) | 32 | all |
 
-"The sea" is a named water (Kattegat, Nordsøen and the bays reach the shore)
-or, as a backup, the OpenStreetMap coastline (it adds one dune and one islet).
+The register's bugt, løb and nor also name bays of lakes (Valdemars Vig in
+Tissø, Kinabugten in Furesø, Ågabet in Arresø, Møllekrog in Esrum Sø, the
+Silkeborg lakes' vige), so a water counts as the sea only when it lies within
+300 m of the OpenStreetMap coastline, is a `hav`, or touches (150 m) a water
+already counted, grown outwards until nothing changes: a fjord behind a sluice
+(Ringkøbing Fjord, Nissum Fjord) stays. 27 waters are lakes'; Limfjorden,
+Mariager Fjord, Isefjord, Roskilde Fjord, Ringkøbing and Nissum Fjord, Kalø
+Vig and Ebeltoft Vig stay. "The sea" for the rest is then a sea water or the
+coastline: the lake bays no longer keep 36 lake islands, peninsulas and
+harbours (Borre Ø, Møgelø, Hattenæs, Silkeborg Sejlklub, Holte Havn, Næsset
+in Furesø). Without the extract every water counts, with a warning. A fetch
+keeping fewer than 500 waters or 800 landforms fails rather than replace good
+names.
 A water's name sometimes sits on `navn_2` with `brugsprioritet` "primær"
 (Løgstør Bredning and 23 other waters): the primary name is taken, whichever
 number it has. What the filter drops is
@@ -177,8 +188,9 @@ Næstved): **known loss**. Waters are simplified at 25 m (the open sea 100 m)
 and clipped to each cell, so a cell of open sea holds just its square;
 islands over 5,000 m² stay holes. Islands and peninsulas over 200 km² (Fyn,
 Djursland, Den Jyske Halvø) are left out of the cells. **1.3 MB for Denmark
-in 866 cells (417 kB gzipped)**, 82 kB for the committed sample. In the
-search: 2,758 entries (beaches already named by a bathing site within 2 km
+in 866 cells (417 kB gzipped)**, 82 kB for the committed sample (sizes from
+before the lake filter, which made them a little smaller). In the
+search: 2,696 entries (beaches already named by a bathing site within 2 km
 are left out); `places.json` grew to 625 kB, 197 kB gzipped.
 
 **Deploy:** the fetch runs only when the month's cache is cold, with the

@@ -5,6 +5,7 @@ import json
 import pathlib
 import re
 import urllib.parse
+from collections import Counter
 
 import pytest
 
@@ -196,3 +197,90 @@ def test_the_primary_name_may_be_navn_2():
     assert sn.primary_name(member.replace("primær", "x")) == "Gammelt"  # else the first
     assert sn.primary_name("<sn:navn_2.skrivemaade>Kun To</sn:navn_2.skrivemaade>") == "Kun To"
     assert sn.primary_name("") is None
+
+
+def square(w: float, s: float, e: float, n: float) -> list[sn.Point]:
+    return [(w, s), (e, s), (e, n), (w, n), (w, s)]
+
+
+def raw_area(fid: str, kind: str, name: str, ring: list[sn.Point]) -> sn.RawFeature:
+    return sn.RawFeature(fid, kind, name, [[ring]], [], [])
+
+
+def test_a_lake_bay_is_no_sea_and_keeps_nothing_by_it():
+    # 110 m south of the coastline: a bay of the sea; a fjord behind a sluice
+    # touching it; 20 km inland: a lake's bay, an island in the lake and a
+    # marina on its shore
+    coastline = [[(10.0, 56.301), (10.3, 56.301)]]
+    raw = [
+        raw_area("w1", "bugt", "Havbugten", square(10.0, 56.2, 10.3, 56.3)),
+        raw_area("w2", "fjord", "Slusefjord", square(10.3, 56.2, 10.5, 56.29)),
+        *sn.parse_page(gml("FarvandSoe"), QUERY["Farvand"])[1],  # Søvig
+        raw_area("l1", "ø", "Søholm", square(10.02, 56.005, 10.025, 56.008)),
+        sn.RawFeature("h1", "lystbådehavn", "Søklubben", [], [], [(10.03, 56.021)]),
+        sn.RawFeature("h2", "lystbådehavn", "Fjordhavn", [], [], [(10.4, 56.291)]),
+    ]
+    extract = sn.prepare(raw, coastline)
+    kept = {f.name for f in extract.features}
+    assert kept == {"Havbugten", "Slusefjord", "Fjordhavn"}
+    assert extract.dropped_inland == {"bugt": 1, "ø": 1, "lystbådehavn": 1}
+    sea, lakes = sn.sea_waters([sn.prepare_one(r) for r in raw[:3]], coastline)
+    assert [w.name for w in lakes] == ["Søvig"]
+    # a "hav" is the sea without any coastline near it
+    far = raw_area("w4", "hav", "Ude", square(11.0, 57.0, 11.5, 57.5))
+    assert "Ude" in {f.name for f in sn.prepare([far], coastline).features}
+
+
+def test_without_a_coastline_every_water_counts():
+    lake = sn.parse_page(gml("FarvandSoe"), QUERY["Farvand"])[1]
+    assert [f.name for f in sn.prepare(lake).features] == ["Søvig"]
+
+
+def test_clipping_a_concave_bay_leaves_its_cuts_on_the_grid():
+    # an n-shaped bay (two arms joined north of the cell): in the cell the
+    # clip joins the arms by a zero-width edge along the cut, over the land
+    # between them; every edge that is no shore lies on the cell's grid
+    # lines, which the app leaves out when it measures (web/src/names.ts)
+    bay = [
+        (10.0, 56.1),
+        (10.05, 56.1),
+        (10.05, 56.25),
+        (10.15, 56.25),
+        (10.15, 56.1),
+        (10.2, 56.1),
+        (10.2, 56.3),
+        (10.0, 56.3),
+        (10.0, 56.1),
+    ]
+    feature = sn.NameFeature("w", "bugt", "Hesteskoen", (10.1, 56.28), [bay], [], 1e7)
+    cells = sn.cell_files([feature], 0.2)
+    from pipeline.ingest.coast import SCALE
+
+    (row,) = cells["50_280"]["features"]
+    deltas = row[3][0]
+    pts, x, y = [], 0, 0
+    for i in range(0, len(deltas), 2):
+        x, y = x + deltas[i], y + deltas[i + 1]
+        pts.append((x / SCALE, y / SCALE))
+    pts.append(pts[0])
+    on_grid = lambda v: abs(v / 0.2 - round(v / 0.2)) < 1e-6  # noqa: E731
+    cuts = [
+        (a, b)
+        for a, b in zip(pts, pts[1:], strict=False)
+        if (a[1] == b[1] and on_grid(a[1])) or (a[0] == b[0] and on_grid(a[0]))
+    ]
+    # the sliver over the land (10.05-10.15 E at 56.2 N) is among the cuts
+    assert any(min(a[0], b[0]) <= 10.05 and max(a[0], b[0]) >= 10.15 for a, b in cuts)
+    shore = [(a, b) for a, b in zip(pts, pts[1:], strict=False) if (a, b) not in cuts]
+    # what is left is the real shore: nothing of it runs along 56.2 N
+    assert all(not (a[1] == b[1] == 56.2) for a, b in shore)
+
+
+def test_a_truncated_fetch_fails():
+    few = sn.Extract([sn.NameFeature("w", "bugt", "Vig", (10.0, 56.0))], Counter(), Counter())
+    with pytest.raises(SystemExit, match="truncated"):
+        sn.check_counts(few)
+    many = [sn.NameFeature(f"w{i}", "bugt", "Vig", (10.0, 56.0)) for i in range(500)] + [
+        sn.NameFeature(f"l{i}", "pynt", "Pynt", (10.0, 56.0)) for i in range(800)
+    ]
+    sn.check_counts(sn.Extract(many, Counter(), Counter()))  # enough: no error

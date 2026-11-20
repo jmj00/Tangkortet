@@ -17,15 +17,19 @@ the names a forager says about the shore and the water:
   ``overskylledeSten``; the 1,092 ``undersøiskGrund`` are banks out at sea);
 * sea baths (``sn:Friluftsbad``: ``hav``, published as ``havbad``).
 
+Waters must be the sea's: the register's bugt, løb and nor also name bays of
+lakes (Valdemars Vig in Tissø, Kinabugten in Furesø, Ågabet in Arresø). A
+water counts as the sea when it lies within :data:`SEA_COAST_M` of the
+OpenStreetMap coastline (``--coast-pbf``, the extract the coast cells come
+from), is a ``hav``, or touches a water already counted (grown outwards, so a
+fjord behind a sluice stays); see :func:`sea_waters`. On the 2026-11-20 data
+27 of 761 waters are lakes'.
+
 Landforms, beaches, harbours and the rest are kept only within
-:data:`NEAR_WATER_M` of the sea: many landform types (næs, pynt, ø) also name
-places on lakes (Skanderborg Sø, Silkeborg Langsø). "The sea" is a named
-water (the register's waters, Kattegat and Nordsøen included, reach the
-shore) or the OpenStreetMap coastline (``--coast-pbf``, the extract the coast
-cells come from), which keeps a feature by a water the register lacks; on the
-2026-11-20 data the two together keep one dune and one islet more than the
-waters alone. Without the extract only the waters are used, with a warning.
-Waters, shallow stones and sea baths are kept as they are.
+:data:`NEAR_WATER_M` of the sea, a sea water or the coastline: many landform
+types (næs, pynt, ø) also name places on lakes (Skanderborg Sø, Silkeborg
+Langsø, Furesø). Without the extract every water counts as the sea, with a
+warning. Shallow stones and sea baths are kept as they are.
 
 Service: Datafordeler's WFS ``Stednavn/STEDNAVNE_BEARBEJDET_GML3SFP``, with an
 OAuth bearer token (pipeline/datafordeler.py). ``propertyName`` gives HTTP
@@ -140,6 +144,12 @@ GROUP_OF = {kind: group for group, kinds in GROUPS.items() for kind in kinds}
 #: How near a named water (its edge, or inside it) a feature must be to be
 #: kept; waters and sea baths are always kept.
 NEAR_WATER_M = 1000.0
+#: A water this near the OpenStreetMap coastline is the sea (see sea_waters).
+SEA_COAST_M = 300.0
+#: A water this near a sea water touches it (the open sea is simplified at
+#: SEA_TOLERANCE_M, so its edge may be that far off).
+SEA_TOUCH_M = 150.0
+#: Waters are filtered by sea_waters; sea baths and shallow stones are kept.
 UNFILTERED = ("water", "bath", "shoal")
 
 #: Douglas-Peucker tolerance in metres per group (the open sea coarser).
@@ -555,17 +565,49 @@ class Extract:
     dropped_inland: Counter[str]
 
 
-def prepare(raw: Sequence[RawFeature], coastline: Iterable[Sequence[Point]] = ()) -> Extract:
-    """Simplify everything; keep the shore and landforms near the sea (the
-    coastline or a named water)."""
+def sea_waters(
+    waters: Sequence[NameFeature], coastline: Sequence[Sequence[Point]]
+) -> tuple[list[NameFeature], list[NameFeature]]:
+    """(sea, lake) waters. The register's bugt, løb and nor also name bays of
+    lakes (Valdemars Vig in Tissø, Kinabugten in Furesø), so a water counts as
+    the sea only when it is within :data:`SEA_COAST_M` of the OpenStreetMap
+    coastline, or is a ``hav``, or touches (within :data:`SEA_TOUCH_M`) or lies
+    inside a water already counted, grown outwards until nothing changes (a
+    fjord behind a sluice touches the bay outside it). Without a coastline
+    every water counts (and :func:`main` warns)."""
+    if not coastline:
+        return list(waters), []
+    coast = CoastIndex(coastline)
+
+    def by_coast(w: NameFeature) -> bool:
+        return coast.any_near([p for r in w.rings for p in r] or w.line or [w.point], SEA_COAST_M)
+
+    sea = [w for w in waters if w.kind == "hav" or by_coast(w)]
+    rest = [w for w in waters if all(w is not s for s in sea)]
+    grown = list(sea)
+    while grown and rest:
+        index = WaterIndex(grown)
+        grown = [w for w in rest if index.near(w, SEA_TOUCH_M)]
+        sea += grown
+        rest = [w for w in rest if all(w is not g for g in grown)]
+    return sea, rest
+
+
+def prepare(raw: Sequence[RawFeature], coastline: Sequence[Sequence[Point]] = ()) -> Extract:
+    """Simplify everything; keep the sea's waters (:func:`sea_waters`) and the
+    shore and landforms near the sea (the coastline or a sea water)."""
     fetched = Counter(r.kind for r in raw)
     prepared = [f for r in raw if (f := prepare_one(r)) is not None]
     waters = [f for f in prepared if f.group == "water"]
-    index = WaterIndex(waters, coastline)
+    sea, lakes = sea_waters(waters, coastline)
+    lake_ids = {id(w) for w in lakes}
+    index = WaterIndex(sea, coastline)
     kept: list[NameFeature] = []
     dropped: Counter[str] = Counter()
     for f in prepared:
-        if f.group in UNFILTERED or index.near(f, NEAR_WATER_M):
+        if id(f) in lake_ids:
+            dropped[f.kind] += 1
+        elif f.group in UNFILTERED or index.near(f, NEAR_WATER_M):
             kept.append(f)
         else:
             dropped[f.kind] += 1
@@ -771,6 +813,22 @@ def fetch_all(fetcher: Fetcher, queries: Sequence[Query] = QUERIES) -> list[RawF
     return raw
 
 
+#: A fetch with fewer kept than this is cut short (a failed page, a changed
+#: service), and must not replace good names (2026-11-20: 734 waters, 1,256
+#: landforms).
+MIN_KEPT = {"water": 500, "landform": 800}
+
+
+def check_counts(extract: Extract) -> None:
+    """Raise when a group has fewer kept features than :data:`MIN_KEPT`."""
+    kept = Counter(f.group for f in extract.features)
+    short = {g: kept[g] for g, n in MIN_KEPT.items() if kept[g] < n}
+    if short:
+        raise SystemExit(
+            f"too few names kept, the fetch looks truncated: {short} (minimum {MIN_KEPT})"
+        )
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Fetch coastal place names from Danske Stednavne.")
     parser.add_argument("--out", type=pathlib.Path, default=DEFAULT_OUT)
@@ -798,6 +856,7 @@ def main(argv: list[str] | None = None) -> None:
     else:
         print("  warning: no OpenStreetMap extract; only the named waters say what is coastal")
     extract = prepare(raw, coastline)
+    check_counts(extract)
     doc = to_json(extract, fetched_s)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(

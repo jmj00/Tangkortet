@@ -73,8 +73,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: build/stednavne/stednavne.json
-          key: stednavne-v1-${{ steps.sn-month.outputs.month }}
-          restore-keys: stednavne-v1-
+          key: stednavne-v2-${{ steps.sn-month.outputs.month }}
+          restore-keys: stednavne-v2-
       - name: Fetch the place names (Danske Stednavne)
         id: sn-fetch
         if: steps.sn-cache.outputs.cache-hit != 'true'
@@ -102,7 +102,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: build/stednavne/stednavne.json
-          key: stednavne-v1-${{ steps.sn-month.outputs.month }}
+          key: stednavne-v2-${{ steps.sn-month.outputs.month }}
 
       - name: Build the payload (GBIF + MiljøGIS + OpenStreetMap coast + Stednavne)
         run: |
