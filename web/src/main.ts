@@ -1,49 +1,117 @@
 import type maplibregl from "maplibre-gl";
 import "./style.css";
+import "./shell.css";
 import { openAbout } from "./about";
 import { maybeWelcome } from "./welcome";
 import { searchAddresses, type AddressSuggestion } from "./addresses";
+import { flyCamera, fitCamera, mapInsets, popupAnchor } from "./camera";
 import { loadAllSpecies, loadManifest, loadSpecies } from "./data";
 import { formatDistance } from "./geo";
 import { renderGuide } from "./guide";
 import { formatHash, parseHash, type Tab } from "./hash";
 import { clearObservations, clearRisk, frameToNearest, showObservations, showRisk } from "./layers";
-import { createMap, type MapBundle } from "./map";
+import { createLocateGate, locateErrorMessage, LOCATION_UNSUPPORTED_MESSAGE } from "./locate";
+import { createMap, DENMARK_BOUNDS, type MapBundle } from "./map";
+import { initNavigation, readNavState, type Navigation, type Snapshot } from "./nav";
 import { registerServiceWorker } from "./register-sw";
 import { RiskPanel } from "./riskpanel";
 import { initErrorMonitoring } from "./sentry";
+import { initSheet } from "./sheet";
 import { SpeciesPanel } from "./speciespanel";
 import type { Manifest } from "./types";
 
 initErrorMonitoring();
-maybeWelcome();
 registerServiceWorker();
 
-const mapReady: Promise<MapBundle> = createMap("map");
+// "My location" answers once per press (locatecontrol.ts, locate.ts): the
+// answer sets the pin unless the user has chosen a spot of their own since.
+const locateGate = createLocateGate();
+
+const mapReady: Promise<MapBundle> = createMap("map", { onLocateAsk: () => locateGate.asked() });
 const readout = document.getElementById("readout") as HTMLParagraphElement;
 const appRoot = document.getElementById("app") as HTMLElement;
+const panelEl = document.getElementById("panel") as HTMLElement;
+const searchForm = document.getElementById("search") as HTMLFormElement;
+const mapStatus = document.getElementById("map-status") as HTMLElement;
 
 let manifest: Manifest | null = null;
 let speciesPanel: SpeciesPanel | null = null;
 let riskPanel: RiskPanel | null = null;
 let pin: [number, number] | null = null;
 let marker: maplibregl.Marker | null = null;
-let geolocateActive = false;
 let framedSlug: string | null = null;
 /** Resolves when a startup flight (from a shared link) has landed. */
 let cameraSettled: Promise<void> = Promise.resolve();
+/** The browser history (nav.ts); set up below, once the panels can answer. */
+let navigation: Navigation | null = null;
 
 /** Run `fn` once the map has loaded (layers can't be added before). */
 function onMap(fn: (map: maplibregl.Map) => void): void {
   void mapReady.then(({ map, loaded }) => loaded.then(() => fn(map)));
 }
 
-// --- tabs: Arter / Risiko / Før du går ---
+// --- app shell: the sheet (phone) or sidebar (desktop), and the map's padding ---
+
+let onShellLayout: () => void = () => {};
+const sheet = initSheet({
+  app: appRoot,
+  sheet: panelEl,
+  header: document.getElementById("sheet-header") as HTMLElement,
+  handle: document.getElementById("sheet-handle") as HTMLButtonElement,
+  body: document.getElementById("sheet-body") as HTMLElement,
+  onLayout: () => onShellLayout(),
+});
+
+/** On the phone the sheet covers the lower part of the map and the address
+ * search its top. MapLibre's padding tells it where the uncovered middle is,
+ * so the opening view and every flight land in view rather than under the
+ * sheet. It follows the half snap and is only re-applied when the layout
+ * really changes: changing it shifts the map, which must not happen just
+ * because the sheet was dragged (the live edge is --map-inset-bottom, which
+ * camera.ts mapInsets() reads). */
+let appliedPadding = { top: -1, bottom: -1 };
+function applyMapPadding(map: maplibregl.Map): void {
+  const searchShown = !searchForm.hidden && sheet.isActive();
+  const top = searchShown ? Math.round(searchForm.getBoundingClientRect().bottom + 8) : 0;
+  const bottom = sheet.halfHeight();
+  appRoot.style.setProperty("--map-inset-top", `${top}px`);
+  const unchanged =
+    Math.abs(bottom - appliedPadding.bottom) < 40 && Math.abs(top - appliedPadding.top) < 40;
+  if (unchanged) return;
+  appliedPadding = { top, bottom };
+  map.jumpTo({ padding: { top, bottom, left: 0, right: 0 } });
+}
+
+/** The map is ready: give it its padding, then (without a pin to fly to)
+ * frame Denmark inside the uncovered part. Registered before any flight, so
+ * flights start from the padded camera. */
+const shellReady: Promise<MapBundle> = mapReady.then((bundle) => {
+  const { map } = bundle;
+  applyMapPadding(map);
+  // The phone shows the compass only while the map is turned (shell.css).
+  const markRotated = (): void => {
+    appRoot.toggleAttribute("data-map-rotated", map.getBearing() !== 0 || map.getPitch() !== 0);
+  };
+  map.on("rotate", markRotated);
+  map.on("pitch", markRotated);
+  onShellLayout = () => {
+    applyMapPadding(map);
+    map.resize();
+  };
+  if (!initial.pin) fitCamera(map, DENMARK_BOUNDS, { margin: 8, instant: true });
+  return bundle;
+});
+
+// --- tabs: Arter / Risiko / Før du går (a WAI-ARIA tablist) ---
+
+const tabButtons = [...document.querySelectorAll<HTMLButtonElement>("#tabs button")];
 
 function setTab(tab: Tab): void {
   appRoot.dataset.tab = tab;
-  for (const button of document.querySelectorAll<HTMLButtonElement>("#tabs button")) {
-    button.setAttribute("aria-selected", String(button.dataset.tab === tab));
+  for (const button of tabButtons) {
+    const on = button.dataset.tab === tab;
+    button.setAttribute("aria-selected", String(on));
+    button.tabIndex = on ? 0 : -1;
   }
   for (const section of document.querySelectorAll<HTMLElement>(".tab")) {
     section.hidden = section.id !== `tab-${tab}`;
@@ -54,16 +122,46 @@ function setTab(tab: Tab): void {
   else riskPanel?.redrawMap();
 }
 
-for (const button of document.querySelectorAll<HTMLButtonElement>("#tabs button")) {
+for (const button of tabButtons) {
   button.addEventListener("click", () => {
-    setTab(button.dataset.tab as Tab);
+    const tab = button.dataset.tab as Tab;
+    // On the phone, the tab already showing folds the sheet away or brings it
+    // back, as in most map apps; another tab opens it far enough to read.
+    if (appRoot.dataset.tab === tab && sheet.isActive()) {
+      sheet.snapTo(sheet.snap() === "peek" ? "half" : "peek");
+      return;
+    }
+    sheet.atLeast("half");
+    setTab(tab);
     writeHash();
+  });
+  button.addEventListener("keydown", (e) => {
+    const i = tabButtons.indexOf(button);
+    const to =
+      e.key === "ArrowRight"
+        ? (i + 1) % tabButtons.length
+        : e.key === "ArrowLeft"
+          ? (i - 1 + tabButtons.length) % tabButtons.length
+          : e.key === "Home"
+            ? 0
+            : e.key === "End"
+              ? tabButtons.length - 1
+              : -1;
+    if (to < 0) return;
+    e.preventDefault();
+    tabButtons[to].focus();
+    tabButtons[to].click();
   });
 }
 
 // --- shareable links (hash.ts) ---
 function writeHash(species = speciesPanel?.selectedSlug ?? null): void {
-  history.replaceState(null, "", formatHash(pin, (appRoot.dataset.tab as Tab) ?? "arter", species));
+  // history.state is nav.ts's; the hash only rides along on the same entry.
+  history.replaceState(
+    history.state,
+    "",
+    formatHash(pin, (appRoot.dataset.tab as Tab) ?? "arter", species),
+  );
 }
 document.getElementById("about")?.addEventListener("click", () => openAbout(manifest));
 renderGuide(document.getElementById("tab-guide") as HTMLElement);
@@ -71,28 +169,52 @@ const initial = parseHash(location.hash);
 setTab(initial.tab ?? "arter");
 
 // --- payload + panels ---
+
+/** Waiting for a species sheet to open (Back/Forward, nav.ts). */
+let speciesWaiter: { slug: string; resolve: () => void } | null = null;
+/** Whether the phone sheet was fully open when a species sheet opened. */
+let fullBeforeDetail = false;
+
+let resolvePanel: (panel: SpeciesPanel | null) => void = () => {};
+const panelReady = new Promise<SpeciesPanel | null>((resolve) => (resolvePanel = resolve));
+
 loadManifest()
   .then((m) => {
     manifest = m;
     speciesPanel = new SpeciesPanel(document.getElementById("tab-arter") as HTMLElement, m, {
       loadDoc: (s) => loadSpecies(s.file),
       onSelect: (doc, visible) => {
-        const reframe = doc !== null && doc.slug !== framedSlug;
+        const opened = doc !== null && doc.slug !== framedSlug;
+        const closed = doc === null && framedSlug !== null;
         framedSlug = doc?.slug ?? null;
         onMap((map) => {
           if (!doc) return clearObservations(map);
           showObservations(map, doc, visible);
           // Only when a species is opened, not on every toggle: zoom out just
-          // enough to show its nearest find if none is in view.
-          if (reframe) {
+          // enough to show its nearest find if none is in the uncovered map.
+          if (opened) {
             const points = doc.observations.map(([lon, lat]): [number, number] => [lon, lat]);
             void cameraSettled.then(() => frameToNearest(map, points));
           }
         });
+        // History first (a new entry copies the current address), then the hash.
+        navigation?.record();
         writeHash(doc?.slug ?? null);
+        if (opened) {
+          // Its finds have just been drawn on the map: show both.
+          fullBeforeDetail = sheet.snap() === "full";
+          if (sheet.isActive() && sheet.snap() !== "half") sheet.snapTo("half");
+        } else if (closed && fullBeforeDetail && sheet.snap() === "half") {
+          sheet.snapTo("full");
+        }
+        if (doc && speciesWaiter?.slug === doc.slug) {
+          speciesWaiter.resolve();
+          speciesWaiter = null;
+        }
       },
     });
     if (initial.species) speciesPanel.selectBySlug(initial.species);
+    resolvePanel(speciesPanel);
     riskPanel = new RiskPanel(document.getElementById("tab-risiko") as HTMLElement, m, {
       onItems: (p, radiusM, items) => {
         if (appRoot.dataset.tab === "risiko") onMap((map) => showRisk(map, p, radiusM, items));
@@ -106,6 +228,7 @@ loadManifest()
   })
   .catch((err) => {
     console.error(err);
+    resolvePanel(null);
     const panel = document.getElementById("tab-arter");
     if (panel) panel.textContent = "Kunne ikke indlæse data.";
   });
@@ -131,22 +254,30 @@ function setPin(lngLat: [number, number], label: string): void {
   });
 }
 
-const prefersReducedMotion = (): boolean =>
-  window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+const pinLabel = (p: [number, number]): string => `Nål: ${p[1].toFixed(5)}, ${p[0].toFixed(5)}`;
 
+/** Fly so `center` lands in the middle of the uncovered map (camera.ts). A
+ * fully open phone sheet comes down to half first: it would hide the map it
+ * is flying over. */
 function flyTo(center: [number, number], zoom: number): Promise<void> {
-  return mapReady.then(({ map }) => {
-    // flyTo({ duration: 0 }) NaNs the transform (Svampekortet lesson); jump instead.
-    if (prefersReducedMotion()) {
-      map.jumpTo({ center, zoom });
-      return;
-    }
-    return new Promise<void>((resolve) => {
-      map.once("moveend", () => resolve());
-      map.flyTo({ center, zoom });
-    });
-  });
+  sheet.atMost("half");
+  return shellReady.then(({ map }) => flyCamera(map, center, zoom));
 }
+
+// --- messages over the map (the locate button's refusals) ---
+let statusTimer: number | undefined;
+function showMapStatus(text: string): void {
+  window.clearTimeout(statusTimer);
+  const message = mapStatus.querySelector(".map-status__text") as HTMLElement;
+  message.textContent = text;
+  mapStatus.hidden = false;
+  statusTimer = window.setTimeout(hideMapStatus, 9000);
+}
+function hideMapStatus(): void {
+  window.clearTimeout(statusTimer);
+  mapStatus.hidden = true;
+}
+mapStatus.querySelector("button")?.addEventListener("click", hideMapStatus);
 
 // --- map interaction: tap = pin, tap on a find = its details ---
 const ATTACHMENT_TEXT: Record<string, string> = {
@@ -157,9 +288,8 @@ const ATTACHMENT_TEXT: Record<string, string> = {
 
 mapReady
   .then(({ map, geolocate, maplibregl }) => {
-    geolocate.on("trackuserlocationstart", () => (geolocateActive = true));
-    geolocate.on("trackuserlocationend", () => (geolocateActive = false));
     map.on("click", (e) => {
+      hideMapStatus();
       const find = map.getLayer("observations")
         ? map.queryRenderedFeatures(e.point, { layers: ["observations"] })[0]
         : undefined;
@@ -170,46 +300,130 @@ mapReady
           ATTACHMENT_TEXT[p.a] ?? p.a,
           typeof p.depth === "number" ? `${String(p.depth).replace(".", ",")} m dybde` : null,
         ].filter(Boolean);
-        new maplibregl.Popup({ closeButton: false })
+        // Open towards the uncovered map, never down under the sheet.
+        const anchor = popupAnchor(e.point.y, map.getContainer().clientHeight, mapInsets(map));
+        new maplibregl.Popup({ closeButton: false, anchor, offset: 10 })
           .setLngLat(e.lngLat)
           .setText(parts.join(" · "))
           .addTo(map);
         return;
       }
-      if (geolocateActive) geolocate.trigger(); // the user picked a spot; stop following
+      locateGate.superseded(); // the user picked a spot; a late position must not undo it
       const { lng, lat } = e.lngLat;
-      setPin([lng, lat], `Nål: ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+      setPin([lng, lat], pinLabel([lng, lat]));
     });
     map.on("mouseenter", "observations", () => (map.getCanvas().style.cursor = "pointer"));
     map.on("mouseleave", "observations", () => (map.getCanvas().style.cursor = ""));
+    // One answer per press; it sets the pin and frames it, once.
     geolocate.on("geolocate", (e) => {
+      if (!locateGate.accept()) return;
+      hideMapStatus();
       const { longitude, latitude } = (e as GeolocationPosition).coords;
-      setPin(
-        [longitude, latitude],
-        `Min placering – ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
-      );
+      const here: [number, number] = [longitude, latitude];
+      setPin(here, `Min placering – ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+      void flyTo(here, Math.max(map.getZoom(), 13));
     });
+    geolocate.on("error", (e) => {
+      // A refusal is always said; a failed fix only while it is still wanted.
+      const { code } = e as GeolocationPositionError;
+      if (locateGate.accept() || code === 1) showMapStatus(locateErrorMessage(code));
+    });
+    geolocate.on("unsupported", () => showMapStatus(LOCATION_UNSUPPORTED_MESSAGE));
   })
-  .catch((err) => console.error("map failed to load", err));
+  .catch((err) => {
+    console.error("map failed to load", err);
+    showMapStatus("Kortet kunne ikke indlæses. Genindlæs siden for at prøve igen.");
+  });
 
 if (initial.pin) {
   const p = initial.pin;
-  setPin(p, `Nål: ${p[1].toFixed(5)}, ${p[0].toFixed(5)}`);
+  setPin(p, pinLabel(p));
   cameraSettled = flyTo(p, 12);
 }
 
 // A link pasted into an already-open tab only changes the hash; follow it.
 // (writeHash uses history.replaceState, which does not fire this event.)
+// Back/Forward through the app's own entries (nav.ts) also changes the hash
+// when it differs between them; that is not a new link, and the app's state
+// (pin, tab) stands: the address is just brought back in line with it.
 window.addEventListener("hashchange", () => {
+  if (readNavState(history.state)) {
+    writeHash();
+    return;
+  }
   const next = parseHash(location.hash);
-  if (next.tab) setTab(next.tab);
-  if (next.pin) {
+  if (next.tab && next.tab !== appRoot.dataset.tab) setTab(next.tab);
+  if (next.pin && (next.pin[0] !== pin?.[0] || next.pin[1] !== pin?.[1])) {
     const p = next.pin;
-    setPin(p, `Nål: ${p[1].toFixed(5)}, ${p[0].toFixed(5)}`);
+    locateGate.superseded();
+    setPin(p, pinLabel(p));
     cameraSettled = flyTo(p, 12);
   }
-  if (next.species) speciesPanel?.selectBySlug(next.species);
+  if (next.species && next.species !== speciesPanel?.selectedSlug) {
+    speciesPanel?.selectBySlug(next.species);
+  }
 });
+
+// --- Back and Forward (nav.ts): an open species sheet and a modal dialog each
+// get a history entry, so a phone's Back closes them instead of leaving.
+
+function navSnapshot(): Snapshot {
+  const dialog = document.querySelector("dialog[open]") !== null;
+  return { detail: speciesPanel?.selectedSlug ?? null, ...(dialog ? { dialog } : {}) };
+}
+
+/** Close the open species sheet. SpeciesPanel keeps its "← Alle arter"
+ * handler private; a public closeDetail(), when there is one, is preferred. */
+function closeSpecies(panel: SpeciesPanel): void {
+  const p = panel as unknown as { closeDetail?: () => void; back?: () => void };
+  if (p.closeDetail) p.closeDetail();
+  else p.back?.();
+}
+
+function openSpecies(panel: SpeciesPanel, slug: string): Promise<void> {
+  if (!manifest?.species.some((s) => s.slug === slug)) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    speciesWaiter = { slug, resolve };
+    window.setTimeout(resolve, 5000); // a sheet that never loads must not stall the history
+    panel.selectBySlug(slug);
+  });
+}
+
+async function applyNavSnapshot(snap: Snapshot): Promise<void> {
+  // Back with a dialog open closes the dialog only: the entry behind it is
+  // what the dialog lay over.
+  if (!snap.dialog) {
+    for (const dialog of document.querySelectorAll<HTMLDialogElement>("dialog[open]")) {
+      dialog.close();
+    }
+  }
+  const panel = await panelReady;
+  if (!panel || panel.selectedSlug === snap.detail) return;
+  const hadFocus = panelEl.contains(document.activeElement);
+  if (snap.detail === null) closeSpecies(panel);
+  else {
+    if (appRoot.dataset.tab !== "arter") setTab("arter");
+    await openSpecies(panel, snap.detail);
+  }
+  // The view under the focus was replaced: start again from its top.
+  if (hadFocus && !panelEl.contains(document.activeElement)) {
+    document.getElementById("tab-arter")?.focus({ preventScroll: true });
+  }
+}
+
+navigation = initNavigation({ current: navSnapshot, apply: applyNavSnapshot });
+
+// A modal dialog opening or closing, by any route (its button, Escape, a
+// phone's own Back), is a change Back follows. showModal() sets the open
+// attribute and close() removes it.
+new MutationObserver(() => navigation?.record()).observe(document.body, {
+  subtree: true,
+  attributes: true,
+  attributeFilter: ["open"],
+});
+
+// After the history is set up, so the welcome dialog gets an entry of its own.
+maybeWelcome();
 
 // --- address autocomplete (Adressevælgeren), an ARIA combobox; from Svampekortet ---
 const input = document.getElementById("q") as HTMLInputElement;
@@ -231,9 +445,7 @@ function selectSuggestion(item: AddressSuggestion): void {
   const a = item.adgangsadresse;
   if (!a || typeof a.x !== "number" || typeof a.y !== "number") return;
   const target: [number, number] = [a.x, a.y];
-  void mapReady.then(({ geolocate }) => {
-    if (geolocateActive) geolocate.trigger();
-  });
+  locateGate.superseded(); // the user picked a place; a late position must not undo it
   setPin(target, item.tekst);
   void flyTo(target, 14);
   input.value = item.tekst;

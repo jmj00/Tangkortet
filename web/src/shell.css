@@ -1,0 +1,612 @@
+/* The app shell: full-screen map, the address search over it, and #panel as a
+   draggable bottom sheet on phones (src/sheet.ts) or a sidebar beside the map
+   from 720px (and on short landscape phones from 560px). Layout and tokens
+   adapted from Svampekortet (624fb8b, web/src/style.css). */
+
+:root {
+  --border-strong: #9fb3b2;
+  --focus: #1f6f78;
+  --elev-1: 0 1px 2px rgb(20 40 42 / 0.12), 0 1px 5px rgb(20 40 42 / 0.08);
+  --elev-2: 0 1px 3px rgb(20 40 42 / 0.16), 0 6px 20px rgb(20 40 42 / 0.14);
+  --elev-sheet: 0 -1px 3px rgb(20 40 42 / 0.1), 0 -10px 30px rgb(20 40 42 / 0.16);
+  --radius-m: 10px;
+  --radius-xl: 22px;
+  --gutter: 1rem;
+  --tabbar-h: 2.125rem; /* 34px; the hit area is 44px on coarse pointers */
+  --sidebar-w: clamp(22rem, 30vw, 27rem);
+  --dur-sheet: 300ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Top edge shared by the floating search and the fully open sheet. */
+  --shell-top: max(0.75rem, env(safe-area-inset-top));
+  --search-h: 2.875rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --border-strong: #4d6162;
+    --focus: #7cc4cc;
+    --elev-1: 0 1px 2px rgb(0 0 0 / 0.4), 0 1px 5px rgb(0 0 0 / 0.25);
+    --elev-2: 0 1px 3px rgb(0 0 0 / 0.45), 0 6px 20px rgb(0 0 0 / 0.4);
+    --elev-sheet: 0 -1px 3px rgb(0 0 0 / 0.4), 0 -10px 30px rgb(0 0 0 / 0.45);
+  }
+}
+
+/* Registered so that moving the sheet restyles the sheet alone, not its subtree. */
+@property --sheet-y {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* --- phone: the map fills the screen and the sheet rides over it --- */
+#app {
+  position: relative;
+  height: 100dvh;
+  overflow: hidden;
+  /* How much of the map's box the shell covers on each side; anything that
+     floats over the map places itself inside what is left. main.ts sets
+     --map-inset-top, sheet.ts keeps --map-inset-bottom on the sheet's live
+     edge, and camera.ts mapInsets() reads the same values for the camera. */
+  --map-inset-top: 0px;
+  --map-inset-bottom: 53dvh;
+  --map-inset-left: 0px;
+}
+
+#map {
+  position: absolute;
+  inset: 0;
+}
+
+#search {
+  position: absolute;
+  /* Above the sheet and the map controls, so the address dropdown is never
+     hidden under whatever it lands on while open. */
+  z-index: 5;
+  top: var(--shell-top);
+  left: max(0.75rem, env(safe-area-inset-left));
+  right: max(0.75rem, env(safe-area-inset-right));
+  margin: 0;
+}
+
+#search[hidden] {
+  display: none;
+}
+
+#panel {
+  position: absolute;
+  z-index: 3;
+  /* fully open: just below the address search, or near the top without it */
+  top: calc(var(--shell-top) + var(--search-h) + 0.5rem);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  /* The part of the sheet hanging below the screen at the current snap, kept
+     out of the scroll area so the content can always be scrolled to its end. */
+  padding-bottom: var(--sheet-hidden, 0px);
+  background: var(--surface);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: var(--elev-sheet);
+  /* sheet.ts sets --sheet-y; until it has measured, 42% is roughly the half snap. */
+  --sheet-y: 42%;
+  transform: translate3d(0, var(--sheet-y), 0);
+}
+
+#app:has(#search[hidden]) #panel {
+  top: var(--shell-top);
+}
+
+/* Probe: sheet.ts reads the home-indicator inset from this height. */
+#panel::after {
+  content: "";
+  position: absolute;
+  width: 0;
+  height: env(safe-area-inset-bottom, 0px);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+#app[data-sheet-ready] #panel {
+  transition: transform var(--dur-sheet) var(--ease-out);
+}
+
+#app[data-sheet-dragging] #panel {
+  transition: none;
+}
+
+#sheet-header {
+  flex: none;
+  /* The whole header is the drag surface; taps on its buttons still click. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#sheet-handle {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 0.875rem; /* 14px */
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: grab;
+}
+
+#sheet-handle::before {
+  content: "";
+  position: absolute;
+  top: 0.4rem;
+  left: 50%;
+  width: 2.5rem;
+  height: 0.25rem;
+  margin-left: -1.25rem;
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+
+/* 44px touch target around the small visible pill. */
+#sheet-handle::after {
+  content: "";
+  position: absolute;
+  top: -0.75rem;
+  left: 50%;
+  width: 6rem;
+  height: 2.75rem;
+  margin-left: -3rem;
+}
+
+#sheet-handle:focus-visible {
+  outline: none;
+}
+
+#sheet-handle:focus-visible::before {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+#app[data-sheet-dragging] #sheet-handle::before {
+  background: var(--muted);
+}
+
+#sheet-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+
+/* Until the sheet is fully open, a vertical drag on the content moves the
+   sheet (sheet.ts); sideways swipes stay with the browser. */
+@media (max-width: 559.98px), (max-width: 719.98px) and (min-height: 520.02px) {
+  #panel:not([data-snap="full"]) #sheet-body,
+  #panel:not([data-snap="full"]) #sheet-body * {
+    touch-action: pan-x;
+  }
+}
+
+/* Wordmark: sidebar only. */
+#brand {
+  display: none;
+}
+
+/* --- the pin readout: one compact row with a pin glyph --- */
+#readout {
+  position: relative;
+  margin: 0;
+  padding: 0.1rem var(--gutter) 0.3rem;
+  min-height: 1.6rem;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  /* two lines at most; a long risk-item title is cut, not the tabs */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  padding-left: calc(var(--gutter) + 1.25rem);
+}
+
+#readout::before {
+  content: "";
+  position: absolute;
+  left: var(--gutter);
+  top: 0.15rem;
+  width: 0.95rem;
+  height: 0.95rem;
+  background: var(--accent);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+
+/* --- Arter / Risiko / Før du går: a segmented control in the header --- */
+#tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  margin: 0.15rem var(--gutter) 0.5rem;
+  padding: 2px;
+  background: color-mix(in srgb, var(--border) 55%, var(--bg));
+  border-radius: calc(var(--radius-m) + 2px);
+}
+
+#tabs button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tabbar-h);
+  padding: 0 0.4rem;
+  border: none;
+  border-radius: var(--radius-m);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.15;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+#tabs button:hover {
+  color: var(--ink);
+}
+
+#tabs button[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--elev-1);
+}
+
+#tabs button:focus-visible {
+  outline-offset: -2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  /* --surface on the track is too close in the dark to read as "selected" */
+  #tabs button[aria-selected="true"] {
+    background: color-mix(in srgb, var(--ink) 13%, var(--surface));
+  }
+}
+
+/* 44px touch target around the 34px buttons, decided by the pointer, not width */
+@media (pointer: coarse) {
+  #tabs button::after {
+    content: "";
+    position: absolute;
+    inset: -5px 0;
+  }
+}
+
+/* --- the panel's content: each tab scrolls on its own --- */
+.tab {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.75rem var(--gutter) 1rem;
+}
+
+.tab:focus {
+  outline: none;
+}
+
+#panel footer {
+  flex: none;
+  border-top: 1px solid var(--border);
+  padding: 0.35rem var(--gutter) calc(0.35rem + env(safe-area-inset-bottom));
+}
+
+#panel footer button.link {
+  min-height: 2rem;
+}
+
+@media (pointer: coarse) {
+  #panel footer button.link {
+    min-height: 2.75rem;
+  }
+}
+
+/* --- a message over the map (the locate button) --- */
+#map-status {
+  position: absolute;
+  z-index: 4;
+  top: max(var(--shell-top), var(--map-inset-top));
+  left: max(0.75rem, env(safe-area-inset-left));
+  right: max(0.75rem, env(safe-area-inset-right));
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 0.6rem 0.4rem 0.6rem 0.85rem;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--warn);
+  border-radius: var(--radius-m);
+  box-shadow: var(--elev-2);
+  font-size: 0.9rem;
+}
+
+#map-status[hidden] {
+  display: none;
+}
+
+.map-status__text {
+  flex: 1;
+  margin: 0.1rem 0;
+}
+
+.map-status__close {
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin: -0.5rem 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.map-status__close:hover {
+  color: var(--ink);
+}
+
+/* --- map controls --- */
+#map .maplibregl-ctrl-group {
+  background: var(--surface);
+  box-shadow: var(--elev-2);
+}
+
+#map .maplibregl-ctrl-group button + button {
+  border-top-color: var(--border);
+}
+
+#map .maplibregl-ctrl-attrib {
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  color: var(--ink);
+}
+
+#map .maplibregl-ctrl-attrib a {
+  color: var(--ink);
+}
+
+#map .maplibregl-ctrl-scale {
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+@media (prefers-color-scheme: dark) {
+  /* MapLibre's icons are dark glyphs baked into background images. */
+  #map .maplibregl-ctrl-group .maplibregl-ctrl-icon,
+  #map .maplibregl-ctrl-attrib-button {
+    filter: invert(1) hue-rotate(180deg);
+  }
+
+  #map .maplibregl-ctrl-attrib-button {
+    background-color: transparent;
+  }
+}
+
+/* Phone: no zoom buttons (pinch does that), the compass only while the map is
+   turned, and "find me" as a thumb-reachable round button that rides the top
+   edge of the sheet together with the scale and the attribution. */
+@media (max-width: 559.98px), (max-width: 719.98px) and (min-height: 520.02px) {
+  #map .maplibregl-ctrl-bottom-left,
+  #map .maplibregl-ctrl-bottom-right {
+    bottom: var(--map-inset-bottom);
+  }
+
+  #map .maplibregl-ctrl-top-right {
+    top: auto;
+    bottom: calc(var(--map-inset-bottom) + 2.25rem);
+  }
+
+  #app[data-sheet-ready]:not([data-sheet-dragging]) #map .maplibregl-ctrl-top-right,
+  #app[data-sheet-ready]:not([data-sheet-dragging]) #map .maplibregl-ctrl-bottom-left,
+  #app[data-sheet-ready]:not([data-sheet-dragging]) #map .maplibregl-ctrl-bottom-right {
+    transition: bottom var(--dur-sheet) var(--ease-out);
+  }
+
+  #map .maplibregl-ctrl-top-right .maplibregl-ctrl {
+    margin: 0.6rem 0.75rem 0 0;
+  }
+
+  #map .maplibregl-ctrl-zoom-in,
+  #map .maplibregl-ctrl-zoom-out,
+  #app:not([data-map-rotated]) #map .maplibregl-ctrl-compass,
+  #app:not([data-map-rotated]) #map .maplibregl-ctrl-group:has(.maplibregl-ctrl-compass) {
+    display: none;
+  }
+
+  #map .maplibregl-ctrl-group {
+    border-radius: 50%;
+  }
+
+  #map .maplibregl-ctrl-group button {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  #map .maplibregl-ctrl-compass {
+    border-top: none;
+  }
+}
+
+/* 44px targets for the remaining controls on any touch screen */
+@media (pointer: coarse) {
+  #map .maplibregl-ctrl-group button {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+}
+
+/* --- sidebar: from 720px, and on short landscape phones from 560px, where
+   a bottom sheet would leave no map. The map is a column of its own and
+   nothing covers it. --- */
+@media (min-width: 720px), (min-width: 560px) and (max-height: 520px) {
+  :root {
+    --gutter: 1.25rem;
+  }
+
+  #app {
+    --map-inset-top: 0px;
+    --map-inset-bottom: 0px;
+    --map-inset-left: 0px;
+    --brand-h: 3.75rem;
+    display: grid;
+    grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  #panel {
+    position: relative;
+    inset: auto;
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 0;
+    padding-bottom: 0;
+    padding-left: env(safe-area-inset-left);
+    border-right: 1px solid var(--border);
+    border-radius: 0;
+    box-shadow: 1px 0 12px rgb(20 40 42 / 0.08);
+    transform: none;
+    transition: none;
+  }
+
+  /* (the phone rule that drops the sheet top without a search would shift it) */
+  #app:has(#search[hidden]) #panel {
+    top: auto;
+  }
+
+  #map {
+    position: relative;
+    inset: auto;
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 0;
+  }
+
+  #sheet-header {
+    touch-action: auto;
+    user-select: auto;
+    -webkit-user-select: auto;
+  }
+
+  #sheet-handle {
+    display: none;
+  }
+
+  #brand {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    height: var(--brand-h);
+    padding: 0.25rem var(--gutter) 0;
+  }
+
+  .brand-mark {
+    flex: none;
+    width: 1.75rem;
+    height: 1.75rem;
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .brand-name {
+    color: var(--accent);
+    font-size: 1.3rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  /* The address search sits in the sidebar, under the wordmark; it stays
+     outside #panel in the markup for the phone layout. */
+  #search {
+    top: calc(var(--brand-h) + 0.25rem);
+    left: calc(env(safe-area-inset-left) + var(--gutter));
+    right: auto;
+    width: calc(var(--sidebar-w) - 2 * var(--gutter));
+  }
+
+  #app:has(#search:not([hidden])) #readout {
+    margin-top: calc(var(--search-h) + 0.75rem);
+  }
+
+  #readout {
+    padding-top: 0.2rem;
+  }
+
+  #map-status {
+    top: 0.75rem;
+    left: calc(var(--sidebar-w) + 0.75rem);
+    right: 3.75rem; /* clear of the zoom and locate buttons */
+    margin: 0;
+  }
+}
+
+/* Short landscape: no room for the wordmark; the search tops the sidebar. */
+@media (min-width: 560px) and (max-height: 520px) {
+  #app {
+    --brand-h: 0px;
+  }
+
+  #brand {
+    display: none;
+  }
+
+  #sheet-header {
+    padding-top: 0.5rem;
+  }
+
+  #search {
+    top: max(0.5rem, env(safe-area-inset-top));
+  }
+
+  .tab {
+    padding-top: 0.5rem;
+  }
+}
+
+@media (min-width: 720px) {
+  #sheet-header {
+    border-bottom: none;
+  }
+}
+
+/* --- dialogs: never taller than the screen --- */
+dialog.about {
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #app[data-sheet-ready] #panel,
+  #app[data-sheet-ready] #map .maplibregl-ctrl-top-right,
+  #app[data-sheet-ready] #map .maplibregl-ctrl-bottom-left,
+  #app[data-sheet-ready] #map .maplibregl-ctrl-bottom-right {
+    transition: none !important;
+  }
+}

@@ -1,5 +1,6 @@
 // Ported from Svampekortet (0024b43): OSM base + the Skærmkort WMS when a key is set.
-import type { Map as MapLibreMap, GeolocateControl, StyleSpecification } from "maplibre-gl";
+import type { Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
+import { LocateControl } from "./locatecontrol";
 
 const OSM_STYLE: StyleSpecification = {
   version: 8,
@@ -18,6 +19,12 @@ const OSM_STYLE: StyleSpecification = {
 // Roughly the centre of Denmark (Storebælt), so the opening view frames the
 // whole country from Jutland to Bornholm.
 const DENMARK_CENTER: [number, number] = [10.9, 55.9];
+/** Jutland to Bornholm, Skagen to the border: the opening view frames this
+ * inside the part of the map the sheet leaves uncovered (main.ts). */
+export const DENMARK_BOUNDS: [[number, number], [number, number]] = [
+  [8.0, 54.55],
+  [15.2, 57.75],
+];
 
 const SDFI_TOKEN = import.meta.env.VITE_DATAFORDELER_API_KEY;
 
@@ -72,7 +79,7 @@ function addSdfiBasemap(map: MapLibreMap): void {
 
 export interface MapBundle {
   map: MapLibreMap;
-  geolocate: GeolocateControl;
+  geolocate: LocateControl;
   /** The loaded module namespace, so callers can `new maplibregl.Marker(...)`
    *  without a second static import of the library. */
   maplibregl: typeof import("maplibre-gl");
@@ -87,7 +94,10 @@ export interface MapBundle {
  * stays out of the entry bundle — the species panel renders from the payload
  * while this resolves.
  */
-export async function createMap(container: string): Promise<MapBundle> {
+export async function createMap(
+  container: string,
+  options: { onLocateAsk?: () => void } = {},
+): Promise<MapBundle> {
   const maplibregl = await import("maplibre-gl");
   await import("maplibre-gl/dist/maplibre-gl.css");
 
@@ -99,9 +109,12 @@ export async function createMap(container: string): Promise<MapBundle> {
     attributionControl: { compact: true },
   });
 
-  const geolocate = new maplibregl.GeolocateControl({
-    positionOptions: { enableHighAccuracy: true },
-    trackUserLocation: true,
+  // One position per press, never a watch, and no camera move of its own
+  // (locatecontrol.ts, locate.ts): the app frames an answer it accepts.
+  const geolocate = new LocateControl({
+    positionOptions: { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 },
+    makeMarker: (element) => new maplibregl.Marker({ element }),
+    onAsk: options.onLocateAsk,
   });
 
   map.addControl(new maplibregl.NavigationControl(), "top-right");
