@@ -16,7 +16,9 @@ Mobile-first PWA: a MapLibre map of the Danish coast with three tabs.
   fredninger.
 - **Før du går**: the expert's checklist and advice, verbatim from the brief.
 
-Shareable links: `#pin=<lat>,<lon>&tab=<arter|risiko|guide>&art=<slug>`.
+Shareable links: `#pin=<lat>,<lon>&tab=<arter|risiko|guide>&art=<slug>`. A visit
+without a pin or a species in the link opens on the start screen
+(`src/start.ts`, decisions in `src/startstate.ts`); `?kort` skips it.
 
 Ported from Svampekortet (0024b43): `map.ts`, `addresses.ts`, `register-sw.ts`,
 `sentry.ts`, `public/sw.js`, the reframing in `layers.ts`, and the build setup.
