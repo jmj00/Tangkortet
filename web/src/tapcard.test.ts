@@ -24,9 +24,10 @@ describe("the pin's card", () => {
   });
 
   it("is on an island or a peninsula, by a headland", () => {
-    expect(placeText({ name: "Helgenæs", kind: "landform", distanceM: 0, on: true })).toBe(
-      "På Helgenæs",
-    );
+    const helgenaes = { name: "Helgenæs", kind: "landform", distanceM: 0, on: true } as const;
+    expect(placeText(helgenaes, true)).toBe("På Helgenæs");
+    // the place list's circle alone is no proof: a pin in Ebeltoft Vig is in it
+    expect(placeText(helgenaes)).toBe("Ved Helgenæs");
     expect(placeText({ name: "Næsset", kind: "landform", distanceM: 120 })).toBe("Ved Næsset");
   });
 

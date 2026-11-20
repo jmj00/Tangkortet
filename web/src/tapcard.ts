@@ -16,7 +16,7 @@
 import { formatDistance } from "./geo";
 import { loadPlaceIndex, loadedPlaceIndex, nearestPlace, type NearestPlace } from "./placeindex";
 import { NONE_TEXT } from "./coast";
-import { seaName, shoreLine } from "./names";
+import { onNamedLand, seaName, shoreLine } from "./names";
 import { findsNear, NEAR_PIN_M } from "./species";
 import type { SpeciesDoc } from "./types";
 import type { CoastState } from "./riskpanel";
@@ -58,10 +58,10 @@ export const AT_PLACE_M = 500;
 
 /** "Ved Aarhus", "1,2 km fra Ebeltoft", "Ved Sydstranden, Kerteminde";
  * null without a place. */
-export function placeText(place: NearestPlace | null): string | null {
+export function placeText(place: NearestPlace | null, onLand = false): string | null {
   if (!place) return null;
   const name = place.town ? `${place.name}, ${place.town}` : place.name;
-  if (place.on) return `På ${name}`;
+  if (place.on && onLand) return `På ${name}`;
   if (place.distanceM < AT_PLACE_M) return `Ved ${name}`;
   return `${formatDistance(place.distanceM)} fra ${name}`;
 }
@@ -306,9 +306,14 @@ export class TapCard {
   private placeLine(): string {
     if (this.source.kind === "search") return this.source.label;
     // out in the water: the water's name says more than "3 km fra Egå"
-    const sea = typeof this.coast === "object" ? seaName(this.coast) : null;
-    const near =
-      sea && !(this.place && this.place.distanceM < AT_PLACE_M) ? sea : placeText(this.place);
+    const coast = typeof this.coast === "object" ? this.coast : null;
+    const sea = coast ? seaName(coast) : null;
+    const place = this.place;
+    // "På Helgenæs" only when the island's outline holds the pin and
+    // OpenStreetMap has it on land (the place list knows only a circle)
+    const onLand = !!place?.on && coast !== null && onNamedLand(coast, place.name);
+    const at = place !== null && place.distanceM < AT_PLACE_M && (!place.on || onLand);
+    const near = sea && !at ? sea : placeText(place, onLand);
     if (this.source.kind === "locate") return near ? `Min placering · ${near}` : "Min placering";
     return near ?? (this.pin ? coordsText(this.pin) : "");
   }

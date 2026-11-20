@@ -62,7 +62,7 @@ export const KINDS: Record<string, { group: NameGroup; label: string }> = {
   bredning: { group: "water", label: "Bredning" },
   løb: { group: "water", label: "Løb" },
   hav: { group: "water", label: "Hav" },
-  tørtVedLavvande: { group: "shoal", label: "Tørt ved lavvande" },
+  tørtVedLavvande: { group: "shoal", label: "Tørlægges ved lavvande" },
   overskylledeSten: { group: "shoal", label: "Overskyllede sten" },
   havbad: { group: "bath", label: "Havbad" },
 };
@@ -82,12 +82,43 @@ export interface NamedPlace {
   rings: LonLat[][];
   /** The whole area (hectares), for "the smallest water the pin is in". */
   areaHa: number;
+  /** A water's shore: its rings without the edges along the names cells'
+   * grid lines, where the pipeline cut it (a cut is no shore, and a concave
+   * bay cut by a cell leaves a zero-width sliver along the cut, far inland).
+   * Distances are measured to these; null for anything else. */
+  shore: LonLat[][] | null;
+}
+
+/** Whether a segment lies along one grid line of a `deg` grid. */
+function onGridLine(a: LonLat, b: LonLat, deg: number): boolean {
+  const on = (v: number): boolean => Math.abs(v / deg - Math.round(v / deg)) < 1e-6;
+  return (a[0] === b[0] && on(a[0])) || (a[1] === b[1] && on(a[1]));
+}
+
+/** The rings as lines, broken where an edge lies along a grid line. */
+export function shoreLines(rings: readonly LonLat[][], deg: number): LonLat[][] {
+  const out: LonLat[][] = [];
+  for (const ring of rings) {
+    let run: LonLat[] = [];
+    for (let i = 0; i + 1 < ring.length; i++) {
+      if (deg > 0 && onGridLine(ring[i], ring[i + 1], deg)) {
+        if (run.length >= 2) out.push(run);
+        run = [];
+        continue;
+      }
+      if (run.length === 0) run.push(ring[i]);
+      run.push(ring[i + 1]);
+    }
+    if (run.length >= 2) out.push(run);
+  }
+  return out;
 }
 
 /** Every name in the cells. A water is clipped to each cell, so its pieces
  * all stay (one id); anything else lies whole in every cell it touches and
- * is counted once. */
-export function cellNames(cells: readonly NameCell[]): NamedPlace[] {
+ * is counted once. `cellDeg`: the cells' size (NamesIndex.cell_deg), so the
+ * cuts along the cell edges are left out of a water's shore. */
+export function cellNames(cells: readonly NameCell[], cellDeg = 0): NamedPlace[] {
   const seen = new Set<number>();
   const out: NamedPlace[] = [];
   for (const cell of cells) {
@@ -108,6 +139,7 @@ export function cellNames(cells: readonly NameCell[]): NamedPlace[] {
         coords: type === "a" ? [] : decode(coords as number[]),
         rings,
         areaHa: areaHa ?? 0,
+        shore: group === "water" && type === "a" ? shoreLines(rings, cellDeg) : null,
       });
     }
   }
@@ -127,13 +159,14 @@ export function inRings(rings: readonly LonLat[][], [x, y]: LonLat): boolean {
   return inside;
 }
 
-/** Metres from the pin to the place; 0 inside an area. */
+/** Metres from the pin to the place; 0 inside an area. A water is measured
+ * to its shore (NamedPlace.shore), not to where a cell cut it. */
 export function nameDistance(p: NamedPlace, pin: LonLat): number {
   if (p.type !== "a") return featureDistance({ type: p.type, coords: p.coords }, pin);
   if (inRings(p.rings, pin)) return 0;
   let best = Infinity;
-  for (const ring of p.rings)
-    best = Math.min(best, featureDistance({ type: "l", coords: ring }, pin));
+  for (const line of p.shore ?? p.rings)
+    best = Math.min(best, featureDistance({ type: "l", coords: line }, pin));
   return best;
 }
 
@@ -158,13 +191,18 @@ export interface NamesSummary {
   /** Beaches and harbours within COAST_RADIUS_M, nearest first. */
   beaches: NameHit[];
   harbours: NameHit[];
+  /** The names of the landform areas the pin is inside (an island, a
+   * peninsula, a næs on it), for "På Helgenæs". */
+  onLandforms: string[];
 }
 
 /** The water the pin is in (the smallest, so "Kalø Vig" before "Århus
- * Bugt"), else the nearest within WATER_NEAR_M. */
+ * Bugt"), else, of the waters within WATER_NEAR_M, the smallest of those at
+ * most SAME_PLACE_M further than the nearest (by Egå: Kalø Vig, not
+ * Kattegat, whose shore there is the same). */
 export function waterAt(places: readonly NamedPlace[], pin: LonLat): WaterName | null {
   let inside: NamedPlace | null = null;
-  let near: NameHit | null = null;
+  const hits: NameHit[] = [];
   for (const p of places) {
     if (p.group !== "water") continue;
     if (inRings(p.rings, pin)) {
@@ -173,9 +211,13 @@ export function waterAt(places: readonly NamedPlace[], pin: LonLat): WaterName |
     }
     if (inside) continue;
     const d = nameDistance(p, pin);
-    if (d <= WATER_NEAR_M && (!near || d < near.distanceM)) near = { place: p, distanceM: d };
+    if (d <= WATER_NEAR_M) hits.push({ place: p, distanceM: d });
   }
   if (inside) return { name: inside.name, kind: inside.kind, inside: true, distanceM: 0 };
+  const nearest = Math.min(...hits.map((h) => h.distanceM));
+  const near = hits
+    .filter((h) => h.distanceM <= nearest + SAME_PLACE_M)
+    .sort((a, b) => a.place.areaHa - b.place.areaHa || a.distanceM - b.distanceM)[0];
   if (near)
     return {
       name: near.place.name,
@@ -215,6 +257,9 @@ export function summarizeNames(places: readonly NamedPlace[], pin: LonLat): Name
     shoal: nearest(places, pin, "shoal", SHOAL_RADIUS_M)[0] ?? null,
     beaches: nearest(places, pin, "beach", COAST_RADIUS_M),
     harbours: nearest(places, pin, "harbour", COAST_RADIUS_M),
+    onLandforms: places
+      .filter((p) => p.group === "landform" && p.type === "a" && inRings(p.rings, pin))
+      .map((p) => p.name),
   };
 }
 
@@ -238,6 +283,8 @@ export interface ShoreRow {
   /** How `name` is joined on: a name after a dash, a kind after a dot. */
   joiner: " – " | " · ";
   distanceM: number;
+  /** The row shows an official name (Danske Stednavne). */
+  official: boolean;
 }
 
 /** Whether the name already says what it is ("Kalø Vig" is not; "Helgenæs"
@@ -250,13 +297,22 @@ function namesItsKind(name: string, label: string): boolean {
 
 function placeRow(hit: NameHit): ShoreRow {
   const { label } = kindInfo(hit.place.kind);
+  // the name first, then what the register says it is ("Keldsand ·
+  // tørlægges ved lavvande"): a fact about the water, never a way out
   if (hit.place.group === "shoal")
-    return { label, name: hit.place.name, joiner: " – ", distanceM: hit.distanceM };
+    return {
+      label: hit.place.name,
+      name: label.toLocaleLowerCase("da"),
+      joiner: " · ",
+      distanceM: hit.distanceM,
+      official: true,
+    };
   return {
     label: hit.place.name,
     name: namesItsKind(hit.place.name, label) ? null : label.toLocaleLowerCase("da"),
     joiner: " · ",
     distanceM: hit.distanceM,
+    official: true,
   };
 }
 
@@ -300,9 +356,21 @@ export function shoreRows(s: CoastSummary): ShoreRow[] {
     if (match) {
       used.add(match.h.place.id);
       const label = group === "harbour" ? kindInfo(match.h.place.kind).label : n.label;
-      return { label, name: match.h.place.name, joiner: " – ", distanceM: n.distanceM };
+      return {
+        label,
+        name: match.h.place.name,
+        joiner: " – ",
+        distanceM: n.distanceM,
+        official: true,
+      };
     }
-    return { label: n.label, name: shownName(n.feature), joiner: " – ", distanceM: n.distanceM };
+    return {
+      label: n.label,
+      name: shownName(n.feature),
+      joiner: " – ",
+      distanceM: n.distanceM,
+      official: false,
+    };
   });
   if (names) {
     const has = (group: NameGroup): boolean =>
@@ -318,6 +386,7 @@ export function shoreRows(s: CoastSummary): ShoreRow[] {
           name: hit.place.name,
           joiner: " – ",
           distanceM: hit.distanceM,
+          official: true,
         });
     }
     if (names.landform) rows.push(placeRow(names.landform));
@@ -326,9 +395,20 @@ export function shoreRows(s: CoastSummary): ShoreRow[] {
   return rows.sort((a, b) => a.distanceM - b.distanceM);
 }
 
-/** "ved nålen" (at or inside it), else the distance. */
+/** "her" (the pin is inside it), "ved nålen" (at it), else the distance. */
 export function distText(m: number): string {
+  if (m === 0) return "her";
   return m < EDGE_M ? "ved nålen" : metres(m);
+}
+
+/** Whether the card shows an official name: in its water line or a row. */
+export function showsOfficialName(
+  s: Pick<CoastSummary, "water" | "names">,
+  rows: readonly ShoreRow[],
+): boolean {
+  const n = s.names?.water;
+  const line = waterLine(s);
+  return rows.some((r) => r.official) || (n != null && line != null && line.includes(n.name));
 }
 
 /** "I Århus Bugt, 120 m fra kysten", "Kalø Vig 40 m væk", "I vandet, 120 m
@@ -371,6 +451,14 @@ export function seaName(s: CoastSummary | null | undefined): string | null {
   const w = s?.water;
   if (w && (!w.inWater || w.distanceM < OFFSHORE_M)) return null;
   return `I ${n.name}`;
+}
+
+/** The pin is on the island or peninsula `name`: inside its outline in the
+ * names cells, and not in the water by OpenStreetMap's coastline ("På
+ * Helgenæs"; not a pin in Ebeltoft Vig, whatever a circle round Helgenæs
+ * says). */
+export function onNamedLand(s: Pick<CoastSummary, "water" | "names">, name: string): boolean {
+  return (s.names?.onLandforms ?? []).includes(name) && !s.water?.inWater;
 }
 
 /** The pin is inside a landform's outline (an island, a næs): on land. */

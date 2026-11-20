@@ -4,12 +4,16 @@ import { cellsFor, summarize, type CoastSummary, type LonLat, type Nearby } from
 import manifest from "../public/data/manifest.json";
 import {
   cellNames,
+  distText,
   inRings,
   kindInfo,
   nameCellsFor,
+  nameDistance,
+  onNamedLand,
   seaName,
   shoreLine,
   shoreRows,
+  showsOfficialName,
   summarizeNames,
   waterAt,
   waterLine,
@@ -93,7 +97,7 @@ describe("cellNames", () => {
   it("knows the kinds in Danish", () => {
     expect(kindInfo("lystbådehavn")).toEqual({ group: "harbour", label: "Lystbådehavn" });
     expect(kindInfo("trafikhavn").label).toBe("Havn");
-    expect(kindInfo("tørtVedLavvande").label).toBe("Tørt ved lavvande");
+    expect(kindInfo("tørtVedLavvande").label).toBe("Tørlægges ved lavvande");
     expect(kindInfo("overskylledeSten").label).toBe("Overskyllede sten");
   });
 
@@ -101,6 +105,40 @@ describe("cellNames", () => {
     const rings = [box(0, 0, 4, 4), box(1, 1, 2, 2)];
     expect(inRings(rings, [3, 3])).toBe(true);
     expect(inRings(rings, [1.5, 1.5])).toBe(false); // in the hole
+  });
+});
+
+describe("a water cut by a cell", () => {
+  // A bay shaped like an n (two arms joined further north) cut by the cell
+  // edge at 56.2 N, as the pipeline's Sutherland-Hodgman clip leaves it: in
+  // the cell the arms are joined by a zero-width sliver along the cut, over
+  // the land between them (10.05-10.15 E).
+  const clipped: LonLat[] = [
+    [10.0, 56.1],
+    [10.05, 56.1],
+    [10.05, 56.2],
+    [10.15, 56.2],
+    [10.15, 56.1],
+    [10.2, 56.1],
+    [10.2, 56.2],
+    [10.0, 56.2],
+    [10.0, 56.1],
+  ];
+  const row: NameRow = [1, "bugt", "a", [enc(clipped)], "Hesteskoen", 20000];
+  const pin: LonLat = [10.1, 56.199]; // on the land between the arms, 3 km from either
+
+  it("is measured to its shore, not to the cut", () => {
+    const [bay] = cellNames([{ features: [row] }], 0.2);
+    expect(inRings(bay.rings, pin)).toBe(false);
+    expect(nameDistance(bay, pin)).toBeGreaterThan(3000); // to the arms' inner shores
+    const [uncut] = cellNames([{ features: [row] }]); // without the grid: the sliver
+    expect(nameDistance(uncut, pin)).toBeLessThan(200);
+  });
+
+  it("names no water 'væk' far inland", () => {
+    const places = cellNames([{ features: [row] }], 0.2);
+    expect(waterAt(places, pin)).toBeNull();
+    expect(waterLine({ water: null, names: summarizeNames(places, pin) })).toBeNull();
   });
 });
 
@@ -115,6 +153,16 @@ describe("the water at the pin", () => {
     expect(w).toMatchObject({ name: "Store Bugt", inside: false });
     expect(w?.distanceM).toBeGreaterThan(500);
     expect(waterAt(places(), [10.05, 56.2])).toBeNull();
+  });
+
+  it("is the smallest of the waters about as near", () => {
+    // a big sea and a small vig beside it, their shores 100 m apart
+    const sea: NameRow = [20, "hav", "a", [enc(box(11.0, 56.0, 11.2, 56.1))], "Havet", 90000];
+    const vig: NameRow = [21, "bugt", "a", [enc(box(11.2, 56.0, 11.3, 56.0991))], "Vigen", 500];
+    const near = cellNames([{ features: [sea, vig] }]);
+    expect(waterAt(near, [11.2, 56.1018])).toMatchObject({ name: "Vigen", inside: false });
+    // further than SAME_PLACE_M beyond the nearest: the nearest
+    expect(waterAt(near, [11.1, 56.102])).toMatchObject({ name: "Havet" });
   });
 });
 
@@ -218,8 +266,10 @@ describe("the card's rows", () => {
 
   it("says the kind after a name that does not", () => {
     const vig = summary([10.0605, 56.0605]);
-    const stones = shoreRows(vig).find((r) => r.label === "Tørt ved lavvande");
-    expect(stones).toMatchObject({ name: "Stenene", distanceM: 0 });
+    const stones = shoreRows(vig).find((r) => r.label === "Stenene");
+    // the name first; the register's words after it, never "safe" or "walkable"
+    expect(stones).toMatchObject({ name: "tørlægges ved lavvande", joiner: " · ", distanceM: 0 });
+    expect(distText(stones!.distanceM)).toBe("her");
     const odd: NamedPlace[] = cellNames([
       { features: [[9, "odde", "p", enc([[10.0605, 56.061]]), "Sønderspids"]] },
     ]);
@@ -229,6 +279,21 @@ describe("the card's rows", () => {
       names: summarizeNames(odd, [10.0605, 56.0605]),
     });
     expect(rows[0]).toMatchObject({ label: "Sønderspids", name: "odde", joiner: " · " });
+  });
+
+  it("says 'her' inside, 'ved nålen' at the pin, else the distance", () => {
+    expect(distText(0)).toBe("her");
+    expect(distText(9)).toBe("ved nålen");
+    expect(distText(120)).toBe("120 m");
+  });
+
+  it("credits Danske Stednavne only when a name of it shows", () => {
+    expect(showsOfficialName(summary([10.15, 56.07]), [])).toBe(true); // "I Lille Vig"
+    const far = summary([10.5, 56.5]);
+    expect(showsOfficialName(far, shoreRows(far))).toBe(false);
+    const osmOnly = osm("beach", box(10.1, 56.2, 10.11, 56.201), 500, "OSM-stranden");
+    const s = summary([10.105, 56.199], { nearby: [osmOnly] });
+    expect(showsOfficialName(s, shoreRows(s))).toBe(false);
   });
 
   it("makes one line for the pin's card", () => {
@@ -252,7 +317,10 @@ describe("the committed dev sample", () => {
   const load = (dir: string, key: string): unknown => files[`../public/data/${dir}/${key}.json`];
   const at = (pin: LonLat): CoastSummary => {
     const names = summarizeNames(
-      cellNames((nameCellsFor(m.names!, pin) ?? []).map((k) => load("names", k) as NameCell)),
+      cellNames(
+        (nameCellsFor(m.names!, pin) ?? []).map((k) => load("names", k) as NameCell),
+        m.names!.cell_deg,
+      ),
       pin,
     );
     const coast = summarize(
@@ -275,6 +343,22 @@ describe("the committed dev sample", () => {
   it("names Egå Marina as a Lystbådehavn", () => {
     const rows = shoreRows(at([10.2905, 56.2105]));
     expect(rows[0]).toMatchObject({ label: "Lystbådehavn", name: "Egå Marina" });
+  });
+
+  it("names no sea on inland Djursland", () => {
+    for (const pin of [
+      [10.6, 56.32],
+      [10.399, 56.18],
+    ] as LonLat[]) {
+      const s = at(pin);
+      expect(waterLine(s) ?? "").not.toMatch(/Kattegat/);
+      expect(s.names?.water).toBeNull();
+    }
+  });
+
+  it("is on Helgenæs only on its land, not in Ebeltoft Vig", () => {
+    expect(onNamedLand(at([10.52, 56.13]), "Helgenæs")).toBe(true);
+    expect(onNamedLand(at([10.566, 56.1275]), "Helgenæs")).toBe(false);
   });
 
   it("is on Helgenæs and on Mandø, not in the water drawn over them", () => {

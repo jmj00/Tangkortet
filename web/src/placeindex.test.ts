@@ -367,18 +367,22 @@ describe("official coastal names (Danske Stednavne)", () => {
   it("finds beaches, harbours, landforms and waters with their kind", () => {
     expect(first("Helgenæs")).toMatchObject({ text: "Helgenæs", kind: "landform" });
     expect(first("Helgenæs").meta).toBe("Halvø · 8420 Knebel");
-    expect(matchPlaces(real, "Egå Marina")).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          text: "Egå Marina",
-          kind: "harbour",
-          meta: "Lystbådehavn · 8250 Egå",
-        }),
-      ]),
-    );
+    // the bathing site and the harbour of that name, 360 m apart: one entry
+    const marina = matchPlaces(real, "Egå Marina").filter((s) => s.text === "Egå Marina");
+    expect(marina).toHaveLength(1);
+    expect(marina[0].meta).toBe("Badested og lystbådehavn · 8250 Egå");
+    expect(texts("Egå").filter((t) => t === "Egå Marina")).toHaveLength(1);
     const kalo = matchPlaces(real, "Kalø");
     expect(kalo[0]).toMatchObject({ text: "Kalø Vig", kind: "water", meta: "Bugt" });
     expect(kalo.map((s) => s.text)).toContain("Kaløvig Bådehavn");
+  });
+
+  it("puts the town's own harbour before islets that only begin with its name", () => {
+    const ronne = texts("Rønne");
+    expect(ronne[0]).toBe("Rønne");
+    expect(ronne).toContain("Rønne Havn");
+    const islet = ronne.indexOf("Rønnen");
+    if (islet >= 0) expect(ronne.indexOf("Rønne Havn")).toBeLessThan(islet);
   });
 
   it("finds Århus Bugt spelled the Aarhus way, zoomed out to the bay", () => {

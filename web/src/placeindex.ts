@@ -561,7 +561,13 @@ interface Candidate {
   tier: number;
   /** Larger first, within a tier. */
   size: number;
+  /** The name's first word is what was typed ("Rønne Havn" for "Rønne"):
+   * before a name that only begins with it ("Rønnen"), within a tier. */
+  word?: boolean;
 }
+
+/** The name's first word is the key (both normalised). */
+const firstWord = (name: string, key: string): boolean => name.startsWith(`${key} `);
 
 /**
  * Towns, postal districts and bathing sites for what is typed, the best
@@ -730,12 +736,22 @@ function matchName(index: PlaceIndex, key: string): PlaceSuggestion[] {
   for (const site of index.coast) {
     const rank = nameRank(site.key, key);
     if (rank < 0 || (rank === 2 && key.length < 4)) continue;
-    coast.push({ s: coastSuggestion(index, site, rank), tier: 1, size: -site.name.length });
+    coast.push({
+      s: coastSuggestion(index, site, rank),
+      tier: 1,
+      size: -site.name.length,
+      word: firstWord(site.key, key),
+    });
   }
   for (const place of index.named) {
     const rank = nameRank(place.key, key);
     if (rank < 0 || (rank === 2 && key.length < 4)) continue;
-    coast.push({ s: namedSuggestion(index, place, rank), tier: 1, size: -place.name.length });
+    coast.push({
+      s: namedSuggestion(index, place, rank),
+      tier: 1,
+      size: -place.name.length,
+      word: firstWord(place.key, key),
+    });
   }
   // a beach name one slip off ("Vemmetofte strnd"), when none has what is typed
   // (and no town has it either: "Rørvig" is not "Rødvig Øst")
@@ -762,15 +778,48 @@ function matchName(index: PlaceIndex, key: string): PlaceSuggestion[] {
     );
 
   const order = (a: Candidate, b: Candidate): number =>
-    a.s.rank - b.s.rank || a.tier - b.tier || b.size - a.size;
+    a.s.rank - b.s.rank ||
+    a.tier - b.tier ||
+    Number(b.word ?? false) - Number(a.word ?? false) ||
+    b.size - a.size;
   const picked = [
     ...uniqueTexts(keptTowns.filter((c) => !beside(c)).sort(order)).slice(0, LIMITS.towns),
-    ...uniqueTexts(coast.sort(order)).slice(0, LIMITS.coast),
+    ...uniqueTexts(samePlaces(coast.sort(order))).slice(0, LIMITS.coast),
   ];
   return picked
     .sort(order)
     .slice(0, LIMITS.total)
     .map((c) => c.s);
+}
+
+/** A bathing site and an official place of one name this close are one place
+ * (Egå Marina: the bathing site 360 m from the middle of the harbour basin). */
+export const SAME_COAST_M = 500;
+
+/** A bathing site and a harbour (or beach) of the same name within
+ * SAME_COAST_M as one suggestion, the first, its second line saying both
+ * ("Egå Marina": "Badested og lystbådehavn · 8250 Egå"). */
+function samePlaces(list: Candidate[]): Candidate[] {
+  const out: Candidate[] = [];
+  for (const c of list) {
+    const twin = out.find(
+      (o) =>
+        normalizeName(o.s.text) === normalizeName(c.s.text) &&
+        distanceM(o.s.target, c.s.target) <= SAME_COAST_M,
+    );
+    if (!twin) {
+      out.push(c);
+      continue;
+    }
+    const [label, ...where] = twin.s.meta.split(" · ");
+    const other = c.s.meta.split(" · ")[0];
+    if (other && label && other !== label && !label.includes(" og "))
+      twin.s = {
+        ...twin.s,
+        meta: [`${label} og ${other.toLocaleLowerCase("da")}`, ...where].join(" · "),
+      };
+  }
+  return out;
 }
 
 /** No two suggestions that read the same (name and second line). */
@@ -896,7 +945,9 @@ export interface NearestPlace {
   /** For a bathing site with a generic name ("Sydstranden"): the town it
    * belongs to, said after it ("Sydstranden, Kerteminde"). */
   town?: string;
-  /** On an island or a peninsula: "På Helgenæs", not "Ved". */
+  /** Inside the circle of an island or a peninsula as wide as its area:
+   * maybe on it. The card says "På Helgenæs" only when the names cells'
+   * outline and the coastline agree (tapcard.ts, names.ts onNamedLand). */
   on?: boolean;
 }
 

@@ -12,6 +12,7 @@ import {
   distText,
   nameCellsFor,
   shoreRows,
+  showsOfficialName,
   summarizeNames,
   waterLine,
   type ShoreRow,
@@ -175,7 +176,7 @@ export class RiskPanel {
     // still has OpenStreetMap's coast (and the other way round).
     const namesSummary = nameKeys
       ? Promise.all(nameKeys.map(loadNameCell)).then(
-          (cells) => summarizeNames(cellNames(cells), pin),
+          (cells) => summarizeNames(cellNames(cells, names?.cell_deg ?? 0), pin),
           () => undefined,
         )
       : Promise.resolve(undefined);
@@ -384,11 +385,13 @@ export class RiskPanel {
     const title = "Kysten her";
     const c = this.coast;
     if (c === null) return null;
+    // Danske Stednavne only when the card shows one of its names
+    const official = typeof c === "object" && showsOfficialName(c, shoreRows(c));
     const source = h(
       "p",
       { class: "note" },
-      typeof c === "object" && c.names
-        ? "OpenStreetMap og Danske Stednavne – kan være ufuldstændigt."
+      official
+        ? "OpenStreetMap og Danske Stednavne (Klimadatastyrelsen) – kan være ufuldstændigt."
         : "OpenStreetMap – kan være ufuldstændigt.",
     );
     if (c === "loading") return this.card(title, h("p", { class: "loading" }, "Henter…"));
