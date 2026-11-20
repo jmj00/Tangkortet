@@ -8,10 +8,21 @@
  * network-first, so a deploy's new bundle and data show on the next online
  * visit, not one visit late; both fall back to the cache when offline. The
  * content-hashed build assets are cache-first (their URL changes when they do).
+ *
+ * Species photos are hotlinked from iNaturalist's open-data bucket. The app
+ * requests them with CORS (thumb.ts), so they can be kept here: cache-first in
+ * a cache of their own, capped at PHOTO_MAX entries (oldest out first). A photo
+ * seen once (the list's thumbnails, a species page) shows again offline; one
+ * never seen fails, and the app falls back to its placeholder or the plain
+ * heading. Opaque (non-CORS) responses are never stored.
  */
 
 const CACHE = "tangkortet-v1";
 const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/favicon.svg"];
+const PHOTOS = "tangkortet-photos-v1";
+const PHOTO_HOST = "inaturalist-open-data.s3.amazonaws.com";
+// ~17 thumbnails in two sizes plus a few species pages of medium/large photos
+const PHOTO_MAX = 120;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -26,7 +37,9 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) =>
+        Promise.all(keys.filter((k) => k !== CACHE && k !== PHOTOS).map((k) => caches.delete(k))),
+      )
       .then(() => self.clients.claim()),
   );
 });
@@ -36,6 +49,10 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
+  if (url.hostname === PHOTO_HOST && request.mode === "cors") {
+    event.respondWith(photo(request, event));
+    return;
+  }
   if (url.origin !== self.location.origin) return; // tiles, DMI, live map servers: straight to network
 
   if (request.mode === "navigate" || url.pathname.startsWith("/data/")) {
@@ -69,4 +86,22 @@ async function networkFirst(request) {
       new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain" } })
     );
   }
+}
+
+async function photo(request, event) {
+  const cache = await caches.open(PHOTOS);
+  const hit = await cache.match(request);
+  if (hit) return hit;
+  const response = await fetch(request); // a network error fails the <img>: the app falls back
+  if (response.ok && response.type === "cors") {
+    event.waitUntil(cache.put(request, response.clone()).then(() => trim(cache)));
+  }
+  return response;
+}
+
+async function trim(cache) {
+  const keys = await cache.keys(); // in insertion order
+  await Promise.all(
+    keys.slice(0, Math.max(0, keys.length - PHOTO_MAX)).map((k) => cache.delete(k)),
+  );
 }

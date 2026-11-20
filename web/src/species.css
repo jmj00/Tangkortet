@@ -1229,3 +1229,435 @@
     min-height: 2.75rem;
   }
 }
+
+/* --- photos (thumb.ts, photoviewer.ts) ---
+   List rows and lookalikes get a fixed thumbnail box; the species page a
+   photo hero with the name over it, from Svampekortet 624fb8b (detail.css),
+   kept compact on phones so "Vigtigt" still shows on a half-open sheet. */
+.spp-row__media {
+  position: relative;
+  flex: none;
+  display: grid;
+}
+
+.spp-row__thumb {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+/* the algae group, as a small dot on the corner of the photo */
+.spp-row__media .spp-dot {
+  position: absolute;
+  z-index: 2;
+  right: -0.2rem;
+  bottom: -0.2rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.spp-list[data-density="compact"] .spp-row__thumb,
+.spp-list[data-density="tiny"] .spp-row__thumb {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.spp-look {
+  padding-left: 0.4rem;
+}
+
+.spp-look__thumb {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 6px;
+}
+
+/* The back bar floats over the photo: its buttons become pills, and the bar
+   only gets its own background once the photo has scrolled away under it. The
+   negative margin pulls the hero up to where the head starts without photos
+   (nav height = its top padding + the button + 0.2rem; 1rem = the sheet gap). */
+.spp-sheet {
+  --spp-back-h: 2.25rem;
+}
+
+.spp-sheet[data-hero="photos"] .spp-nav {
+  padding-top: calc(var(--spp-pad-top) + 0.4rem);
+  margin-bottom: calc(-1 * var(--spp-back-h) - 1.6rem);
+  background: transparent;
+}
+
+[data-spp-past-hero] .spp-sheet[data-hero="photos"] .spp-nav {
+  background: var(--surface);
+}
+
+[data-spp-scrolled]:not([data-spp-past-hero]) .spp-sheet[data-hero="photos"] .spp-nav {
+  box-shadow: none;
+}
+
+.spp-sheet[data-hero="photos"] :is(.spp-back, .spp-home) {
+  margin-left: 0.5rem;
+  padding-inline: 0.5rem 0.8rem;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 1px 5px rgb(0 0 0 / 0.3);
+}
+
+/* "back" keeps its label; the flag beside it wraps instead (large text) */
+.spp-sheet[data-hero="photos"] .spp-back {
+  flex-shrink: 0;
+  max-width: 62%;
+}
+
+.spp-sheet[data-hero="photos"] .spp-home {
+  margin-left: auto;
+  margin-right: 0.5rem;
+  padding-inline: 0.8rem;
+}
+
+[data-spp-past-hero] .spp-sheet[data-hero="photos"] :is(.spp-back, .spp-home) {
+  box-shadow: none;
+}
+
+.spp-head--photos {
+  gap: 0.4rem;
+}
+
+.spp-hero {
+  /* sidebar (desktop, landscape phone): wide, but never most of a short screen */
+  --spp-hero-h: min(13rem, 30svh);
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  /* room for the floating back bar above the title, so the two never meet,
+     however large the text: the strip spans both rows and grows if need be */
+  grid-template-rows: calc(var(--spp-back-h) + 0.5rem) auto;
+  overflow: hidden;
+  border-radius: 12px;
+  /* shows while a photo loads and behind one that cannot be fetched */
+  background: linear-gradient(155deg, #2f4f51, #122224 70%);
+}
+
+/* the phone sheet (sheet.ts PHONE_LAYOUT): a low band */
+@media (max-width: 559.98px), (max-width: 719.98px) and (min-height: 520.02px) {
+  .spp-hero {
+    --spp-hero-h: clamp(6.5rem, 17svh, 10rem);
+  }
+}
+
+.spp-hero__track {
+  grid-area: 1 / 1 / 3 / 2;
+  display: flex;
+  min-height: var(--spp-hero-h);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.spp-hero__track::-webkit-scrollbar {
+  display: none;
+}
+
+.spp-hero__slide {
+  position: relative;
+  flex: 0 0 100%;
+  height: 100%;
+  margin: 0;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.spp-hero__open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
+.spp-hero__open:disabled {
+  cursor: default;
+}
+
+.spp-hero__open:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: -5px;
+}
+
+.spp-hero__open img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.spp-hero__slide[data-failed="true"] img {
+  visibility: hidden;
+}
+
+.spp-hero__failed {
+  position: absolute;
+  top: 3.6rem;
+  right: 0.9rem;
+  color: rgb(255 255 255 / 0.85);
+  font-size: 0.8rem;
+}
+
+/* behind the floating back button */
+.spp-hero__scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.3), transparent 35%);
+}
+
+/* The title carries its own scrim, sized to its own height: however many
+   lines it takes and however bright the photo, there is at least 62% black
+   behind the top line and more behind the rest (white text keeps AA). It may
+   grow over the photo; the hero grows with it if it has to (large text). */
+.spp-hero__title {
+  grid-area: 2 / 1;
+  align-self: end;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 1.6rem 4rem 0.7rem 0.85rem;
+  background: linear-gradient(
+    to top,
+    rgb(0 0 0 / 0.86),
+    rgb(0 0 0 / 0.62) calc(100% - 1.6rem),
+    transparent
+  );
+  color: #fff;
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.6);
+}
+
+.spp-hero[data-photos="ok"] .spp-title {
+  font-size: 1.45rem;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+.spp-hero[data-photos="ok"][data-long="true"] .spp-title {
+  font-size: 1.2rem;
+}
+
+.spp-hero[data-photos="ok"] .spp-title:focus-visible {
+  outline-color: #fff;
+}
+
+.spp-hero[data-photos="ok"] .spp-subtitle {
+  color: rgb(255 255 255 / 0.92);
+  font-size: 0.85rem;
+}
+
+.spp-hero[data-photos="ok"] .spp-subtitle .spp-dot {
+  box-shadow: 0 0 0 1.5px #fff;
+}
+
+/* tags on the photo: solid pills, as legible as on the page */
+.spp-hero[data-photos="ok"] .spp-tags {
+  margin-top: 0.25rem;
+  pointer-events: auto;
+  text-shadow: none;
+}
+
+.spp-hero[data-photos="ok"] .spp-tag {
+  background: var(--surface);
+}
+
+.spp-hero[data-photos="ok"] .spp-tag--jump:hover {
+  background: var(--bg);
+}
+
+/* the photo count, doubling as the "opens larger" hint */
+.spp-hero__count {
+  position: absolute;
+  z-index: 2;
+  right: 0.6rem;
+  bottom: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.62);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.spp-hero__expand svg {
+  display: block;
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.spp-hero__dots {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: 0.3rem;
+  display: flex;
+  justify-content: center;
+  gap: 0.35rem;
+  pointer-events: none;
+}
+
+.spp-hero__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 0.5);
+  transition:
+    background 0.15s,
+    width 0.15s;
+}
+
+.spp-hero__dot.is-on {
+  width: 16px;
+  background: #fff;
+}
+
+.spp-hero__arrow {
+  position: absolute;
+  z-index: 2;
+  top: calc(var(--spp-hero-h) / 2 - 1.2rem);
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.92);
+  color: #1d2a2b;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 0.35);
+  cursor: pointer;
+}
+
+.spp-hero__arrow:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+.spp-hero__arrow-icon svg {
+  display: block;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.spp-hero__arrow--prev {
+  left: 0.55rem;
+}
+
+.spp-hero__arrow--next {
+  right: 0.55rem;
+}
+
+.spp-hero__arrow:disabled {
+  display: none;
+}
+
+/* Touch screens swipe; the arrows are for mouse and keyboard. */
+@media (hover: none) {
+  .spp-hero__arrow {
+    display: none;
+  }
+}
+
+/* No photo could be fetched (offline at the coast): the plain heading. */
+.spp-hero[data-photos="failed"] {
+  grid-template-rows: auto;
+  overflow: visible;
+  border-radius: 0;
+  background: none;
+}
+
+.spp-hero[data-photos="failed"]
+  :is(.spp-hero__track, .spp-hero__scrim, .spp-hero__count, .spp-hero__dots, .spp-hero__arrow) {
+  display: none;
+}
+
+.spp-hero[data-photos="failed"] .spp-hero__title {
+  grid-area: 1 / 1;
+  padding: 0;
+  background: none;
+  color: inherit;
+  pointer-events: auto;
+  text-shadow: none;
+}
+
+/* "Foto: … · CC BY 4.0 · iNaturalist" */
+.spp-credit {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.spp-credit a {
+  position: relative;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .spp-sheet {
+    --spp-back-h: 2.75rem;
+  }
+
+  .spp-credit a::after {
+    content: "";
+    position: absolute;
+    inset: -0.75rem -0.4rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spp-hero__dot {
+    transition: none;
+  }
+}
+
+/* "Fotos ikke fagligt gennemgået": on the photo, in the floating back bar */
+.spp-photo-flag {
+  display: none;
+}
+
+.spp-sheet[data-hero="photos"] .spp-photo-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0 0.5rem 0 auto;
+  padding: 0.2rem 0.6rem 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.68);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.spp-sheet[data-hero="photos"] .spp-home + .spp-photo-flag {
+  margin-left: 0;
+}
+
+[data-spp-past-hero] .spp-sheet[data-hero="photos"] .spp-photo-flag {
+  visibility: hidden;
+}
+
+.spp-photo-flag__icon svg {
+  display: block;
+  width: 0.95rem;
+  height: 0.95rem;
+}

@@ -3,7 +3,7 @@
 // already set up for that task. A layer of the same page, not a page of its
 // own: the sidebar's content on wide screens (the map stays live beside it),
 // a sheet over the map on phones. Adapted from Svampekortet (624fb8b,
-// web/src/start.ts) for seaweed: no photos, a risk flow instead of a season
+// web/src/start.ts) for seaweed: a risk flow instead of a season
 // flow, and the expert's welcome text and disclaimer verbatim (welcome.ts).
 //
 // Three views, switched through data-start on #app (absent = closed):
@@ -13,7 +13,8 @@
 //            position, the place search (placesearch.ts, the same search as
 //            the main field), or a tap on the map (on a phone this view is a
 //            card at the top, so the map below it can be tapped)
-//   species  every species of the manifest by group, with its colour dot
+//   species  every species of the manifest by group, as photo tiles (a
+//            seaweed drawing in the group colour where there is no photo)
 //
 // This module draws the views and reports what was chosen; main.ts owns the
 // pin, the map and the panels, and does the landing (`enter`). What shows
@@ -31,6 +32,7 @@ import { tapAgainMessage } from "./tapzoom";
 import { attachPlaceSearch } from "./placesearch";
 import { PHONE_LAYOUT } from "./sheet";
 import { LOAD_TIMEOUT_MS } from "./species";
+import { thumbBox } from "./thumb";
 import {
   compactSafety,
   entryStep,
@@ -571,10 +573,16 @@ export function initStart(deps: StartDeps): StartScreen {
     } else {
       text.append(h("span", { class: "pick__name pick__name--sci", lang: "la" }, shownName(s)));
     }
-    button.append(
-      h("span", { class: "spp-dot", "data-group": s.group, "aria-hidden": "true" }),
-      text,
+    // Photo tiles, as Svampekortet's picker (624fb8b). A 4:3 box, so nothing
+    // moves while the photos come in; two to three tiles a row.
+    const photo = thumbBox(
+      "pick__photo",
+      s.group,
+      s.thumbnail,
+      "(max-width: 559.98px) 45vw, 12rem",
     );
+    button.append(photo, text);
+    // on the corner of the photo (start.css), but outside its aria-hidden box
     if (s.invasive) button.append(h("span", { class: "spp-tag spp-tag--invasive" }, "Invasiv"));
     button.addEventListener("click", () => leave({ kind: "species", slug: s.slug }));
     return button;

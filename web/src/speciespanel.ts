@@ -13,6 +13,7 @@ import { forgetPendingSpecies } from "./data";
 import { h, extLink } from "./dom";
 import { nearestFindM, nearestSpots, type Spot } from "./elsewhere";
 import { formatDistance } from "./geo";
+import { anyUnreviewed, creditParts, openViewer, photoAlt, UNREVIEWED_NOTE } from "./photoviewer";
 import {
   filterSpecies,
   findsNear,
@@ -30,8 +31,9 @@ import {
   type FieldText,
   type SheetModel,
 } from "./species";
+import { heroSources, photoImg, thumbBox } from "./thumb";
 import { shownName } from "./types";
-import type { Attachment, Manifest, SpeciesDoc, SpeciesSummary } from "./types";
+import type { Attachment, Manifest, SpeciesDoc, SpeciesImage, SpeciesSummary } from "./types";
 
 const STATUS_LABEL: Record<FieldText["status"], string | null> = {
   expert: null,
@@ -73,6 +75,9 @@ const ICONS = {
   info: '<circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 9v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="10" cy="6.3" r="1" fill="currentColor"/>',
   seaweed:
     '<path d="M10 18c0-4-3-5.5-3-9s2-5 2-6.5M10 18c0-3 3-4 3-7.5S11 6 12.5 3.5M10 18c-.5-2-3.5-2.5-4.5-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+  next: '<path d="m7.5 4 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+  expand:
+    '<path d="M11.5 3.5H16.5V8.5M8.5 16.5H3.5V11.5M16.5 3.5l-5 5M3.5 16.5l5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
   offline:
     '<path d="M2.5 7.5a11 11 0 0 1 15 0M5 10.4a7.2 7.2 0 0 1 10 0M7.6 13.2a3.4 3.4 0 0 1 4.8 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="m3 3 14 14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
 } as const;
@@ -167,6 +172,7 @@ export class SpeciesPanel {
       (e) => {
         if (e.target instanceof Element && e.target.contains(this.root)) {
           this.root.toggleAttribute("data-spp-scrolled", e.target.scrollTop > 4);
+          this.markPastHero();
         }
       },
       { capture: true, passive: true },
@@ -563,7 +569,13 @@ export class SpeciesPanel {
     const button = h(
       "button",
       { type: "button", class: "spp-row", "data-slug": s.slug },
-      dot(s.group),
+      // fixed 2.75rem box; "44px" picks the 75 px square on 1x screens
+      h(
+        "span",
+        { class: "spp-row__media" },
+        thumbBox("spp-row__thumb", s.group, s.thumbnail, "44px"),
+        dot(s.group),
+      ),
       h(
         "span",
         { class: "spp-row__text" },
@@ -615,7 +627,12 @@ export class SpeciesPanel {
 
   /** Back button + heading, shared by the sheet and its loading/error states.
    * `verified` is null while the species document is not there yet. */
-  private head(summary: SpeciesSummary, verified: boolean | null, lookalikes = 0): HTMLElement[] {
+  private head(
+    summary: SpeciesSummary,
+    verified: boolean | null,
+    lookalikes = 0,
+    images: readonly SpeciesImage[] = [],
+  ): HTMLElement[] {
     // Opened from a lookalike: "back" goes one step, and "Alle arter" sits beside it.
     const from = this.sel.trail[this.sel.trail.length - 1];
     const back = h(
@@ -658,36 +675,220 @@ export class SpeciesPanel {
       tags.push(h("li", {}, jump));
     }
 
-    return [
-      h("div", { class: "spp-nav" }, back, home),
-      h(
-        "header",
-        { class: "spp-head" },
+    const title = h(
+      "h2",
+      {
+        class: summary.danish_name ? "spp-title" : "spp-title spp-sci",
+        id: `spp-title-${summary.slug}`,
+        tabindex: "-1",
+      },
+      shownName(summary),
+    );
+    const subtitle = h(
+      "p",
+      { class: "spp-subtitle" },
+      dot(summary.group),
+      summary.danish_name
+        ? h("span", { class: "spp-sci" }, summary.scientific_name)
+        : h("span", {}, "Intet dansk navn"),
+      h("span", { class: "spp-subtitle__sep", "aria-hidden": "true" }, "·"),
+      h("span", {}, groupLabel(summary.group)),
+    );
+    const tagList = tags.length ? h("ul", { class: "spp-tags" }, ...tags) : null;
+    const nameNote = unverified
+      ? h("p", { class: "spp-name-note" }, "Navnet er ikke bekræftet mod arter.dk.")
+      : null;
+    const nav = h("div", { class: "spp-nav" }, back, home);
+    if (images.length === 0) {
+      return [nav, h("header", { class: "spp-head" }, title, subtitle, tagList, nameNote)];
+    }
+    // With photos the name and the tags sit on them, and a single line under
+    // them credits the photo: a compact head, so "Vigtigt" still shows on a
+    // half-open phone sheet (390x664, 360x640). Until the expert has checked
+    // the photos, a flag on the photo says so (beside "back", so it costs no
+    // height); the full sentence is in the credit for screen readers and in
+    // the viewer, where a photo is studied.
+    const source = h("span", { class: "spp-credit__source" });
+    let note: HTMLElement | null = null;
+    if (anyUnreviewed(images)) {
+      note = h("span", { class: "sr-only" }, ` ${UNREVIEWED_NOTE}`);
+      nav.append(
         h(
-          "h2",
-          {
-            class: summary.danish_name ? "spp-title" : "spp-title spp-sci",
-            id: `spp-title-${summary.slug}`,
-            tabindex: "-1",
-          },
-          shownName(summary),
+          "span",
+          { class: "spp-photo-flag", "aria-hidden": "true" },
+          icon("info", "spp-photo-flag__icon"),
+          "Fotos ikke fagligt gennemgået",
         ),
-        h(
-          "p",
-          { class: "spp-subtitle" },
-          dot(summary.group),
-          summary.danish_name
-            ? h("span", { class: "spp-sci" }, summary.scientific_name)
-            : h("span", {}, "Intet dansk navn"),
-          h("span", { class: "spp-subtitle__sep", "aria-hidden": "true" }, "·"),
-          h("span", {}, groupLabel(summary.group)),
-        ),
-        tags.length ? h("ul", { class: "spp-tags" }, ...tags) : null,
-        unverified
-          ? h("p", { class: "spp-name-note" }, "Navnet er ikke bekræftet mod arter.dk.")
-          : null,
-      ),
-    ];
+      );
+    }
+    const credit = h("p", { class: "spp-credit" }, source, note);
+    const hero = this.hero(summary, images, [title, subtitle, tagList], source, note);
+    return [nav, h("header", { class: "spp-head spp-head--photos" }, hero, credit, nameNote)];
+  }
+
+  /** The hero: a swipeable photo strip with the species name over it. From
+   * Svampekortet 624fb8b (detail.ts, hero). It falls back to the plain
+   * heading when none of the photos load (offline at the coast, typically);
+   * the article's data-hero tells the back bar to stop floating over it. */
+  private hero(
+    summary: SpeciesSummary,
+    images: readonly SpeciesImage[],
+    heading: (HTMLElement | null)[],
+    credit: HTMLElement,
+    note: HTMLElement | null,
+  ): HTMLElement {
+    const name = shownName(summary);
+    const n = images.length;
+    const root = h("div", { class: "spp-hero", "data-photos": "ok" });
+    if (name.length > 22) root.dataset.long = "true";
+    const track = h("div", { class: "spp-hero__track" });
+    const countText = h("span", {});
+    const count = h(
+      "span",
+      { class: "spp-hero__count", "aria-hidden": "true" },
+      icon("expand", "spp-hero__expand"),
+      countText,
+    );
+    const dots = h("div", { class: "spp-hero__dots", "aria-hidden": "true" });
+    const slides: HTMLElement[] = [];
+    let current = 0;
+
+    const goTo = (i: number, smooth = true) => {
+      const slide = slides[i];
+      if (!slide) return;
+      const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      track.scrollTo({ left: slide.offsetLeft, behavior: smooth && !reduced ? "smooth" : "auto" });
+    };
+    let prev: HTMLButtonElement | null = null;
+    let next: HTMLButtonElement | null = null;
+    const setCurrent = (i: number) => {
+      current = i;
+      countText.textContent = n > 1 ? `${i + 1}/${n}` : "";
+      if (root.dataset.photos !== "failed") credit.replaceChildren(...creditParts(images[i]));
+      // one tab stop for the whole strip: only the photo in view is tabbable
+      slides.forEach((slide, k) =>
+        slide.querySelector("button")?.setAttribute("tabindex", k === i ? "0" : "-1"),
+      );
+      [...dots.children].forEach((d, k) => d.classList.toggle("is-on", k === i));
+      prev?.toggleAttribute("disabled", i === 0);
+      next?.toggleAttribute("disabled", i === n - 1);
+    };
+
+    if (n > 1) {
+      prev = h(
+        "button",
+        {
+          type: "button",
+          class: "spp-hero__arrow spp-hero__arrow--prev",
+          "aria-label": "Forrige foto",
+        },
+        icon("back", "spp-hero__arrow-icon"),
+      );
+      next = h(
+        "button",
+        {
+          type: "button",
+          class: "spp-hero__arrow spp-hero__arrow--next",
+          "aria-label": "Næste foto",
+        },
+        icon("next", "spp-hero__arrow-icon"),
+      );
+      prev.addEventListener("click", () => goTo(current - 1));
+      next.addEventListener("click", () => goTo(current + 1));
+    }
+
+    images.forEach((img, i) => {
+      // about the panel's width: the sheet on a phone, the sidebar on a desktop
+      const image = photoImg(
+        heroSources(img.url),
+        "(max-width: 719.98px) 100vw, 420px",
+        i === 0 ? "eager" : "lazy",
+      );
+      image.alt = photoAlt(name, img, i, n);
+      const open = h(
+        "button",
+        {
+          type: "button",
+          class: "spp-hero__open",
+          "aria-label": `Vis foto ${i + 1} af ${n} i stor størrelse`,
+        },
+        image,
+      );
+      open.addEventListener("click", () =>
+        openViewer(name, images, i, (shown) => {
+          goTo(shown, false);
+          (slides[shown]?.querySelector("button") ?? open).focus({ preventScroll: true });
+        }),
+      );
+      const figure = h("figure", { class: "spp-hero__slide" }, open);
+      image.addEventListener("load", () => (figure.dataset.loaded = "true"));
+      image.addEventListener("error", () => {
+        figure.dataset.failed = "true";
+        open.disabled = true;
+        figure.append(h("span", { class: "spp-hero__failed" }, "Fotoet kan ikke hentes"));
+        // All failed, or the first one before any loaded (offline: the lazy
+        // ones further along would only fail too, once swiped to)
+        const none = !slides.some((sl) => sl.dataset.loaded === "true");
+        if (slides.every((sl) => sl.dataset.failed === "true") || (i === 0 && none)) {
+          // nothing to show: the plain heading, and a line saying why
+          root.dataset.photos = "failed";
+          root.closest<HTMLElement>(".spp-sheet")?.setAttribute("data-hero", "failed");
+          credit.textContent = "Fotos af arten kan ikke hentes lige nu.";
+          if (note) note.hidden = true;
+          this.root.removeAttribute("data-spp-past-hero");
+        }
+      });
+      slides.push(figure);
+      track.append(figure);
+      dots.append(h("span", { class: "spp-hero__dot" }));
+    });
+
+    let frame = 0;
+    track.addEventListener(
+      "scroll",
+      () => {
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(() => {
+          const i = Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+          const clamped = Math.min(n - 1, Math.max(0, i));
+          if (clamped !== current) setCurrent(clamped);
+        });
+      },
+      { passive: true },
+    );
+    if (n > 1) {
+      track.addEventListener("keydown", (event) => {
+        const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+        const target = slides[current + step]?.querySelector("button");
+        if (!step || !target) return;
+        event.preventDefault();
+        goTo(current + step, false);
+        target.setAttribute("tabindex", "0");
+        target.focus({ preventScroll: true });
+      });
+    }
+
+    root.append(
+      track,
+      h("div", { class: "spp-hero__scrim", "aria-hidden": "true" }),
+      h("div", { class: "spp-hero__title" }, ...heading),
+      count,
+    );
+    if (prev && next) root.append(prev, next, dots);
+    setCurrent(0);
+    return root;
+  }
+
+  /** With photos the back bar floats over the hero, and turns into a plain
+   * bar once the hero has scrolled away under it. */
+  private markPastHero(): void {
+    const hero = this.root.querySelector<HTMLElement>('.spp-sheet[data-hero="photos"] .spp-hero');
+    const nav = this.root.querySelector<HTMLElement>(".spp-nav");
+    const past =
+      !!hero &&
+      !!nav &&
+      hero.getBoundingClientRect().bottom <= nav.getBoundingClientRect().bottom + 1;
+    this.root.toggleAttribute("data-spp-past-hero", past);
   }
 
   private article(summary: SpeciesSummary, ...children: (HTMLElement | null)[]): HTMLElement {
@@ -737,9 +938,10 @@ export class SpeciesPanel {
 
   private sheet(summary: SpeciesSummary, doc: SpeciesDoc): HTMLElement {
     const m = sheetModel(doc, this.manifest.species, this.pin);
-    return this.article(
+    const images = doc.images ?? [];
+    const article = this.article(
       summary,
-      ...this.head(summary, doc.danish_name_verified, m.lookalikes.length),
+      ...this.head(summary, doc.danish_name_verified, m.lookalikes.length, images),
       m.warnings.length
         ? h(
             "section",
@@ -783,6 +985,8 @@ export class SpeciesPanel {
       m.lookalikes.length ? this.lookalikesSection(m) : null,
       this.sourcesSection(doc, m),
     );
+    if (images.length) article.dataset.hero = "photos";
+    return article;
   }
 
   private section(title: string, id: string, ...children: (HTMLElement | null)[]): HTMLElement {
@@ -889,7 +1093,7 @@ export class SpeciesPanel {
       const button = h(
         "button",
         { type: "button", class: "spp-look" },
-        dot(summary.group),
+        thumbBox("spp-look__thumb", summary.group, summary.thumbnail, "36px"),
         h(
           "span",
           { class: "spp-look__text" },

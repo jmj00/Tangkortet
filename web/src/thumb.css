@@ -1,0 +1,78 @@
+/* Photo boxes (thumb.ts): a fixed box (no layout shift while a photo loads)
+   with a placeholder in the algae group's colour under the photo. The box size
+   comes from the class it is given (species.css, start.css). Group colours as
+   the .spp-dot ones (species.css), lighter in dark mode. */
+
+.sp-thumb {
+  --sp-thumb-group: var(--muted);
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--sp-thumb-group) 16%, var(--surface));
+  color: var(--sp-thumb-group);
+}
+
+.sp-thumb[data-group="brunalge"] {
+  --sp-thumb-group: #8a5f1d;
+}
+
+.sp-thumb[data-group="rødalge"] {
+  --sp-thumb-group: #b0405a;
+}
+
+.sp-thumb[data-group="grønalge"] {
+  --sp-thumb-group: #3c8a3c;
+}
+
+@media (prefers-color-scheme: dark) {
+  .sp-thumb[data-group="brunalge"] {
+    --sp-thumb-group: #c99b57;
+  }
+
+  .sp-thumb[data-group="rødalge"] {
+    --sp-thumb-group: #e4849c;
+  }
+
+  .sp-thumb[data-group="grønalge"] {
+    --sp-thumb-group: #74c274;
+  }
+}
+
+.sp-thumb__icon {
+  width: 55%;
+  height: 55%;
+}
+
+.sp-thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.sp-thumb img.is-loaded {
+  opacity: 1;
+}
+
+/* a hairline so pale photos keep their edge on a white surface */
+.sp-thumb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-thumb img {
+    transition: none;
+  }
+}
