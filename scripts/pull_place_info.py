@@ -56,6 +56,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from pipeline.config import DK_BBOX, REPO_ROOT, SAMPLE_DATA_DIR  # noqa: E402
 from pipeline.geo import simplify  # noqa: E402
 from pipeline.placeinfo import (  # noqa: E402
+    BAY_POINT_MAX_M,
     KIND_GROUP,
     KIND_LABEL,
     SHORE_EXTENT_M,
@@ -65,6 +66,7 @@ from pipeline.placeinfo import (  # noqa: E402
     WIKIDATA_CLASSES,
     SegmentIndex,
     allowed_licence,
+    bay_shore,
     classify_kind,
     clean_author,
     convex_hull,
@@ -106,6 +108,9 @@ MAX_PLACE_M = 25000
 MAX_OUTLINE_POINTS = 60
 #: Two cards this close never show the same photo (Odense Fjord and Tornø).
 SAME_PHOTO_M = 30000
+#: A harbour item tagged on a marina further than this from its point keeps
+#: its own point (Esbjerg Havn).
+FAR_MARINA_M = 300
 
 OFFLINE = False
 TODAY = dt.date.today().isoformat()
@@ -552,7 +557,7 @@ def category_files(category: str) -> dict[str, dict[str, Any]]:
 
 #: photo_record reasons after which a card may go on as text only (the
 #: picture is there but unfit), unlike a licence or a missing file.
-UNFIT = ("not a photo", "before ", "people ", "same photo")
+UNFIT = ("not a photo", "before ", "people ", "not the shore", "same photo")
 
 
 def photo_record(name: str, info: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
@@ -561,7 +566,7 @@ def photo_record(name: str, info: dict[str, Any]) -> tuple[dict[str, Any] | None
     def m(key: str) -> str:
         return (meta.get(key) or {}).get("value") or ""
 
-    licence = allowed_licence(m("LicenseShortName"))
+    licence = allowed_licence(m("LicenseShortName"), m("LicenseUrl") or None)
     if not licence:
         return None, f"licence {m('LicenseShortName') or '?'}"
     if m("Restrictions").strip():
@@ -597,24 +602,58 @@ def landscape(info: dict[str, Any]) -> bool:
 
 # --- overrides ----------------------------------------------------------------
 
-OVERRIDE_KEYS = {"name", "reason", "drop", "photo", "no_photo", "kind", "text"}
+#: Each override key and the type its value must have.
+OVERRIDE_TYPES: dict[str, type] = {
+    "name": str,
+    "reason": str,
+    "drop": bool,
+    "photo": str,
+    "no_photo": bool,
+    "kind": str,
+    "text": str,
+}
+
+
+def check_override(qid: str, o: Any) -> dict[str, Any]:
+    """One entry of overrides.json, checked, with its photo as "File:<name>".
+    Stops on: a key that is not a Wikidata id, unknown keys, a value of the
+    wrong type (``"drop": "yes"``), no reason, an unknown kind, ``photo``
+    and ``no_photo`` together, an empty photo."""
+
+    def fail(why: str) -> SystemExit:
+        return SystemExit(f"overrides.json {qid}: {why}")
+
+    if not re.fullmatch(r"Q\d+", qid):
+        raise fail("the key must be a Wikidata id (Q123)")
+    if not isinstance(o, dict):
+        raise fail("must be an object")
+    unknown = set(o) - set(OVERRIDE_TYPES)
+    if unknown:
+        raise fail(f"unknown keys {sorted(unknown)}")
+    for key, typ in OVERRIDE_TYPES.items():
+        if key in o and not isinstance(o[key], typ):
+            raise fail(f"{key} must be a {typ.__name__}, not {o[key]!r}")
+    if not o.get("reason", "").strip():
+        raise fail("needs a reason")
+    if o.get("kind") and o["kind"] not in KIND_LABEL:
+        raise fail(f"unknown kind {o['kind']}")
+    if "photo" in o and o.get("no_photo"):
+        raise fail("photo and no_photo together")
+    out = dict(o)
+    if "photo" in o:
+        name = re.sub(r"^(File|Fil|Image):\s*", "", o["photo"].strip(), flags=re.IGNORECASE)
+        if not name:
+            raise fail("photo is empty")
+        out["photo"] = f"File:{name}"
+    return out
 
 
 def load_overrides() -> dict[str, dict[str, Any]]:
-    """data/places_info/overrides.json, checked: every entry has a reason,
-    known keys only, a known kind."""
+    """data/places_info/overrides.json, every entry checked (check_override)."""
     if not OVERRIDES.exists():
         return {}
     doc = json.loads(OVERRIDES.read_text("utf-8"))
-    out = {}
-    for qid, o in doc["overrides"].items():
-        unknown = set(o) - OVERRIDE_KEYS
-        if unknown or not str(o.get("reason", "")).strip():
-            raise SystemExit(f"overrides.json {qid}: needs a reason; unknown keys {unknown}")
-        if o.get("kind") and o["kind"] not in KIND_LABEL:
-            raise SystemExit(f"overrides.json {qid}: unknown kind {o['kind']}")
-        out[qid] = o
-    return out
+    return {qid: check_override(qid, o) for qid, o in doc["overrides"].items()}
 
 
 # --- assembling -------------------------------------------------------------------
@@ -638,6 +677,9 @@ def main() -> None:
     print("wikidata")
     items = wikidata_items()
     details = wikidata_details(sorted(items))
+    for qid in sorted(set(overrides) - set(items)):
+        name = overrides[qid].get("name") or "?"
+        print(f"  WARNING overrides.json {qid} ({name}) matches no Wikidata item", file=sys.stderr)
     stats: collections.Counter[str] = collections.Counter()
     left_out: list[dict[str, str]] = []
     candidates = []
@@ -845,7 +887,14 @@ def main() -> None:
                 unfit = unfit or why.startswith(UNFIT)
         p = point
         if match["by"] == "osm_wikidata":
-            p = min(tagged, key=lambda f: distance_m(point, f["point"]))["point"]
+            f = min(tagged, key=lambda f: distance_m(point, f["point"]))
+            if far_marina(kind, f, match["distance_m"]):
+                # a harbour tagged on a marina far off (Esbjerg Havn: the
+                # marina 1 km from the port): the item's own point, and not
+                # the marina's outline
+                match["point"] = "wikidata"
+            else:
+                p = f["point"]
         records.append(
             {
                 "id": r["id"],
@@ -868,6 +917,7 @@ def main() -> None:
                 "_category": r.get("commons_category"),
                 "_p18": files.get(r["id"]),
                 "_pinned_photo": r["id"] in chosen,
+                "_wikidata_point": point,
                 "_no_photo": bool(override.get("no_photo")),
                 "fetched": TODAY,
                 "reviewed": False,
@@ -875,11 +925,18 @@ def main() -> None:
         )
 
     fresh = [r for r in records if not r.get("reviewed")]
-    pick_alternative_photos(fresh, stats)
+    # a photo for the cards whose own were all rejected (the photos shared
+    # with a card nearby wait until the cards left out are gone)
+    fill_from_category(fresh, [], stats)
 
-    # the outline of the matched OpenStreetMap way or relation
-    geoms = osm_geometries(sorted({r["match"]["osm"] for r in fresh if r["match"].get("osm")}))
+    # the outline of the matched OpenStreetMap way or relation (not of a
+    # marina far from a harbour's own point)
+    outlined = [r for r in fresh if r["match"].get("osm") and r["match"].get("point") != "wikidata"]
+    geoms = osm_geometries(sorted({r["match"]["osm"] for r in outlined}))
     for r in fresh:
+        if r["match"].get("point") == "wikidata":
+            r["_edges"], r["geom"] = [], None
+            continue
         el = geoms.get(r["match"].get("osm") or "")
         r["_edges"] = osm_edges(el) if el else []
         r["geom"] = outline(osm_geometry(el)) if el else None
@@ -905,12 +962,21 @@ def main() -> None:
             stats[f"{why.split(' (')[0]}: {r['kind']}"] += 1
             leave_out(left_out, r, r["name"], why)
             continue
+        kept.append(r)
+    # the same photo on two cards nearby, among the cards kept only
+    fresh = [r for r in kept if not r.get("reviewed")]
+    lost = dedupe_photos(fresh, stats)
+    if lost:
+        fill_from_category(fresh, lost, stats)
+    for r in kept:
         for k in [k for k in r if k.startswith("_")]:
             r.pop(k)
-        kept.append(r)
+        r["match"].pop("point", None)
     records = kept
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(records, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    # LF on every system: the committed file is compared line by line
+    text = json.dumps(records, indent=1, ensure_ascii=False) + "\n"
+    OUT.write_text(text, encoding="utf-8", newline="\n")
     kinds = collections.Counter(r["kind"] for r in records)
     print(f"{len(records)} cards -> {OUT.relative_to(REPO_ROOT)}")
     for k, n in kinds.most_common():
@@ -925,32 +991,33 @@ def main() -> None:
     report.write_text(json.dumps(left_out, indent=1, ensure_ascii=False), "utf-8")
 
 
-def pick_alternative_photos(records: list[dict[str, Any]], stats: collections.Counter) -> None:
-    """A photo for the cards whose own were rejected (a map, a painting, a
-    crowd) or that share one with a card nearby (Odense Fjord and Tornø):
-    the first landscape photo in the item's Commons category that passes the
-    same checks; else the card goes on as text only."""
+def far_marina(kind: str, f: dict[str, Any], distance: float) -> bool:
+    """Whether the OpenStreetMap feature tagged with a harbour item is a
+    marina far from the item's point: then the item's point stands."""
+    return KIND_GROUP[kind] == "harbour" and f["kind"] == "marina" and distance > FAR_MARINA_M
 
-    def used_nearby(r: dict[str, Any], file: str) -> bool:
-        return any(
-            o is not r
-            and o.get("photo")
-            and o["photo"]["file"] == f"File:{file}"
-            and distance_m((r["lon"], r["lat"]), (o["lon"], o["lat"])) < SAME_PHOTO_M
-            for o in records
-        )
 
-    # the same photo on two cards nearby: one keeps it, in this order: the
-    # card whose own P18 it is and whose name the file names ("Tornoe Odense
-    # Fjord.jpg" is Tornø's), then its own P18, then the rest
-    def keeps_first(r: dict[str, Any]) -> tuple[bool, bool, str]:
+def dedupe_photos(
+    records: list[dict[str, Any]], stats: collections.Counter
+) -> list[dict[str, Any]]:
+    """The same photo on two cards nearby (Odense Fjord and Tornø): one keeps
+    it, the others lose it (text only, unless their category has another:
+    fill_from_category). Run on the cards that are kept, so a card left out
+    never takes a photo from one that stays. Returns the cards that lost it."""
+
+    # who keeps it, in this order: the card whose own P18 it is and whose
+    # name the file names, then the card whose own P18 it is, then the card
+    # the file names; among those, the name the file names first
+    # ("Tornoe Odense Fjord.jpg" is Tornø's, not Odense Fjord's), then by id
+    def keeps_first(r: dict[str, Any]) -> tuple[bool, bool, int, str]:
         file = (r.get("photo") or {}).get("file", "")
         own = file == f"File:{r.get('_p18')}"
         core = name_core(r["name"])
-        named = bool(core) and core in name_core(file.removeprefix("File:").rsplit(".", 1)[0])
-        return (not own, not named, r["id"])
+        at = name_core(file.removeprefix("File:").rsplit(".", 1)[0]).find(core) if core else -1
+        return (not own, at < 0, at if at >= 0 else 999, r["id"])
 
     kept: list[dict[str, Any]] = []
+    lost: list[dict[str, Any]] = []
     for r in sorted(records, key=keeps_first):
         photo = r.get("photo")
         if not photo:
@@ -964,18 +1031,50 @@ def pick_alternative_photos(records: list[dict[str, Any]], stats: collections.Co
         if nearby and not r.get("_pinned_photo"):
             file = photo["file"].removeprefix("File:")
             r["photo"], r["photo_rejected"] = None, f"same photo as {nearby[0]['name']} ({file})"
+            r.pop("photo_from", None)
             r["_unfit"] = True
+            r["_tried"].append(file)
             stats["photo: shared with a card nearby"] += 1
+            lost.append(r)
         else:
             kept.append(r)
-    for r in records:
+    return lost
+
+
+def fill_from_category(
+    records: list[dict[str, Any]], only: list[dict[str, Any]], stats: collections.Counter
+) -> None:
+    """A photo for the cards whose own were rejected (a map, a painting, a
+    crowd), or, given ``only``, for those cards (which lost theirs to a card
+    nearby): the first landscape photo (one named after the place first) in
+    the item's Commons category that
+    passes the same checks and that no card nearby in ``records`` shows;
+    else the card goes on as text only."""
+
+    def used_nearby(r: dict[str, Any], file: str) -> bool:
+        return any(
+            o is not r
+            and o.get("photo")
+            and o["photo"]["file"] == f"File:{file}"
+            and distance_m((r["lon"], r["lat"]), (o["lon"], o["lat"])) < SAME_PHOTO_M
+            for o in records
+        )
+
+    for r in only or records:
         if r.get("photo") or r.get("_no_photo") or not r["_tried"]:
             continue
         if r.get("_category"):
-            for name, info in sorted(category_files(r["_category"]).items()):
+            # a file named after the place first ("Odense Fjord 01.jpg" before
+            # "Huset for enden af Vigerøvej.jpg"), then by name
+            core = name_core(r["name"])
+            files = sorted(
+                category_files(r["_category"]).items(),
+                key=lambda kv: (not core or core not in name_core(kv[0].rsplit(".", 1)[0]), kv[0]),
+            )
+            for name, info in files:
                 if name in r["_tried"] or not photo_file_ok(name) or not landscape(info):
                     continue
-                if used_nearby(r, name):
+                if only and used_nearby(r, name):
                     continue
                 photo, _why = photo_record(name, info)
                 if photo:
@@ -989,7 +1088,9 @@ def pick_alternative_photos(records: list[dict[str, Any]], stats: collections.Co
 
 def coast_check(r: dict[str, Any], lines: list[list[tuple[float, float]]]) -> str | None:
     """Why a record is not a coast place (None when it is). A peninsula or
-    islet gets its shore (``r["shore"]``) in place of its outline."""
+    islet gets its shore (``r["shore"]``) in place of its outline, and a bay
+    with a point only the coastline round its point that can be seen from it
+    (placeinfo.bay_shore)."""
     p = (r["lon"], r["lat"])
     edges = r.get("_edges") or []
     pts = [q for line in edges for q in line]
@@ -1003,13 +1104,23 @@ def coast_check(r: dict[str, Any], lines: list[list[tuple[float, float]]]) -> st
         r["shore"] = simplify_lines(shore)
         r["geom"] = None
         return None
+    if r["kind"] == "bay" and r["geom"] is None:
+        # a big bay with a point only (Faxe Bugt, Kalø Vig): its point is
+        # Wikidata's, out in the water (OpenStreetMap's centre of a bay's
+        # outline can lie on land), and its shore the coastline round it
+        wp = r["_wikidata_point"]
+        r["lon"], r["lat"] = round(wp[0], 5), round(wp[1], 5)
+        near, off = bay_shore(lines, wp)
+        if not near:
+            return f"bay point ({off:.0f} m from the coastline, over {BAY_POINT_MAX_M} m)"
+        r["shore"] = simplify_lines(near)
+        return None
     index = SegmentIndex(lines, p[1]) if lines else None
     reach = _coast_radius(r)
     if index is None or not any(index.nearest_m(q, reach) <= reach for q in _test_points(r)):
         return "inland (no coastline near)"
     # a point only: it must lie at the coast, not 2 km inland on a peninsula
-    point_only = r["geom"] is None and r["kind"] != "bay"
-    if point_only and index.nearest_m(p, SHORE_RADIUS_M) > SHORE_RADIUS_M:
+    if r["geom"] is None and index.nearest_m(p, SHORE_RADIUS_M) > SHORE_RADIUS_M:
         return f"point inland (over {SHORE_RADIUS_M} m from the coastline)"
     return None
 

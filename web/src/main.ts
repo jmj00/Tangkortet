@@ -356,6 +356,7 @@ manifestReady
       },
       onVerdict: (p, level) => tapCard.setVerdict(p, level),
       onCoast: (p, coast) => tapCard.setCoast(p, coast),
+      pinHeader: () => tapCard.placeLabel(),
     });
     if (pin) applyPin(pin);
   })

@@ -70,6 +70,9 @@ export interface RiskPanelHooks {
   /** "Kysten her" for `pin` as it arrives (null: no coast data for this
    * area); the pin's card shows a line of it. */
   onCoast?(pin: [number, number], coast: CoastState): void;
+  /** The pin's header as the user sees it ("Ved Tuse Næs"): among places
+   * about as near, the place card it names comes first. */
+  pinHeader?(): string | null;
 }
 
 /** The coast at the pin (coast.ts): null when the payload has no coast data
@@ -171,7 +174,10 @@ export class RiskPanel {
     const placeInfo = this.manifest.place_info;
     if (placeInfo)
       void loadPlaceInfo(placeInfo.file).then(
-        done((f) => (this.places = nearPlaces(f.places, pin))),
+        done(
+          (f) =>
+            (this.places = nearPlaces(f.places, pin, undefined, this.hooks.pinHeader?.() ?? null)),
+        ),
         () => undefined,
       );
   }
@@ -248,7 +254,10 @@ export class RiskPanel {
     }
     const coast = this.coastCard();
     const place = this.placeCard();
-    const placeFocused = document.activeElement?.closest?.("#place-card") != null;
+    // the element in the place card that has the focus (the card itself, a
+    // credit link, the photo, "+1 sted mere"), refocused after the redraw
+    const active = document.activeElement as HTMLElement | null;
+    const placeFocus = active?.closest?.("#place-card") ? active : null;
     // Each redraw replaces the card: a focus on it (or on its "Prøv igen")
     // goes to the new card.
     const keepFocus = this.focusCoast || document.activeElement?.closest?.("#coast-card") != null;
@@ -285,7 +294,7 @@ export class RiskPanel {
       this.linksCard(),
     );
     if (keepFocus && coast) coast.focus({ preventScroll: true });
-    else if (placeFocused && place) place.focus({ preventScroll: true });
+    else if (placeFocus && place) refocus(place, placeFocus);
   }
 
   /** The nearest carded place (or the one picked from "+1 sted mere"), last
@@ -833,4 +842,20 @@ export class RiskPanel {
       ),
     );
   }
+}
+
+/** Give the focus back to `was` after a redraw: the same element when the
+ * card was kept (it is), else the element in the same place among the new
+ * card's focusable ones, else the card. Never moves a focus on a link or
+ * button inside the card to the card itself while that element is there. */
+function refocus(card: HTMLElement, was: HTMLElement): void {
+  if (card.contains(was)) {
+    was.focus({ preventScroll: true });
+    return;
+  }
+  const focusable = "a[href], button, [tabindex]";
+  const old = was.closest("#place-card");
+  const i = old ? [...old.querySelectorAll(focusable)].indexOf(was) : -1;
+  const same = i >= 0 ? card.querySelectorAll<HTMLElement>(focusable)[i] : undefined;
+  (same ?? card).focus({ preventScroll: true });
 }

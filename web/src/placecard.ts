@@ -19,8 +19,13 @@ import type { PlaceCard, PlacePhoto } from "./types";
 /** A card shows when its place (point or outline) is this close to the pin. */
 export const PLACE_RADIUS_M = 500;
 /** A peninsula's or islet's card shows only this close to its shore (the
- * coastline along its outline), never for a pin inland on it. */
+ * coastline along its outline), never for a pin inland on it. So does a big
+ * bay's (the coastline round its point), and on the water near its point. */
 export const SHORE_RADIUS_M = 300;
+/** Places this much further off than the nearest still count as as near:
+ * then a shore or land card the pin's header names, else one that is not a
+ * bay, comes first (Tuse Næs before Lammefjorden on Tuse Næs's shore). */
+export const TIE_M = 100;
 
 export const KIND_LABEL: Record<string, string> = {
   marina: "Lystbådehavn",
@@ -69,22 +74,29 @@ function inRing(ring: readonly LonLat[], [x, y]: LonLat): boolean {
   return inside;
 }
 
+function shoreM(shore: readonly (readonly LonLat[])[], pin: LonLat, k: [number, number]): number {
+  let best = Infinity;
+  for (const line of shore)
+    for (let i = 1; i < line.length; i++)
+      best = Math.min(best, segmentM(pin, line[i - 1], line[i], k));
+  return best;
+}
+
 /** Metres from the pin to the place. A peninsula or islet with a shore: the
- * distance to that shore (inside it counts for nothing). Else 0 inside its
- * outline, or the nearer of its point and its outline. */
+ * distance to that shore (inside it counts for nothing); a bay with a shore:
+ * the nearer of that shore and its point. Else 0 inside its outline, or the
+ * nearer of its point and its outline. */
 export function placeDistance(
-  card: Pick<PlaceCard, "lon" | "lat" | "geom" | "shore">,
+  card: Pick<PlaceCard, "kind" | "lon" | "lat" | "geom" | "shore">,
   pin: LonLat,
 ): number {
   const k = scale(pin[1]);
+  const point = Math.hypot((card.lon - pin[0]) * k[0], (card.lat - pin[1]) * k[1]);
   if (card.shore?.length) {
-    let shore = Infinity;
-    for (const line of card.shore)
-      for (let i = 1; i < line.length; i++)
-        shore = Math.min(shore, segmentM(pin, line[i - 1], line[i], k));
-    return shore;
+    const shore = shoreM(card.shore, pin, k);
+    return card.kind === "bay" ? Math.min(shore, point) : shore;
   }
-  let best = Math.hypot((card.lon - pin[0]) * k[0], (card.lat - pin[1]) * k[1]);
+  let best = point;
   const g = card.geom;
   if (g && g.coords.length > 1) {
     if (g.type === "ring" && inRing(g.coords, pin)) return 0;
@@ -99,31 +111,56 @@ export interface NearPlace {
   distanceM: number;
 }
 
+/** Whether the pin is near enough for the card: within `radiusM` of the
+ * place; with a shore, within SHORE_RADIUS_M of it (or, for a bay, within
+ * `radiusM` of its point out on the water). */
+function inReach(card: PlaceCard, pin: LonLat, distanceM: number, radiusM: number): boolean {
+  if (!card.shore?.length) return distanceM <= radiusM;
+  const k = scale(pin[1]);
+  if (shoreM(card.shore, pin, k) <= Math.min(radiusM, SHORE_RADIUS_M)) return true;
+  if (card.kind !== "bay") return false;
+  return Math.hypot((card.lon - pin[0]) * k[0], (card.lat - pin[1]) * k[1]) <= radiusM;
+}
+
+const fold = (s: string): string => s.toLocaleLowerCase("da");
+
+/** Whether the pin's header ("Ved Tuse Næs", "På Helgenæs") names the place. */
+export function headerNames(header: string | null | undefined, name: string): boolean {
+  return !!header && fold(header).includes(fold(name));
+}
+
 /** The carded places within `radiusM` of the pin (a shore within
  * SHORE_RADIUS_M), nearest first. A place the pin is inside comes before one
  * only near it; ties go to the smaller outline's kind order (a beach before
- * the bay it lies in). */
+ * the bay it lies in). Among those within TIE_M of the nearest, the card
+ * the pin's `header` names leads, else the nearest one that is not a bay:
+ * on Tuse Næs's shore, Tuse Næs and not Lammefjorden. */
 export function nearPlaces(
   cards: readonly PlaceCard[],
   pin: LonLat,
   radiusM = PLACE_RADIUS_M,
+  header?: string | null,
 ): NearPlace[] {
   const order = Object.keys(KIND_LABEL);
-  return cards
+  const near = cards
     .map((card) => ({ card, distanceM: placeDistance(card, pin) }))
-    .filter(
-      (n) => n.distanceM <= (n.card.shore?.length ? Math.min(radiusM, SHORE_RADIUS_M) : radiusM),
-    )
+    .filter((n) => inReach(n.card, pin, n.distanceM, radiusM))
     .sort(
       (a, b) =>
         a.distanceM - b.distanceM ||
         order.indexOf(a.card.kind) - order.indexOf(b.card.kind) ||
         a.card.name.localeCompare(b.card.name, "da"),
     );
+  if (near.length < 2) return near;
+  const close = near.filter((n) => n.distanceM <= near[0].distanceM + TIE_M);
+  const rank = (n: NearPlace): number =>
+    headerNames(header, n.card.name) ? 0 : n.card.kind === "bay" ? 2 : 1;
+  const lead = close.reduce((best, n) => (rank(n) < rank(best) ? n : best));
+  return lead === near[0] ? near : [lead, ...near.filter((n) => n !== lead)];
 }
 
-function link(href: string, text: string, title?: string): HTMLAnchorElement {
-  return h("a", { href, target: "_blank", rel: "noopener", title }, text);
+function link(href: string, text: string, title?: string, cls?: string): HTMLAnchorElement {
+  return h("a", { href, target: "_blank", rel: "noopener", title, class: cls ?? null }, text);
 }
 
 export const CC_BY_SA_4 = "https://creativecommons.org/licenses/by-sa/4.0/";
@@ -135,7 +172,14 @@ export function photoCredit(photo: PlacePhoto): (string | HTMLElement)[] {
   const href = photo.license_url ?? photo.page;
   return [
     `Foto: ${photo.author}, `,
-    href ? link(href, photo.license, "Licensen (nyt vindue)") : photo.license,
+    href
+      ? link(
+          href,
+          photo.license,
+          "Licensen (nyt vindue)",
+          photo.license.length <= 6 ? "place__short" : undefined,
+        )
+      : photo.license,
     ...(photo.page
       ? [" · ", link(photo.page, "Wikimedia Commons", "Fotoets side (nyt vindue)")]
       : []),
@@ -163,13 +207,24 @@ export function textCredit(card: PlaceCard): (string | HTMLElement)[] {
   ];
 }
 
+/** What OpenStreetMap gave the card: "Afgrænsning" (its outline or shore),
+ * "Kortdata" (only the match), or null (nothing). */
+export function osmCreditLabel(card: Pick<PlaceCard, "geom" | "shore" | "osm">): string | null {
+  if (card.geom || card.shore?.length) return "Afgrænsning";
+  return card.osm ? "Kortdata" : null;
+}
+
 /** "Afgrænsning: © OpenStreetMap-bidragydere (ODbL)" when the card's outline
- * or shore comes from OpenStreetMap; [] for a card with a point only. */
-export function outlineCredit(card: Pick<PlaceCard, "geom" | "shore">): (string | HTMLElement)[] {
-  if (!card.geom && !card.shore?.length) return [];
+ * or shore comes from OpenStreetMap; "Kortdata: …" when only the match does
+ * (`osm`, a point); [] for a card OpenStreetMap had no part in. */
+export function outlineCredit(
+  card: Pick<PlaceCard, "geom" | "shore" | "osm">,
+): (string | HTMLElement)[] {
+  const label = osmCreditLabel(card);
+  if (!label) return [];
   return [
-    "Afgrænsning: © OpenStreetMap-bidragydere (",
-    link(ODBL, "ODbL", "Licensen (nyt vindue)"),
+    `${label}: © OpenStreetMap-bidragydere (`,
+    link(ODBL, "ODbL", "Licensen (nyt vindue)", "place__short"),
     ")",
   ];
 }

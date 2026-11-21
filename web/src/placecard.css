@@ -139,21 +139,34 @@
   cursor: pointer;
 }
 
-/* 44 px touch targets for every link and button on a touch screen */
+/* 44 px touch targets for every link and button on a touch screen. The
+   hit area grows with padding that a negative margin of the same size takes
+   back, so the credits keep their text's line height and wrap like text
+   (at 150 % text, too), instead of 44 px tall boxes; the lines are spaced so
+   neighbouring targets barely overlap. A short link ("ODbL", "CC0") is also
+   widened to 44 px. */
 @media (pointer: coarse) {
   .place__credit {
-    gap: 0;
+    gap: 26px;
+    line-height: 1.35;
   }
 
   .place__credit a,
   .place__others .linkish {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-    vertical-align: middle;
+    padding-block: 14px;
+    margin-block: -14px;
+  }
+
+  .place__credit a.place__short {
+    display: inline-block;
+    min-width: 44px;
+    padding-inline: 8px;
+    margin-inline: -8px;
+    text-align: center;
   }
 
   .place__others {
-    margin: 0;
+    margin-top: 1rem;
+    line-height: 1.35;
   }
 }

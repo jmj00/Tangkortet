@@ -121,6 +121,8 @@ export interface PlaceCard {
   /** A peninsula's or islet's shore: the OpenStreetMap coastline along its
    * outline (simplified). Its card shows only near it, never inland. */
   shore?: [number, number][][];
+  /** Matched to an OpenStreetMap feature (credited, ODbL), outline or not. */
+  osm?: boolean;
   text?: string;
   text_source?: "wikipedia_da" | "wikipedia_en" | "wikidata";
   article?: { url: string; lang: "da" | "en" };

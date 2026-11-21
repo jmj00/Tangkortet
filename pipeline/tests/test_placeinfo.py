@@ -157,7 +157,7 @@ def test_wikidata_description_as_a_sentence():
     ("short", "expected"),
     [
         ("CC BY-SA 4.0", "CC BY-SA 4.0"),
-        ("CC BY-SA 3.0 de", "CC BY-SA 3.0"),
+        ("CC BY-SA 3.0 de", "CC BY-SA 3.0 DE"),
         ("CC BY 2.0", "CC BY 2.0"),
         ("cc-by-sa-3.0-migrated", "CC BY-SA 3.0"),
         ("CC BY-SA 3.0, GFDL", "CC BY-SA 3.0"),

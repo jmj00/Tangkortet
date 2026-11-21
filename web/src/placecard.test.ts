@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  headerNames,
   kindLabel,
   nearPlaces,
+  osmCreditLabel,
   outlineCredit,
   placeAlt,
   placeDistance,
@@ -136,9 +138,133 @@ describe("shores (peninsulas and islets)", () => {
   });
 });
 
+describe("big bays with a shore round their point", () => {
+  // the bay's point 2 km out; its shore runs north-south 2 km west of it
+  const west = (m: number): number => 10.2 - m / 62_300;
+  const shore: [number, number][][] = [
+    [
+      [west(2000), 56.13],
+      [west(2000), 56.17],
+    ],
+  ];
+  const bay = card({ id: "bay", kind: "bay", name: "Bugten", lon: 10.2, lat: 56.15, shore });
+
+  it("shows the card at the shore", () => {
+    expect(nearPlaces([bay], [west(1800), 56.15])).toHaveLength(1);
+    expect(nearPlaces([bay], [west(2250), 56.15])).toHaveLength(1);
+  });
+
+  it("shows the card on the water near the point", () => {
+    expect(nearPlaces([bay], [west(450), 56.15])).toHaveLength(1);
+  });
+
+  it("shows no card between them or inland", () => {
+    expect(nearPlaces([bay], [west(1000), 56.15])).toEqual([]);
+    expect(nearPlaces([bay], [west(2500), 56.15])).toEqual([]);
+  });
+});
+
+describe("near-equal places", () => {
+  const ring: [number, number][] = [
+    [10.1, 56.1],
+    [10.3, 56.1],
+    [10.3, 56.2],
+    [10.1, 56.2],
+    [10.1, 56.1],
+  ];
+  // the pin in a fjord (inside its outline, 0 m), 60 m off a peninsula's shore
+  const fjord = card({
+    id: "fjord",
+    kind: "bay",
+    name: "Lammefjorden",
+    geom: { type: "ring", coords: ring },
+  });
+  const naes = card({
+    id: "naes",
+    kind: "peninsula",
+    name: "Tuse Næs",
+    shore: [
+      [
+        [10.19, 56.15 + 60 / 110_574],
+        [10.21, 56.15 + 60 / 110_574],
+      ],
+    ],
+  });
+  const beach = card({ id: "beach", name: "Strandvejen Strand", lat: 56.15 + 90 / 110_574 });
+
+  it("puts a shore or land card before a bay about as near", () => {
+    expect(nearPlaces([fjord, naes], [10.2, 56.15]).map((n) => n.card.id)).toEqual([
+      "naes",
+      "fjord",
+    ]);
+  });
+
+  it("puts the card the pin's header names first", () => {
+    const got = nearPlaces(
+      [fjord, naes, beach],
+      [10.2, 56.15],
+      undefined,
+      "Ved Strandvejen Strand",
+    );
+    expect(got[0].card.id).toBe("beach");
+    expect(
+      nearPlaces([fjord, naes, beach], [10.2, 56.15], undefined, "Ved Tuse Næs")[0].card.id,
+    ).toBe("naes");
+  });
+
+  it("keeps the nearest when the others are over 100 m further", () => {
+    const far = card({
+      ...naes,
+      id: "far",
+      shore: [
+        [
+          [10.19, 56.152],
+          [10.21, 56.152],
+        ],
+      ],
+    });
+    expect(nearPlaces([fjord, far], [10.2, 56.15])[0].card.id).toBe("fjord");
+  });
+
+  it("reads the header case-blind", () => {
+    expect(headerNames("På tuse næs", "Tuse Næs")).toBe(true);
+    expect(headerNames(null, "Tuse Næs")).toBe(false);
+  });
+});
+
 describe("credits", () => {
-  it("credits OpenStreetMap only when an outline or shore is used", () => {
+  it("credits OpenStreetMap only when it had a part", () => {
     expect(outlineCredit({})).toEqual([]);
     expect(outlineCredit({ shore: [] })).toEqual([]);
+  });
+
+  it("credits a card matched in OpenStreetMap without an outline", () => {
+    expect(osmCreditLabel({ osm: true })).toBe("Kortdata");
+    expect(osmCreditLabel({})).toBeNull();
+  });
+
+  it("calls an outline or shore Afgrænsning", () => {
+    expect(
+      osmCreditLabel({
+        osm: true,
+        shore: [
+          [
+            [10, 56],
+            [10.1, 56],
+          ],
+        ],
+      }),
+    ).toBe("Afgrænsning");
+    expect(
+      osmCreditLabel({
+        geom: {
+          type: "line",
+          coords: [
+            [10, 56],
+            [10.1, 56],
+          ],
+        },
+      }),
+    ).toBe("Afgrænsning");
   });
 });

@@ -111,7 +111,7 @@ def classify_kind(direct_p31: Iterable[str], inherited: Iterable[str], name: str
 #: open to the public or are not a shore at all: a naval base, a museum, a
 #: shipyard, a reserve. Matched on the label so a subclass is caught too.
 NON_PUBLIC_CLASS = re.compile(
-    r"naval|military|army|air base|museum|fortress|shipyard|prison|power station"
+    r"naval|military|\barmy\b|air base|museum|fortress|shipyard|prison|power station"
     r"|bird (sanctuary|reserve)|wildlife (refuge|reserve)|nature reserve|restricted",
     re.IGNORECASE,
 )
@@ -624,11 +624,29 @@ _DEEDS = {
 }
 
 
-def allowed_licence(short_name: str | None) -> str | None:
-    """The normalised licence ("CC BY-SA 4.0", "CC BY 2.0", "CC0", "Public
-    domain") when Commons' LicenseShortName is on the allow-list, else None.
-    Only CC0, public domain, CC BY and CC BY-SA: no NC, ND, GFDL-only,
-    "Attribution" (a Commons template, not CC BY) or fair use."""
+#: A ported licence's jurisdiction in its deed's URL (".../by-sa/3.0/de/").
+_PORT_URL = re.compile(r"/licenses/by(?:-sa)?/\d\.\d/([a-z]{2,3})(?:/|$)", re.IGNORECASE)
+#: Not a port: the words that may follow the version in a short name.
+_NOT_PORT = frozenset(["sa", "by", "or", "and", "gfdl", "migrated", "self"])
+
+
+def _port(first: str, url: str | None) -> str | None:
+    """The jurisdiction of a ported CC licence ("DE" for "CC BY-SA 3.0 de"),
+    from the short name's word after the version, else the deed's URL."""
+    m = re.search(r"\d\.\d[\s_-]+([a-z]{2,3})\b", first)
+    if m and m.group(1) not in _NOT_PORT:
+        return m.group(1).upper()
+    m = _PORT_URL.search(url or "")
+    return m.group(1).upper() if m else None
+
+
+def allowed_licence(short_name: str | None, url: str | None = None) -> str | None:
+    """The normalised licence ("CC BY-SA 4.0", "CC BY 2.0", "CC BY-SA 3.0 DE",
+    "CC0", "Public domain") when Commons' LicenseShortName is on the
+    allow-list, else None. Only CC0, public domain, CC BY and CC BY-SA: no NC,
+    ND, GFDL-only, "Attribution" (a Commons template, not CC BY) or fair use.
+    A ported licence keeps its port, from the short name or ``url`` (its
+    LicenseUrl): "CC BY-SA 3.0 DE" is not "CC BY-SA 3.0"."""
     if not short_name:
         return None
     s = _SPACE.sub(" ", short_name.strip()).lower()
@@ -645,16 +663,20 @@ def allowed_licence(short_name: str | None) -> str | None:
         return None
     base = "CC BY-SA" if m.group("sa") else "CC BY"
     v = m.group("v")
-    return f"{base} {v}" if v else base
+    if not v:
+        return base
+    port = _port(first, url)
+    return f"{base} {v} {port}" if port else f"{base} {v}"
 
 
 def licence_url(licence: str, given: str | None) -> str | None:
     """The deed a credit links to: Commons' LicenseUrl, else the CC deed."""
     if given:
         return given.replace("http://", "https://", 1)
-    m = re.fullmatch(r"(CC BY(?:-SA)?) (\d\.\d)", licence)
+    m = re.fullmatch(r"(CC BY(?:-SA)?) (\d\.\d)(?: ([A-Z]{2,3}))?", licence)
     if m:
-        return _DEEDS[m.group(1)].format(v=m.group(2))
+        deed = _DEEDS[m.group(1)].format(v=m.group(2))
+        return f"{deed}{m.group(3).lower()}/" if m.group(3) else deed
     if licence == "CC0":
         return "https://creativecommons.org/publicdomain/zero/1.0/"
     return None
@@ -709,6 +731,14 @@ _PEOPLE_META = re.compile(
     re.IGNORECASE,
 )
 
+#: Categories (and file titles) of a picture whose subject is not the shore:
+#: a motorhome site, a café, an airport, a shipyard, village houses.
+_OFF_SUBJECT_META = re.compile(
+    r"\bmotorhomes?\b|\bcamper ?vans?\b|\bautocamper|\brestaurants?\b|\bcaf[eé]s?\b"
+    r"|\bairports?\b|\blufthavn|\bshipyards?\b|\bshipbuilding|skibsv(æ|ae)rft|\bhouses\b",
+    re.IGNORECASE,
+)
+
 #: "1900 in Denmark", "1930s photographs of Copenhagen": the picture's year.
 _YEAR_CATEGORY = re.compile(
     r"(?<!\d)(1[0-8]\d\d|19[0-4]\d)s?\s+(in|photographs|photos|images|maps)\b"
@@ -732,7 +762,8 @@ def photo_meta_reason(meta: dict[str, str]) -> str | None:
     its extmetadata (``Categories``, ``ImageDescription``, ``ObjectName``,
     ``DateTimeOriginal``, ``Artist``), or None. Maps, engravings, paintings,
     drawings; pictures from before :data:`MIN_PHOTO_YEAR`; people, cars and
-    crowds as the subject."""
+    crowds as the subject; a motorhome site, café, airport, shipyard or houses
+    in place of the shore."""
     cats = strip_html(meta.get("Categories")).replace("|", " | ")
     desc = strip_html(meta.get("ImageDescription"))
     name = strip_html(meta.get("ObjectName"))
@@ -753,6 +784,9 @@ def photo_meta_reason(meta: dict[str, str]) -> str | None:
     m = _PEOPLE_META.search(cats)
     if m:
         return f"people as the subject ({m.group(0).strip()})"
+    m = _OFF_SUBJECT_META.search(cats) or _OFF_SUBJECT_META.search(name)
+    if m:
+        return f"not the shore ({m.group(0).strip()})"
     return None
 
 
@@ -1011,6 +1045,85 @@ def simplify_lines(
     return [[[round(x / kx, 5), round(y / ky, 5)] for x, y in k] for k in kept if len(k) >= 2]
 
 
+#: A bay with only a point: its shore is the coastline this close to the
+#: point, or, when the point lies further out, the coastline up to this much
+#: beyond the nearest; a point further than BAY_POINT_MAX_M from any
+#: coastline gets no shore.
+BAY_SHORE_M = 3000
+BAY_SHORE_EXTRA_M = 1500
+BAY_POINT_MAX_M = 5000
+
+
+def _crosses(
+    p: tuple[float, float], q: tuple[float, float], a: tuple[float, float], b: tuple[float, float]
+) -> bool:
+    """Whether the segments pq and ab cross (properly, not at an end)."""
+
+    def side(o: tuple[float, float], u: tuple[float, float], v: tuple[float, float]) -> float:
+        return (u[0] - o[0]) * (v[1] - o[1]) - (u[1] - o[1]) * (v[0] - o[0])
+
+    d1, d2 = side(p, q, a), side(p, q, b)
+    d3, d4 = side(a, b, p), side(a, b, q)
+    return d1 * d2 < 0 and d3 * d4 < 0
+
+
+def bay_shore(
+    coastline: Sequence[Sequence[Point]], point: Point
+) -> tuple[list[list[Point]], float]:
+    """A big bay's shore round its point (Faxe Bugt, Kalø Vig), whose card
+    then shows near that shore, not only in a disc out in the water: the
+    coastline within BAY_SHORE_M of the point (further when the point lies
+    further out: up to BAY_SHORE_EXTRA_M beyond the nearest coastline) that
+    can be seen from the point across the water, so a shore behind a
+    headland, in the next bay, is not this bay's. Returns the stretches and
+    the metres to the nearest coastline (``math.inf`` without any)."""
+    lat0 = point[1]
+    centre = _xy(point, lat0)
+    lines = [[_xy(p, lat0) for p in line] for line in coastline]
+    nearest = min(
+        (_seg_dist(centre, a, b) for line in lines for a, b in zip(line, line[1:], strict=False)),
+        default=math.inf,
+    )
+    if nearest > BAY_POINT_MAX_M:
+        return [], nearest
+    radius = max(BAY_SHORE_M, nearest + BAY_SHORE_EXTRA_M)
+    near: list[list[tuple[float, float]]] = []
+    for line in lines:
+        run: list[tuple[float, float]] = []
+        for p in simplify(line, 20.0) if len(line) > 2 else line:
+            if math.hypot(p[0] - centre[0], p[1] - centre[1]) <= radius:
+                run.append(p)
+                continue
+            if len(run) >= 2:
+                near.append(run)
+            run = []
+        if len(run) >= 2:
+            near.append(run)
+    segments = [(a, b) for line in near for a, b in zip(line, line[1:], strict=False)]
+
+    def seen(v: tuple[float, float]) -> bool:
+        # the sight line, stopped 2 m short of the shore point
+        dx, dy = v[0] - centre[0], v[1] - centre[1]
+        length = math.hypot(dx, dy) or 1.0
+        end = (v[0] - 2 * dx / length, v[1] - 2 * dy / length)
+        return not any(_crosses(centre, end, a, b) for a, b in segments)
+
+    kx = 111320 * math.cos(math.radians(lat0))
+    out: list[list[Point]] = []
+    for line in near:
+        run_ll: list[Point] = []
+        for v in line:
+            if seen(v):
+                run_ll.append((v[0] / kx, v[1] / 110574))
+                continue
+            if len(run_ll) >= 2:
+                out.append(run_ll)
+            run_ll = []
+        if len(run_ll) >= 2:
+            out.append(run_ll)
+    return out, nearest
+
+
 def lines_distance_m(lines: Sequence[Sequence[Point]], p: Point) -> float:
     """Metres from ``p`` to the nearest of some polylines (``math.inf`` without any)."""
     best = math.inf
@@ -1044,6 +1157,9 @@ def published_card(rec: dict[str, Any]) -> dict[str, Any] | None:
         card["geom"] = rec["geom"]
     if rec.get("shore"):
         card["shore"] = rec["shore"]
+    # matched to (and placed by) OpenStreetMap: the card credits it (ODbL)
+    if str((rec.get("match") or {}).get("by", "")).startswith("osm_"):
+        card["osm"] = True
     if rec.get("description"):
         card["text"] = rec["description"]
         card["text_source"] = rec["description_source"]
