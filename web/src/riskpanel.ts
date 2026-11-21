@@ -6,7 +6,7 @@
 
 import "./coast.css";
 import { cellsFor, COAST_RADIUS_M, NONE_TEXT, summarize, type CoastSummary } from "./coast";
-import { loadCoastCell, loadNameCell, loadRiskCell } from "./data";
+import { loadCoastCell, loadNameCell, loadPlaceInfo, loadRiskCell } from "./data";
 import {
   cellNames,
   distText,
@@ -36,6 +36,7 @@ import {
   type SoilSite,
   type WaterBody,
 } from "./live";
+import { nearPlaces, placeCardElement, type NearPlace } from "./placecard";
 import { fetchRain, type RainSummary } from "./rain";
 import { groupNearby, riskItems, type GroupKey, type RiskItem } from "./risk";
 import type { Manifest } from "./types";
@@ -69,6 +70,9 @@ export interface RiskPanelHooks {
   /** "Kysten her" for `pin` as it arrives (null: no coast data for this
    * area); the pin's card shows a line of it. */
   onCoast?(pin: [number, number], coast: CoastState): void;
+  /** The pin's header as the user sees it ("Ved Tuse Næs"): among places
+   * about as near, the place card it names comes first. */
+  pinHeader?(): string | null;
 }
 
 /** The coast at the pin (coast.ts): null when the payload has no coast data
@@ -92,6 +96,15 @@ export class RiskPanel {
   private smallStreams: Pending<unknown | null> = "loading";
   private protectedAreas: Pending<LiveResult<ProtectedArea>> = "loading";
   private coast: CoastState = "loading";
+  /** Carded places near the pin (placecard.ts), nearest first; [] for none,
+   * for a payload without them and when the file cannot be fetched (the
+   * card is extra: no error state of its own). */
+  private places: NearPlace[] = [];
+  /** The place shown when several are near ("+1 sted mere"). */
+  private placeId: string | null = null;
+  /** The card's element, kept across redraws so its photo is not refetched
+   * and does not flash each time another answer arrives. */
+  private placeEl: { places: NearPlace[]; id: string; el: HTMLElement } | null = null;
   /** "+ N flere" opened, kept across redraws for the same pin. */
   private coastMoreOpen = false;
   /** "Prøv igen" was pressed: the coast card keeps the focus until it answers. */
@@ -156,6 +169,17 @@ export class RiskPanel {
     void querySmallStreams(pin, signal).then(done((r) => (this.smallStreams = r)));
     void queryProtected(pin, signal).then(done((r) => (this.protectedAreas = r)));
     this.fetchCoast(pin, signal);
+    this.places = [];
+    this.placeId = null;
+    const placeInfo = this.manifest.place_info;
+    if (placeInfo)
+      void loadPlaceInfo(placeInfo.file).then(
+        done(
+          (f) =>
+            (this.places = nearPlaces(f.places, pin, undefined, this.hooks.pinHeader?.() ?? null)),
+        ),
+        () => undefined,
+      );
   }
 
   /** "Kysten her": the coast cells round the pin (fetched once each). */
@@ -229,6 +253,11 @@ export class RiskPanel {
       return;
     }
     const coast = this.coastCard();
+    const place = this.placeCard();
+    // the element in the place card that has the focus (the card itself, a
+    // credit link, the photo, "+1 sted mere"), refocused after the redraw
+    const active = document.activeElement as HTMLElement | null;
+    const placeFocus = active?.closest?.("#place-card") ? active : null;
     // Each redraw replaces the card: a focus on it (or on its "Prøv igen")
     // goes to the new card.
     const keepFocus = this.focusCoast || document.activeElement?.closest?.("#coast-card") != null;
@@ -260,9 +289,30 @@ export class RiskPanel {
       this.streamCard(),
       this.protectionCard(),
       this.soilCard(),
+      // background, not a risk factor: after every risk card
+      ...(place ? [place] : []),
       this.linksCard(),
     );
     if (keepFocus && coast) coast.focus({ preventScroll: true });
+    else if (placeFocus && place) refocus(place, placeFocus);
+  }
+
+  /** The nearest carded place (or the one picked from "+1 sted mere"), last
+   * before "Tjek også selv": background about the place, never a risk
+   * factor or a verdict. */
+  private placeCard(): HTMLElement | null {
+    if (!this.places.length) return null;
+    const shown = this.places.find((p) => p.card.id === this.placeId) ?? this.places[0];
+    const kept = this.placeEl;
+    if (kept && kept.places === this.places && kept.id === shown.card.id) return kept.el;
+    const others = this.places.filter((p) => p !== shown).slice(0, 3);
+    const el = placeCardElement(shown, others, (id) => {
+      this.placeId = id;
+      this.render();
+      document.getElementById("place-card")?.focus({ preventScroll: true });
+    });
+    this.placeEl = { places: this.places, id: shown.card.id, el };
+    return el;
   }
 
   /** Watercourses known so far; null if the named query failed. Small streams
@@ -792,4 +842,20 @@ export class RiskPanel {
       ),
     );
   }
+}
+
+/** Give the focus back to `was` after a redraw: the same element when the
+ * card was kept (it is), else the element in the same place among the new
+ * card's focusable ones, else the card. Never moves a focus on a link or
+ * button inside the card to the card itself while that element is there. */
+function refocus(card: HTMLElement, was: HTMLElement): void {
+  if (card.contains(was)) {
+    was.focus({ preventScroll: true });
+    return;
+  }
+  const focusable = "a[href], button, [tabindex]";
+  const old = was.closest("#place-card");
+  const i = old ? [...old.querySelectorAll(focusable)].indexOf(was) : -1;
+  const same = i >= 0 ? card.querySelectorAll<HTMLElement>(focusable)[i] : undefined;
+  (same ?? card).focus({ preventScroll: true });
 }

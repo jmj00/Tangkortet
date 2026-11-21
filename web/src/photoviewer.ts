@@ -70,20 +70,50 @@ function iconButton(className: string, label: string, name: keyof typeof ICON): 
   return button;
 }
 
-/** Full-screen photo viewer. A native modal <dialog>, so focus is trapped
- * while it is open, Escape closes it, and main.ts gives it a history entry (a
- * phone's Back closes it). `onClose` gets the photo shown last, so the hero
- * can follow and take the focus back. */
+/** One photo for the viewer: its sources, text alternative and credit line. */
+export interface ViewerPhoto {
+  src: string;
+  srcset?: string;
+  alt: string;
+  credit: (string | HTMLElement)[];
+}
+
+/** The species photos in the viewer, with the note that they are unreviewed. */
 export function openViewer(
   name: string,
   images: readonly SpeciesImage[],
   start: number,
   onClose: (index: number) => void,
 ): void {
+  const n = images.length;
+  openPhotoViewer(
+    `Fotos af ${name}`,
+    images.map((img, i) => ({
+      ...heroSources(img.url),
+      alt: photoAlt(name, img, i, n),
+      credit: creditParts(img),
+    })),
+    start,
+    onClose,
+    anyUnreviewed(images) ? UNREVIEWED_NOTE : null,
+  );
+}
+
+/** Full-screen photo viewer. A native modal <dialog>, so focus is trapped
+ * while it is open, Escape closes it, and main.ts gives it a history entry (a
+ * phone's Back closes it). `onClose` gets the photo shown last, so the hero
+ * can follow and take the focus back. Also the place cards' (placecard.ts). */
+export function openPhotoViewer(
+  label: string,
+  images: readonly ViewerPhoto[],
+  start: number,
+  onClose: (index: number) => void,
+  note: string | null = null,
+): void {
   let index = start;
   const n = images.length;
 
-  const dialog = h("dialog", { class: "photo-viewer", "aria-label": `Fotos af ${name}` });
+  const dialog = h("dialog", { class: "photo-viewer", "aria-label": label });
   const close = iconButton("photo-viewer__btn photo-viewer__close", "Luk fotovisning", "close");
   const counter = h("p", { class: "photo-viewer__count", "aria-live": "polite" });
   const stage = h("div", { class: "photo-viewer__stage" });
@@ -98,9 +128,9 @@ export function openViewer(
     // a new element per photo: the old one's late error must not hide this one
     // medium where it is enough (often cached already from the hero), large on
     // wide or dense screens
-    const el = photoImg(heroSources(img.url), "100vw", "eager");
+    const el = photoImg(img, "100vw", "eager");
     el.className = "photo-viewer__img";
-    el.alt = photoAlt(name, img, index, n);
+    el.alt = img.alt;
     status.hidden = false;
     status.textContent = "Henter foto …";
     el.addEventListener("load", () => {
@@ -115,7 +145,7 @@ export function openViewer(
     else stage.prepend(el);
     image = el;
     counter.textContent = n > 1 ? `${index + 1} / ${n}` : "";
-    caption.replaceChildren(...creditParts(img));
+    caption.replaceChildren(...img.credit);
   };
 
   stage.append(status);
@@ -143,13 +173,12 @@ export function openViewer(
       if (Math.abs(dx) > 40) show(index + (dx < 0 ? 1 : -1));
     });
   }
-  const unreviewed = anyUnreviewed(images);
   dialog.append(
     h(
       "div",
       { class: "photo-viewer__foot" },
       caption,
-      unreviewed ? h("p", { class: "photo-viewer__note" }, UNREVIEWED_NOTE) : null,
+      note ? h("p", { class: "photo-viewer__note" }, note) : null,
     ),
   );
 

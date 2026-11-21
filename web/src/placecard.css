@@ -1,0 +1,172 @@
+/* The place card in the Risiko tab (placecard.ts): background about a
+   well-known beach or harbour near the pin. It comes last, after every risk
+   card, and is quieter than they are: a small "Om stedet" heading, a small
+   thumbnail of a fixed size, a sentence or two and the credits. */
+
+.place {
+  border-style: dashed;
+}
+
+.place:focus {
+  outline: none;
+}
+
+.place:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.place__heading {
+  margin: 0 0 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.place__head {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+/* A fixed size, so nothing moves while the photo loads or when "+N" shows
+   another place; cropped to fill. */
+.place__photo {
+  flex: none;
+  width: 120px;
+  height: 84px;
+  margin: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--muted) 14%, var(--surface));
+}
+
+.place__open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
+.place__open:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -3px;
+}
+
+.place__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.place__photo.is-loaded .place__img {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .place__img {
+    transition: none;
+  }
+}
+
+.place__title {
+  min-width: 0;
+}
+
+.place__name {
+  margin: 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.place__kind {
+  margin: 0.1rem 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.place__dist {
+  font-variant-numeric: tabular-nums;
+}
+
+.place__text {
+  margin: 0 0 0.4rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.place__credit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.place__credit a {
+  color: var(--link);
+}
+
+.place__others {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* a button that reads as a link (the other places near the pin) */
+.place__others .linkish {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* 44 px touch targets for every link and button on a touch screen. The
+   hit area grows with padding that a negative margin of the same size takes
+   back, so the credits keep their text's line height and wrap like text
+   (at 150 % text, too), instead of 44 px tall boxes; the lines are spaced so
+   neighbouring targets barely overlap. A short link ("ODbL", "CC0") is also
+   widened to 44 px. */
+@media (pointer: coarse) {
+  .place__credit {
+    gap: 26px;
+    line-height: 1.35;
+  }
+
+  .place__credit a,
+  .place__others .linkish {
+    padding-block: 14px;
+    margin-block: -14px;
+  }
+
+  .place__credit a.place__short {
+    display: inline-block;
+    min-width: 44px;
+    padding-inline: 8px;
+    margin-inline: -8px;
+    text-align: center;
+  }
+
+  .place__others {
+    margin-top: 1rem;
+    line-height: 1.35;
+  }
+}

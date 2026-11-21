@@ -16,6 +16,8 @@ export interface Attribution {
   coast?: string;
   /** Danske Stednavne (CC BY 4.0); absent in older payloads. */
   names?: string;
+  /** The place cards (Wikipedia CC BY-SA, Commons photos); absent in older payloads. */
+  places?: string;
 }
 
 export interface SpeciesSummary {
@@ -73,6 +75,64 @@ export interface Manifest {
   coast?: CoastIndex | null;
   /** Absent in payloads from before the names cells. */
   names?: NamesIndex | null;
+  /** The place cards (placecard.ts); absent in payloads from before them. */
+  place_info?: PlaceInfoIndex | null;
+}
+
+/** One file of place cards (pipeline/placeinfo.py), loaded on the first pin. */
+export interface PlaceInfoIndex {
+  file: string;
+  count: number;
+  source: string;
+  /** The texts' licence (Wikipedia: CC BY-SA 4.0); each photo has its own. */
+  license: string;
+  license_url?: string;
+  fetched?: string | null;
+}
+
+export interface PlacePhoto {
+  /** 330 px wide (an upload.wikimedia.org thumbnail at a standard step). */
+  small: string;
+  /** 960 px wide. */
+  large: string;
+  width?: number;
+  height?: number;
+  /** Plain text, from Commons' Artist field, cleaned of wiki noise
+   * (pipeline/placeinfo.py clean_author); the uploader when it names none. */
+  author: string;
+  /** "CC BY-SA 4.0", "CC BY 2.0", "CC0", "Public domain". */
+  license: string;
+  license_url?: string;
+  /** The file's page on Wikimedia Commons. */
+  page?: string;
+}
+
+/** A well-known coastal place with a photo and a sentence or two. */
+export interface PlaceCard {
+  /** The Wikidata item, "Q5256478". */
+  id: string;
+  name: string;
+  /** "beach", "harbour", "marina", "headland", ... (placecard.ts KIND_LABEL) */
+  kind: string;
+  lon: number;
+  lat: number;
+  /** The OpenStreetMap outline (simplified), when the place is an area or a line. */
+  geom?: { type: "ring" | "line"; coords: [number, number][] };
+  /** A peninsula's or islet's shore: the OpenStreetMap coastline along its
+   * outline (simplified). Its card shows only near it, never inland. */
+  shore?: [number, number][][];
+  /** Matched to an OpenStreetMap feature (credited, ODbL), outline or not. */
+  osm?: boolean;
+  text?: string;
+  text_source?: "wikipedia_da" | "wikipedia_en" | "wikidata";
+  article?: { url: string; lang: "da" | "en" };
+  photo?: PlacePhoto;
+  /** False until the owner has looked at the card. */
+  reviewed: boolean;
+}
+
+export interface PlaceInfoFile {
+  places: PlaceCard[];
 }
 
 /** Official coastal place names, Danske Stednavne (pipeline/ingest/stednavne.py). CC BY 4.0. */

@@ -20,6 +20,13 @@ Without either, the coast index of the existing manifest is kept.
 
 The names file can also come from TANGKORTET_STEDNAVNE; without either, the
 names index of the existing manifest is kept.
+
+The place cards (place_info.json) are always republished from the committed
+data/places_info/places_info.json (scripts/pull_place_info.py seeds it), on
+every route: no network, so CI never asks Wikimedia. ``--no-place-info``
+leaves them out; ``--place-info-only`` rewrites just them (and the manifest):
+
+    py -m pipeline.build --out web/public/data --place-info-only
 """
 
 from __future__ import annotations
@@ -32,7 +39,13 @@ from typing import Any
 
 from pipeline.config import PUBLISH_DIR, RISK_CELL_DEG
 from pipeline.ingest import coast, gbif, risk, stednavne
-from pipeline.publish import publish_risk, publish_species, species_doc, write_manifest
+from pipeline.publish import (
+    publish_place_info,
+    publish_risk,
+    publish_species,
+    species_doc,
+    write_manifest,
+)
 from pipeline.species import published_species
 
 # Aarhus Bugt, Mols and Djursland: coast, harbours, overflows and a dumping
@@ -109,8 +122,32 @@ def main() -> None:
         action="store_true",
         help="rebuild only the names cells; everything else stays as in the existing manifest",
     )
+    parser.add_argument(
+        "--no-place-info",
+        action="store_true",
+        help="leave the place cards (data/places_info) out of the payload",
+    )
+    parser.add_argument(
+        "--place-info-only",
+        action="store_true",
+        help="rebuild only the place cards; everything else stays as in the existing manifest",
+    )
     args = parser.parse_args()
     old = previous(args.out)
+    place_info = None if args.no_place_info else publish_place_info(args.out)
+    if place_info:
+        print(f"place cards: {place_info['count']}")
+    if args.place_info_only:
+        write_manifest(
+            args.out,
+            old["species"],
+            old.get("risk"),
+            coast=old.get("coast"),
+            names=old.get("names"),
+            place_info=place_info,
+            version=old.get("version"),
+        )
+        return
 
     if args.names_only:
         if not args.names:
@@ -123,6 +160,7 @@ def main() -> None:
             old.get("risk"),
             coast=old.get("coast"),
             names=names_index,
+            place_info=place_info,
             version=old.get("version"),
         )
         return
@@ -150,7 +188,14 @@ def main() -> None:
         if args.names:
             print(f"  warning: {args.names} not found; keeping the existing names index")
         names_index = old.get("names")
-    write_manifest(args.out, species, risk_index, coast=coast_index, names=names_index)
+    write_manifest(
+        args.out,
+        species,
+        risk_index,
+        coast=coast_index,
+        names=names_index,
+        place_info=place_info,
+    )
 
 
 if __name__ == "__main__":

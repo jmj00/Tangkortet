@@ -33,7 +33,18 @@ export function openAbout(manifest: Manifest | null): void {
               ? h("li", {}, `${a} (`, extLink(manifest.coast.license_url, "licensen"), ")")
               : key === "names" && manifest.names?.license_url
                 ? h("li", {}, `${a} (`, extLink(manifest.names.license_url, "licensen"), ")")
-                : h("li", {}, a),
+                : key === "places" && manifest.place_info?.license_url
+                  ? // the attribution already names ODbL for the outlines and
+                    // shores (OpenStreetMap): link it there, not again after it
+                    h(
+                      "li",
+                      {},
+                      ...linkOdbl(a),
+                      " (",
+                      extLink(manifest.place_info.license_url, "tekstlicensen"),
+                      ")",
+                    )
+                  : h("li", {}, a),
           )
         : [h("li", {}, "Henter…")]),
       h(
@@ -63,4 +74,13 @@ export function openAbout(manifest: Manifest | null): void {
   dialog.addEventListener("close", () => dialog.remove());
   document.body.append(dialog);
   dialog.showModal();
+}
+
+const ODBL_URL = "https://opendatacommons.org/licenses/odbl/1-0/";
+
+/** The attribution with its "(ODbL)" linked to the licence (the last one). */
+export function linkOdbl(text: string): (string | HTMLElement)[] {
+  const i = text.lastIndexOf("(ODbL)");
+  if (i < 0) return [text, " (", extLink(ODBL_URL, "ODbL"), ")"];
+  return [text.slice(0, i + 1), extLink(ODBL_URL, "ODbL"), text.slice(i + 5)];
 }
