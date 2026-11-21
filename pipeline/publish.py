@@ -8,6 +8,9 @@
                                ODbL, unlike the rest of the payload)
       names/<cell>.json        official coastal place names, same grid
                                (pipeline/ingest/stednavne.py; CC BY 4.0, Klimadatastyrelsen)
+      place_info.json          the place cards, one small file (pipeline/placeinfo.py;
+                               Wikipedia text CC BY-SA 4.0, Commons photos each under
+                               its own open licence)
 
 Observations are packed as arrays to keep the files small:
 ``[lon, lat, year|null, attachment, depth_m|null, dataset_index]`` where
@@ -27,6 +30,7 @@ from typing import Any
 
 from pipeline.geo import cell_key
 from pipeline.ingest.gbif import Observation
+from pipeline.placeinfo import published_card
 from pipeline.species import Species
 
 ATTACHMENT_CODE = {"attached": 0, "drift": 1, "unknown": 2}
@@ -34,6 +38,9 @@ ATTACHMENT_CODE = {"attached": 0, "drift": 1, "unknown": 2}
 # Curated photo shortlists, one data/images/<slug>.json per species
 # (scripts/pull_species_images.py; see data/images/README.md).
 IMAGES_DIR = pathlib.Path(__file__).resolve().parent.parent / "data" / "images"
+# The place cards, committed (scripts/pull_place_info.py; data/places_info/README.md).
+PLACES_INFO = pathlib.Path(__file__).resolve().parent.parent / "data" / "places_info"
+PLACES_INFO_FILE = PLACES_INFO / "places_info.json"
 
 ATTRIBUTION = {
     "observations": "Fund via GBIF.org (bl.a. NHMD Phycology Herbarium, Arter.dk, iNaturalist);"
@@ -49,6 +56,10 @@ ATTRIBUTION = {
     # Danske Stednavne: CC BY 4.0, kept in their own files (names/<cell>.json)
     "names": "Stednavne ved kysten (strande, havne, pynter, øer, farvande): Indeholder data"
     " fra Klimadatastyrelsen, Danske Stednavne (CC BY 4.0)",
+    # The place cards: Wikipedia's text is CC BY-SA 4.0 (share-alike), each
+    # Commons photo has its own open licence, credited on the card.
+    "places": "Stedkort (strande, havne, pynter): tekst fra Wikipedia (CC BY-SA 4.0) og"
+    " Wikidata (CC0); fotos fra Wikimedia Commons, licens og fotograf på det enkelte foto",
 }
 
 
@@ -210,6 +221,7 @@ def write_manifest(
     version: str | None = None,
     coast: dict[str, Any] | None = None,
     names: dict[str, Any] | None = None,
+    place_info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     manifest = {
         "version": version or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
@@ -220,6 +232,7 @@ def write_manifest(
         "risk": risk,
         "coast": coast,
         "names": names,
+        "place_info": place_info,
     }
     write_json(out / "manifest.json", manifest)
     return manifest
@@ -260,3 +273,24 @@ def publish_risk(
     for key, content in cells.items():
         write_json(out / "risk" / f"{key}.json", content)
     return {"cell_deg": cell_deg, "cells": sorted(cells), "layers": index}
+
+
+def publish_place_info(
+    out: pathlib.Path, source: pathlib.Path = PLACES_INFO_FILE
+) -> dict[str, Any] | None:
+    """Write ``place_info.json`` from the committed records (no network) and
+    return the manifest's ``place_info`` index; None without the file."""
+    if not source.exists():
+        return None
+    records = json.loads(source.read_text(encoding="utf-8"))
+    cards = [c for c in map(published_card, records) if c is not None]
+    write_json(out / "place_info.json", {"places": cards})
+    fetched = max((r.get("fetched") or "" for r in records), default="") or None
+    return {
+        "file": "place_info.json",
+        "count": len(cards),
+        "source": "Wikidata, Wikipedia og Wikimedia Commons",
+        "license": "CC BY-SA 4.0",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "fetched": fetched,
+    }
