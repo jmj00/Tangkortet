@@ -81,7 +81,8 @@
   "Q21798385": {
    "name": "Frederiksø",
    "text": "Frederiksø er en ø i det Sydfynske Øhav i havnen ud for Svendborg.",
-   "reason": "Source typo in the next sentence; only the clean sentence is kept (trimmed, not reworded). (\"havde i 2013 havde\")"
+   "reason": "The photo was of the shipyard in 1973; this one shows the island from the bridge. Source typo in the next sentence; only the clean sentence is kept (trimmed, not reworded). (\"havde i 2013 havde\")",
+   "photo": "File:Bro til Frederiksø.jpg"
   },
   "Q23748884": {
    "name": "Dragstrup Vig",
@@ -122,6 +123,56 @@
    "name": "Bellevue Strand",
    "no_photo": true,
    "reason": "Aarhus: the photo shows a bathing crowd; no other photo of the place."
+  },
+  "Q120146125": {
+   "name": "Havnsø Havn",
+   "no_photo": true,
+   "reason": "The P18 photo is a motorhome site seen through a windscreen; the category's others are a car park and a boatyard."
+  },
+  "Q16323970": {
+   "name": "Kær Halvø",
+   "photo": "File:Kær Vig.jpg",
+   "reason": "The P18 photo showed Sønderborg's airport; this one shows Kær Vig's shore."
+  },
+  "Q12311016": {
+   "name": "Falsled Havn",
+   "no_photo": true,
+   "reason": "The photo showed a café with no water in it; the category's only other is a motorhome stopover."
+  },
+  "Q23751080": {
+   "name": "Agernæs",
+   "no_photo": true,
+   "reason": "The photo shows village houses, not the shore; the item's category has no other photo."
+  },
+  "Q1320787": {
+   "name": "Skagen Havn",
+   "photo": "File:Skagen harbour.jpg",
+   "reason": "The photo was a close-up of a navy ship; this one shows the harbour."
+  },
+  "Q12328250": {
+   "name": "Nakskov Fjord",
+   "photo": "File:Langø - lystbådehavnen.JPG",
+   "reason": "The photo was a close-up of the post boat; this one shows the fjord from Langø."
+  },
+  "Q2189435": {
+   "name": "Dueodde",
+   "photo": "File:Dueodde - sandy beaches.jpg",
+   "reason": "The photo was a generic sunset; this one shows Dueodde's beach."
+  },
+  "Q12313227": {
+   "name": "Fyns Hoved",
+   "text": "Fyns Hoved er det nordligste punkt af Fyns nordøstlige del Hindsholm og er dermed Fyns nordligste punkt som med sin placering skiller Kattegat og Storebælt.",
+   "reason": "The second sentence says the natural harbour is used by many leisure sailors: close to calling it popular."
+  },
+  "Q4563258": {
+   "name": "Refshaleøen",
+   "kind": "islet",
+   "reason": "The text calls it an island (\"er en ø\"); labelled Holm, not Halvø, to match."
+  },
+  "Q452470": {
+   "name": "Amager Strandpark",
+   "photo": "File:Amager Beach ParK (3) (14438178325).jpg",
+   "reason": "Pinned: the category's next photo named after the place shows a cocktail bar, not the beach."
   }
  }
 }
