@@ -33,12 +33,12 @@ export function storeBasemapMode(mode: BasemapMode): void {
   }
 }
 
-// A framed landscape: the usual "photo" glyph.
+// A stack of layers: the usual "change basemap" glyph.
 const ICON =
   '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">' +
-  '<rect x="3" y="4.5" width="18" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
-  '<circle cx="9" cy="9.5" r="1.8" fill="currentColor"/>' +
-  '<path d="M4 18l5.5-5.5 3.5 3.5 2.5-2.5L20 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>' +
+  '<path d="M12 3.5 21 8l-9 4.5L3 8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>' +
+  '<path d="M3 12l9 4.5 9-4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>' +
+  '<path d="M3 16l9 4.5 9-4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>' +
   "</svg>";
 
 export class BasemapControl implements IControl {
