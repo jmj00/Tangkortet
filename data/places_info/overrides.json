@@ -1,0 +1,127 @@
+{
+ "about": "Manual review of the place cards, applied by scripts/pull_place_info.py on every run (see README.md). Keys: drop, photo (a Commons file title), no_photo, kind, text (whole sentences of the article's lead only), name. Every entry needs a short reason.",
+ "overrides": {
+  "Q12311725": {
+   "name": "Flådestation Frederikshavn",
+   "drop": true,
+   "reason": "Naval base: no public access, not a place to forage."
+  },
+  "Q1458032": {
+   "name": "Vikingeskibsmuseet",
+   "drop": true,
+   "reason": "A museum, not a shore; its harbour belongs to the museum."
+  },
+  "Q957702": {
+   "name": "Bønnerup Strand",
+   "drop": true,
+   "reason": "The article is about the fishing village, not a beach."
+  },
+  "Q2534572": {
+   "name": "Vorsø Kalv",
+   "drop": true,
+   "reason": "Part of the Vorsø reserve: no public access."
+  },
+  "Q10728779": {
+   "name": "Østerskær",
+   "drop": true,
+   "reason": "Skerry of Ertholmene, a bird reserve: no public access."
+  },
+  "Q23736720": {
+   "name": "Tat",
+   "drop": true,
+   "reason": "Skerry of Ertholmene, a bird reserve with no public access; its article redirects to Ertholmene."
+  },
+  "Q3966675": {
+   "name": "Svanemøllestranden",
+   "photo": "File:Svanemøllestranden.jpg",
+   "reason": "The P18 photo showed a bathing crowd; this one shows the empty beach."
+  },
+  "Q110189711": {
+   "name": "Snekkersten strand",
+   "photo": "File:Looking northwards up the Danish coast from Snekkersten.jpg",
+   "reason": "The P18 photo showed bathers; this one shows the shore."
+  },
+  "Q3375957": {
+   "name": "Bellevue Strand",
+   "photo": "File:Bellevue Strand 2005-03.jpg",
+   "reason": "Klampenborg: the P18 photo showed a bathing crowd; this one shows the shore and the water."
+  },
+  "Q17489408": {
+   "name": "Palmestranden",
+   "photo": "File:PALMESTRANDE 9990 FRH - The palms end of summer - panoramio.jpg",
+   "reason": "The P18 photo showed a car with a readable number plate."
+  },
+  "Q17489404": {
+   "name": "Blokhus Strand",
+   "photo": "File:Jammerbugt - Blokhus.JPG",
+   "reason": "The P18 photo showed a summer crowd; this one shows the beach."
+  },
+  "Q23734739": {
+   "name": "Thurø Bund",
+   "no_photo": true,
+   "reason": "The only photo is a 1977 picture of sailing dinghies, not of the place; the item has no Commons category. Text: source typo in the second sentence (\"en i nordlig\"); the first is kept.",
+   "text": "Thurø Bund er en vestvendt fjord på Thurø."
+  },
+  "Q44391": {
+   "name": "Blåvands Huk",
+   "kind": "headland",
+   "photo": "File:Sandy Beach (25024723).jpeg",
+   "reason": "A headland (Danmarks vestligste punkt), not a beach; its photo was of Skallingen."
+  },
+  "Q23738273": {
+   "name": "Sønderby Klint",
+   "text": "I klinten kan man se lag fra tre forskellige gletsjere fra den sidste istid, Weichsel.",
+   "reason": "Source typos in the first sentence (\"25 m 20-30 m høj\", \"på på\"); the clean second sentence is kept."
+  },
+  "Q2006009": {
+   "name": "Nybøl Nor",
+   "text": "Nybøl Nor er et nor og en nordlig sidearm af Flensborg Fjord.",
+   "reason": "Source typo in the next sentence; only the clean sentence is kept (trimmed, not reworded). (\"den den\")"
+  },
+  "Q21798385": {
+   "name": "Frederiksø",
+   "text": "Frederiksø er en ø i det Sydfynske Øhav i havnen ud for Svendborg.",
+   "reason": "Source typo in the next sentence; only the clean sentence is kept (trimmed, not reworded). (\"havde i 2013 havde\")"
+  },
+  "Q23748884": {
+   "name": "Dragstrup Vig",
+   "text": "Dragstrup Vig er en ca 3 km bred og 5 km dyb vig i Limfjorden på vestsiden af Mors, cirka 12 km vest for Nykøbing Mors.",
+   "reason": "Source typo in the next sentence; only the clean sentence is kept (trimmed, not reworded). (\"nod nord\")"
+  },
+  "Q23743343": {
+   "name": "Norsminde Fjord",
+   "text": "Norsminde Fjord er en fjord beliggende ca. 20 km syd for Aarhus.",
+   "reason": "Source typo in the next sentence; only the clean sentence is kept (trimmed, not reworded). (\"cirka.\")"
+  },
+  "Q12310581": {
+   "name": "Esbjerg Havn",
+   "no_photo": true,
+   "reason": "The only fitting category photo is of a ship in Aabenraa, not of this harbour."
+  },
+  "Q502123": {
+   "name": "Københavns Frihavn",
+   "no_photo": true,
+   "reason": "The photo is an archive picture (black and white), not of the harbour today."
+  },
+  "Q56146867": {
+   "name": "Nexø Havn",
+   "no_photo": true,
+   "reason": "The photo shows a ship under construction, not the harbour."
+  },
+  "Q552668": {
+   "name": "Sundeved",
+   "no_photo": true,
+   "reason": "The photo shows Gråsten Slot, not the shore."
+  },
+  "Q17489415": {
+   "name": "Hornbæk Strand",
+   "no_photo": true,
+   "reason": "The category photo shows two people as the subject."
+  },
+  "Q28225945": {
+   "name": "Bellevue Strand",
+   "no_photo": true,
+   "reason": "Aarhus: the photo shows a bathing crowd; no other photo of the place."
+  }
+ }
+}
