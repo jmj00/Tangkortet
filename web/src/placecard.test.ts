@@ -1,0 +1,97 @@
+import { describe, expect, it } from "vitest";
+
+import { kindLabel, nearPlaces, placeAlt, placeDistance, PLACE_RADIUS_M } from "./placecard";
+import type { PlaceCard } from "./types";
+
+const card = (over: Partial<PlaceCard>): PlaceCard => ({
+  id: "Q1",
+  name: "Sted",
+  kind: "beach",
+  lon: 10.2,
+  lat: 56.15,
+  reviewed: false,
+  ...over,
+});
+
+// ~111 m per 0.001° of latitude; ~62 m per 0.001° of longitude at 56°N
+const north = (m: number): [number, number] => [10.2, 56.15 + m / 110_574];
+
+describe("placeDistance", () => {
+  it("is the distance to the point without an outline", () => {
+    expect(placeDistance(card({}), north(300))).toBeCloseTo(300, -1);
+  });
+
+  it("is 0 inside the outline", () => {
+    const ring: [number, number][] = [
+      [10.19, 56.14],
+      [10.21, 56.14],
+      [10.21, 56.16],
+      [10.19, 56.16],
+      [10.19, 56.14],
+    ];
+    const big = card({ lon: 10.3, lat: 56.3, geom: { type: "ring", coords: ring } });
+    expect(placeDistance(big, [10.2, 56.15])).toBe(0);
+  });
+
+  it("measures to the nearest edge of a line or outline", () => {
+    const line: [number, number][] = [
+      [10.18, 56.15],
+      [10.22, 56.15],
+    ];
+    const cliff = card({ lon: 10.3, lat: 56.3, geom: { type: "line", coords: line } });
+    expect(placeDistance(cliff, north(200))).toBeCloseTo(200, -1);
+  });
+});
+
+describe("nearPlaces", () => {
+  it("keeps the places within the radius, nearest first", () => {
+    const far = card({ id: "far", name: "Langt", lat: 56.15 + 900 / 110_574 });
+    const mid = card({ id: "mid", name: "Midt", lat: 56.15 + 300 / 110_574 });
+    const near = card({ id: "near", name: "Nær", lat: 56.15 + 50 / 110_574 });
+    const got = nearPlaces([far, mid, near], [10.2, 56.15]);
+    expect(got.map((n) => n.card.id)).toEqual(["near", "mid"]);
+    expect(got[0].distanceM).toBeLessThan(got[1].distanceM);
+  });
+
+  it("uses 500 m by default", () => {
+    expect(PLACE_RADIUS_M).toBe(500);
+    const edge = card({ lat: 56.15 + 490 / 110_574 });
+    const out = card({ lat: 56.15 + 520 / 110_574 });
+    expect(nearPlaces([edge], [10.2, 56.15])).toHaveLength(1);
+    expect(nearPlaces([out], [10.2, 56.15])).toHaveLength(0);
+  });
+
+  it("puts a beach before the bay it lies in when the pin is inside both", () => {
+    const ring: [number, number][] = [
+      [10.1, 56.1],
+      [10.3, 56.1],
+      [10.3, 56.2],
+      [10.1, 56.2],
+      [10.1, 56.1],
+    ];
+    const bay = card({
+      id: "bay",
+      kind: "bay",
+      name: "Bugten",
+      geom: { type: "ring", coords: ring },
+    });
+    const beach = card({ id: "beach", name: "Stranden", geom: { type: "ring", coords: ring } });
+    expect(nearPlaces([bay, beach], [10.2, 56.15]).map((n) => n.card.id)).toEqual(["beach", "bay"]);
+  });
+
+  it("returns nothing for an empty list", () => {
+    expect(nearPlaces([], [10.2, 56.15])).toEqual([]);
+  });
+});
+
+describe("labels", () => {
+  it("names the kind in Danish", () => {
+    expect(kindLabel("marina")).toBe("Lystbådehavn");
+    expect(kindLabel("headland")).toBe("Pynt");
+    expect(kindLabel("unknown")).toBe("Sted");
+  });
+
+  it("gives the photo an alt text from the name and kind", () => {
+    expect(placeAlt(card({ name: "Den Permanente" }))).toBe("Foto af Den Permanente (strand)");
+  });
+});

@@ -15,14 +15,18 @@
  * seen once (the list's thumbnails, a species page) shows again offline; one
  * never seen fails, and the app falls back to its placeholder or the plain
  * heading. Opaque (non-CORS) responses are never stored.
+ *
+ * The place cards' photos come from Wikimedia Commons (upload.wikimedia.org,
+ * which also answers CORS with "*"); they share the photo cache.
  */
 
 const CACHE = "tangkortet-v1";
 const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/favicon.svg"];
 const PHOTOS = "tangkortet-photos-v1";
-const PHOTO_HOST = "inaturalist-open-data.s3.amazonaws.com";
-// ~17 thumbnails in two sizes plus a few species pages of medium/large photos
-const PHOTO_MAX = 120;
+const PHOTO_HOSTS = new Set(["inaturalist-open-data.s3.amazonaws.com", "upload.wikimedia.org"]);
+// ~17 thumbnails in two sizes plus a few species pages of medium/large photos,
+// and the place cards' photos of the spots visited
+const PHOTO_MAX = 160;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -49,7 +53,7 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
-  if (url.hostname === PHOTO_HOST && request.mode === "cors") {
+  if (PHOTO_HOSTS.has(url.hostname) && request.mode === "cors") {
     event.respondWith(photo(request, event));
     return;
   }

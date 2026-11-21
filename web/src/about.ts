@@ -33,7 +33,15 @@ export function openAbout(manifest: Manifest | null): void {
               ? h("li", {}, `${a} (`, extLink(manifest.coast.license_url, "licensen"), ")")
               : key === "names" && manifest.names?.license_url
                 ? h("li", {}, `${a} (`, extLink(manifest.names.license_url, "licensen"), ")")
-                : h("li", {}, a),
+                : key === "places" && manifest.place_info?.license_url
+                  ? h(
+                      "li",
+                      {},
+                      `${a} (`,
+                      extLink(manifest.place_info.license_url, "tekstlicensen"),
+                      ")",
+                    )
+                  : h("li", {}, a),
           )
         : [h("li", {}, "Henter…")]),
       h(

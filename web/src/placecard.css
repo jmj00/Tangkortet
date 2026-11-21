@@ -1,0 +1,141 @@
+/* The place card in the Risiko tab (placecard.ts): a photo of a well-known
+   beach or harbour near the pin, its name and kind, a sentence or two, and the
+   credits. Set apart below the verdict; quieter than the risk cards. */
+
+.place {
+  /* the photo runs edge to edge; the risk cards' flex gap is not wanted here */
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.place:focus {
+  outline: none;
+}
+
+.place:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* A fixed height, so nothing below jumps while the photo loads; cropped to
+   fill. Capped by the viewport's height for short landscape phones. */
+.place__photo {
+  margin: 0;
+  height: clamp(96px, 24vh, 176px);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.place__open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
+.place__open:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -4px;
+}
+
+.place__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.place__photo.is-loaded .place__img {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .place__img {
+    transition: none;
+  }
+}
+
+.place__body {
+  padding: 0.55rem 0.8rem 0.65rem;
+}
+
+.place__kind {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.place__dist {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.place__name {
+  margin: 0.05rem 0 0.3rem;
+  overflow-wrap: anywhere;
+}
+
+.place__text {
+  margin: 0 0 0.4rem;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.place__credit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.75rem;
+  margin: 0 0 0.25rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.place__credit a,
+.place__more a {
+  color: var(--link);
+}
+
+.place__more,
+.place__others {
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+}
+
+.place__others {
+  color: var(--muted);
+}
+
+/* a button that reads as a link (the other places near the pin) */
+.place__others .linkish {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+@media (pointer: coarse) {
+  .place__more a,
+  .place__others .linkish {
+    display: inline-block;
+    min-height: 44px;
+    line-height: 44px;
+  }
+
+  .place__more {
+    margin: 0;
+  }
+}

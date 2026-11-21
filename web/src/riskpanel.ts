@@ -6,7 +6,7 @@
 
 import "./coast.css";
 import { cellsFor, COAST_RADIUS_M, NONE_TEXT, summarize, type CoastSummary } from "./coast";
-import { loadCoastCell, loadNameCell, loadRiskCell } from "./data";
+import { loadCoastCell, loadNameCell, loadPlaceInfo, loadRiskCell } from "./data";
 import {
   cellNames,
   distText,
@@ -36,6 +36,7 @@ import {
   type SoilSite,
   type WaterBody,
 } from "./live";
+import { nearPlaces, placeCardElement, type NearPlace } from "./placecard";
 import { fetchRain, type RainSummary } from "./rain";
 import { groupNearby, riskItems, type GroupKey, type RiskItem } from "./risk";
 import type { Manifest } from "./types";
@@ -92,6 +93,15 @@ export class RiskPanel {
   private smallStreams: Pending<unknown | null> = "loading";
   private protectedAreas: Pending<LiveResult<ProtectedArea>> = "loading";
   private coast: CoastState = "loading";
+  /** Carded places near the pin (placecard.ts), nearest first; [] for none,
+   * for a payload without them and when the file cannot be fetched (the
+   * card is extra: no error state of its own). */
+  private places: NearPlace[] = [];
+  /** The place shown when several are near ("+1 sted mere"). */
+  private placeId: string | null = null;
+  /** The card's element, kept across redraws so its photo is not refetched
+   * and does not flash each time another answer arrives. */
+  private placeEl: { places: NearPlace[]; id: string; el: HTMLElement } | null = null;
   /** "+ N flere" opened, kept across redraws for the same pin. */
   private coastMoreOpen = false;
   /** "Prøv igen" was pressed: the coast card keeps the focus until it answers. */
@@ -156,6 +166,14 @@ export class RiskPanel {
     void querySmallStreams(pin, signal).then(done((r) => (this.smallStreams = r)));
     void queryProtected(pin, signal).then(done((r) => (this.protectedAreas = r)));
     this.fetchCoast(pin, signal);
+    this.places = [];
+    this.placeId = null;
+    const placeInfo = this.manifest.place_info;
+    if (placeInfo)
+      void loadPlaceInfo(placeInfo.file).then(
+        done((f) => (this.places = nearPlaces(f.places, pin))),
+        () => undefined,
+      );
   }
 
   /** "Kysten her": the coast cells round the pin (fetched once each). */
@@ -229,6 +247,8 @@ export class RiskPanel {
       return;
     }
     const coast = this.coastCard();
+    const place = this.placeCard();
+    const placeFocused = document.activeElement?.closest?.("#place-card") != null;
     // Each redraw replaces the card: a focus on it (or on its "Prøv igen")
     // goes to the new card.
     const keepFocus = this.focusCoast || document.activeElement?.closest?.("#coast-card") != null;
@@ -236,6 +256,7 @@ export class RiskPanel {
     this.root.replaceChildren(
       this.verdictCard(),
       h("p", { class: "disclaimer" }, DISCLAIMER),
+      ...(place ? [place] : []),
       ...(coast ? [coast] : []),
       this.rainCard(),
       this.windCard(),
@@ -263,6 +284,24 @@ export class RiskPanel {
       this.linksCard(),
     );
     if (keepFocus && coast) coast.focus({ preventScroll: true });
+    else if (placeFocused && place) place.focus({ preventScroll: true });
+  }
+
+  /** The nearest carded place (or the one picked from "+1 sted mere"), set
+   * apart below the verdict and the disclaimer: facts about the place only. */
+  private placeCard(): HTMLElement | null {
+    if (!this.places.length) return null;
+    const shown = this.places.find((p) => p.card.id === this.placeId) ?? this.places[0];
+    const kept = this.placeEl;
+    if (kept && kept.places === this.places && kept.id === shown.card.id) return kept.el;
+    const others = this.places.filter((p) => p !== shown).slice(0, 3);
+    const el = placeCardElement(shown, others, (id) => {
+      this.placeId = id;
+      this.render();
+      document.getElementById("place-card")?.focus({ preventScroll: true });
+    });
+    this.placeEl = { places: this.places, id: shown.card.id, el };
+    return el;
   }
 
   /** Watercourses known so far; null if the named query failed. Small streams
