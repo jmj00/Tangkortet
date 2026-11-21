@@ -91,13 +91,14 @@ export interface PlaceInfoIndex {
 }
 
 export interface PlacePhoto {
-  /** ~320 px wide (upload.wikimedia.org thumbnail). */
+  /** 330 px wide (an upload.wikimedia.org thumbnail at a standard step). */
   small: string;
-  /** ~800 px wide. */
+  /** 960 px wide. */
   large: string;
   width?: number;
   height?: number;
-  /** Plain text, from Commons' Artist field. */
+  /** Plain text, from Commons' Artist field, cleaned of wiki noise
+   * (pipeline/placeinfo.py clean_author); the uploader when it names none. */
   author: string;
   /** "CC BY-SA 4.0", "CC BY 2.0", "CC0", "Public domain". */
   license: string;
@@ -117,6 +118,9 @@ export interface PlaceCard {
   lat: number;
   /** The OpenStreetMap outline (simplified), when the place is an area or a line. */
   geom?: { type: "ring" | "line"; coords: [number, number][] };
+  /** A peninsula's or islet's shore: the OpenStreetMap coastline along its
+   * outline (simplified). Its card shows only near it, never inland. */
+  shore?: [number, number][][];
   text?: string;
   text_source?: "wikipedia_da" | "wikipedia_en" | "wikidata";
   article?: { url: string; lang: "da" | "en" };

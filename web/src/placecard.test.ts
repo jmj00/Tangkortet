@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { kindLabel, nearPlaces, placeAlt, placeDistance, PLACE_RADIUS_M } from "./placecard";
+import {
+  kindLabel,
+  nearPlaces,
+  outlineCredit,
+  placeAlt,
+  placeDistance,
+  PLACE_RADIUS_M,
+  SHORE_RADIUS_M,
+} from "./placecard";
 import type { PlaceCard } from "./types";
 
 const card = (over: Partial<PlaceCard>): PlaceCard => ({
@@ -93,5 +101,44 @@ describe("labels", () => {
 
   it("gives the photo an alt text from the name and kind", () => {
     expect(placeAlt(card({ name: "Den Permanente" }))).toBe("Foto af Den Permanente (strand)");
+  });
+});
+
+describe("shores (peninsulas and islets)", () => {
+  // a square peninsula; its shore is the north, east and south sides
+  const shore: [number, number][][] = [
+    [
+      [10.19, 56.16],
+      [10.21, 56.16],
+      [10.21, 56.14],
+      [10.19, 56.14],
+    ],
+  ];
+  const peninsula = card({ id: "p", kind: "peninsula", lon: 10.2, lat: 56.15, shore });
+
+  it("shows no card for a pin inland on the peninsula", () => {
+    // its centre: ~1.1 km from the north and south sides, ~620 m from the east
+    expect(placeDistance(peninsula, [10.2, 56.15])).toBeGreaterThan(SHORE_RADIUS_M);
+    expect(nearPlaces([peninsula], [10.2, 56.15])).toEqual([]);
+  });
+
+  it("shows the card at its shore, inside or outside", () => {
+    const inside: [number, number] = [10.2, 56.16 - 100 / 110_574];
+    const outside: [number, number] = [10.2, 56.16 + 200 / 110_574];
+    expect(nearPlaces([peninsula], inside)).toHaveLength(1);
+    expect(nearPlaces([peninsula], outside)).toHaveLength(1);
+    expect(nearPlaces([peninsula], [10.2, 56.16 + 400 / 110_574])).toHaveLength(0);
+  });
+
+  it("takes the shore over the point", () => {
+    // the point is at the pin, but the shore is far
+    expect(placeDistance(peninsula, [10.2, 56.15])).toBeCloseTo(620, -2);
+  });
+});
+
+describe("credits", () => {
+  it("credits OpenStreetMap only when an outline or shore is used", () => {
+    expect(outlineCredit({})).toEqual([]);
+    expect(outlineCredit({ shore: [] })).toEqual([]);
   });
 });

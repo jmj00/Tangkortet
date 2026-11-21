@@ -39,6 +39,9 @@ export function openAbout(manifest: Manifest | null): void {
                       {},
                       `${a} (`,
                       extLink(manifest.place_info.license_url, "tekstlicensen"),
+                      ", ",
+                      // the outlines and shores are derived from OpenStreetMap
+                      extLink("https://opendatacommons.org/licenses/odbl/1-0/", "ODbL"),
                       ")",
                     )
                   : h("li", {}, a),

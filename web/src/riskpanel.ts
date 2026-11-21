@@ -256,7 +256,6 @@ export class RiskPanel {
     this.root.replaceChildren(
       this.verdictCard(),
       h("p", { class: "disclaimer" }, DISCLAIMER),
-      ...(place ? [place] : []),
       ...(coast ? [coast] : []),
       this.rainCard(),
       this.windCard(),
@@ -281,14 +280,17 @@ export class RiskPanel {
       this.streamCard(),
       this.protectionCard(),
       this.soilCard(),
+      // background, not a risk factor: after every risk card
+      ...(place ? [place] : []),
       this.linksCard(),
     );
     if (keepFocus && coast) coast.focus({ preventScroll: true });
     else if (placeFocused && place) place.focus({ preventScroll: true });
   }
 
-  /** The nearest carded place (or the one picked from "+1 sted mere"), set
-   * apart below the verdict and the disclaimer: facts about the place only. */
+  /** The nearest carded place (or the one picked from "+1 sted mere"), last
+   * before "Tjek også selv": background about the place, never a risk
+   * factor or a verdict. */
   private placeCard(): HTMLElement | null {
     if (!this.places.length) return null;
     const shown = this.places.find((p) => p.card.id === this.placeId) ?? this.places[0];

@@ -1,12 +1,10 @@
-/* The place card in the Risiko tab (placecard.ts): a photo of a well-known
-   beach or harbour near the pin, its name and kind, a sentence or two, and the
-   credits. Set apart below the verdict; quieter than the risk cards. */
+/* The place card in the Risiko tab (placecard.ts): background about a
+   well-known beach or harbour near the pin. It comes last, after every risk
+   card, and is quieter than they are: a small "Om stedet" heading, a small
+   thumbnail of a fixed size, a sentence or two and the credits. */
 
 .place {
-  /* the photo runs edge to edge; the risk cards' flex gap is not wanted here */
-  gap: 0;
-  padding: 0;
-  overflow: hidden;
+  border-style: dashed;
 }
 
 .place:focus {
@@ -18,18 +16,39 @@
   outline-offset: 2px;
 }
 
-/* A fixed height, so nothing below jumps while the photo loads; cropped to
-   fill. Capped by the viewport's height for short landscape phones. */
+.place__heading {
+  margin: 0 0 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.place__head {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+/* A fixed size, so nothing moves while the photo loads or when "+N" shows
+   another place; cropped to fill. */
 .place__photo {
+  flex: none;
+  width: 120px;
+  height: 84px;
   margin: 0;
-  height: clamp(96px, 24vh, 176px);
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border-radius: 6px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--muted) 14%, var(--surface));
 }
 
 .place__open {
   display: block;
   width: 100%;
   height: 100%;
+  min-height: 0;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -39,7 +58,7 @@
 
 .place__open:focus-visible {
   outline: 2px solid var(--focus);
-  outline-offset: -4px;
+  outline-offset: -3px;
 }
 
 .place__img {
@@ -61,56 +80,49 @@
   }
 }
 
-.place__body {
-  padding: 0.55rem 0.8rem 0.65rem;
+.place__title {
+  min-width: 0;
+}
+
+.place__name {
+  margin: 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
 }
 
 .place__kind {
-  margin: 0;
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  margin: 0.1rem 0 0;
+  font-size: 0.82rem;
   color: var(--muted);
 }
 
 .place__dist {
-  font-weight: 400;
   font-variant-numeric: tabular-nums;
-}
-
-.place__name {
-  margin: 0.05rem 0 0.3rem;
-  overflow-wrap: anywhere;
 }
 
 .place__text {
   margin: 0 0 0.4rem;
-  font-size: 0.92rem;
+  font-size: 0.9rem;
   line-height: 1.4;
 }
 
 .place__credit {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0 0.75rem;
-  margin: 0 0 0.25rem;
-  font-size: 0.78rem;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin: 0;
+  font-size: 0.76rem;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
 
-.place__credit a,
-.place__more a {
+.place__credit a {
   color: var(--link);
 }
 
-.place__more,
 .place__others {
-  margin: 0.2rem 0 0;
+  margin: 0.35rem 0 0;
   font-size: 0.85rem;
-}
-
-.place__others {
   color: var(--muted);
 }
 
@@ -127,15 +139,21 @@
   cursor: pointer;
 }
 
+/* 44 px touch targets for every link and button on a touch screen */
 @media (pointer: coarse) {
-  .place__more a,
-  .place__others .linkish {
-    display: inline-block;
-    min-height: 44px;
-    line-height: 44px;
+  .place__credit {
+    gap: 0;
   }
 
-  .place__more {
+  .place__credit a,
+  .place__others .linkish {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    vertical-align: middle;
+  }
+
+  .place__others {
     margin: 0;
   }
 }

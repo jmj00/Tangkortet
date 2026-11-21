@@ -3,9 +3,10 @@
 // sentences from its Wikipedia article (pipeline/placeinfo.py,
 // data/places_info/README.md). Most places have none, and that is fine.
 //
-// Factual only, and kept apart from (below) the risk verdict: the pipeline
-// drops any sentence that says a place is clean, safe or good for bathing, and
-// nothing here may soften the risk content.
+// Background only, never a recommendation: the card comes last in the tab,
+// after every risk card, under a modest "Om stedet" heading, and the pipeline
+// drops any sentence that says a place is clean, safe, good for bathing,
+// beautiful or popular. Nothing here may soften or compete with the verdict.
 
 import "./placecard.css";
 
@@ -17,6 +18,9 @@ import type { PlaceCard, PlacePhoto } from "./types";
 
 /** A card shows when its place (point or outline) is this close to the pin. */
 export const PLACE_RADIUS_M = 500;
+/** A peninsula's or islet's card shows only this close to its shore (the
+ * coastline along its outline), never for a pin inland on it. */
+export const SHORE_RADIUS_M = 300;
 
 export const KIND_LABEL: Record<string, string> = {
   marina: "Lystbådehavn",
@@ -65,10 +69,21 @@ function inRing(ring: readonly LonLat[], [x, y]: LonLat): boolean {
   return inside;
 }
 
-/** Metres from the pin to the place: 0 inside its outline, else the nearer
- * of its point and its outline. */
-export function placeDistance(card: Pick<PlaceCard, "lon" | "lat" | "geom">, pin: LonLat): number {
+/** Metres from the pin to the place. A peninsula or islet with a shore: the
+ * distance to that shore (inside it counts for nothing). Else 0 inside its
+ * outline, or the nearer of its point and its outline. */
+export function placeDistance(
+  card: Pick<PlaceCard, "lon" | "lat" | "geom" | "shore">,
+  pin: LonLat,
+): number {
   const k = scale(pin[1]);
+  if (card.shore?.length) {
+    let shore = Infinity;
+    for (const line of card.shore)
+      for (let i = 1; i < line.length; i++)
+        shore = Math.min(shore, segmentM(pin, line[i - 1], line[i], k));
+    return shore;
+  }
   let best = Math.hypot((card.lon - pin[0]) * k[0], (card.lat - pin[1]) * k[1]);
   const g = card.geom;
   if (g && g.coords.length > 1) {
@@ -84,9 +99,10 @@ export interface NearPlace {
   distanceM: number;
 }
 
-/** The carded places within `radiusM` of the pin, nearest first. A place the
- * pin is inside comes before one only near it; ties go to the smaller
- * outline's kind order (a beach before the bay it lies in). */
+/** The carded places within `radiusM` of the pin (a shore within
+ * SHORE_RADIUS_M), nearest first. A place the pin is inside comes before one
+ * only near it; ties go to the smaller outline's kind order (a beach before
+ * the bay it lies in). */
 export function nearPlaces(
   cards: readonly PlaceCard[],
   pin: LonLat,
@@ -95,7 +111,9 @@ export function nearPlaces(
   const order = Object.keys(KIND_LABEL);
   return cards
     .map((card) => ({ card, distanceM: placeDistance(card, pin) }))
-    .filter((n) => n.distanceM <= radiusM)
+    .filter(
+      (n) => n.distanceM <= (n.card.shore?.length ? Math.min(radiusM, SHORE_RADIUS_M) : radiusM),
+    )
     .sort(
       (a, b) =>
         a.distanceM - b.distanceM ||
@@ -108,8 +126,11 @@ function link(href: string, text: string, title?: string): HTMLAnchorElement {
   return h("a", { href, target: "_blank", rel: "noopener", title }, text);
 }
 
-/** "Foto: <author>, <licence>" with the licence linked to its deed (or the
- * file's Commons page when it has none, e.g. public domain). */
+export const CC_BY_SA_4 = "https://creativecommons.org/licenses/by-sa/4.0/";
+export const ODBL = "https://opendatacommons.org/licenses/odbl/1-0/";
+
+/** "Foto: <author>, <licence> · Wikimedia Commons", the licence linked to its
+ * deed (or the file's Commons page when it has none, e.g. public domain). */
 export function photoCredit(photo: PlacePhoto): (string | HTMLElement)[] {
   const href = photo.license_url ?? photo.page;
   return [
@@ -121,7 +142,9 @@ export function photoCredit(photo: PlacePhoto): (string | HTMLElement)[] {
   ];
 }
 
-/** "Tekst: Wikipedia (CC BY-SA)" linked to the article, or Wikidata. */
+/** "Tekst: uddrag fra Wikipedia (forkortet), CC BY-SA 4.0", the article and
+ * the licence linked once each; "Tekst: Wikidata (CC0)" for a description
+ * from Wikidata. */
 export function textCredit(card: PlaceCard): (string | HTMLElement)[] {
   if (!card.text) return [];
   if (card.text_source === "wikidata")
@@ -131,10 +154,23 @@ export function textCredit(card: PlaceCard): (string | HTMLElement)[] {
       " (CC0)",
     ];
   const url = card.article?.url;
-  const name = card.article?.lang === "en" ? "Wikipedia på engelsk" : "Wikipedia";
+  const name = card.article?.lang === "en" ? "engelsk Wikipedia" : "Wikipedia";
   return [
-    "Tekst: ",
-    url ? link(url, `${name} (CC BY-SA)`, "Artiklen (nyt vindue)") : `${name} (CC BY-SA)`,
+    "Tekst: uddrag fra ",
+    url ? link(url, name, "Artiklen (nyt vindue)") : name,
+    " (forkortet), ",
+    link(CC_BY_SA_4, "CC BY-SA 4.0", "Licensen (nyt vindue)"),
+  ];
+}
+
+/** "Afgrænsning: © OpenStreetMap-bidragydere (ODbL)" when the card's outline
+ * or shore comes from OpenStreetMap; [] for a card with a point only. */
+export function outlineCredit(card: Pick<PlaceCard, "geom" | "shore">): (string | HTMLElement)[] {
+  if (!card.geom && !card.shore?.length) return [];
+  return [
+    "Afgrænsning: © OpenStreetMap-bidragydere (",
+    link(ODBL, "ODbL", "Licensen (nyt vindue)"),
+    ")",
   ];
 }
 
@@ -144,25 +180,31 @@ export function placeAlt(card: PlaceCard): string {
 }
 
 /** The card for one place; `others` the other carded places near the pin,
- * each a button that shows its card instead (`onPick`). */
+ * each a button that shows its card instead (`onPick`). The photo is a small
+ * thumbnail of a fixed size beside the name, so nothing moves while it loads
+ * and the card's top keeps its height when "+N" switches place. */
 export function placeCardElement(
   near: NearPlace,
   others: readonly NearPlace[],
   onPick: (id: string) => void,
 ): HTMLElement {
   const { card } = near;
-  const headingId = `place-${card.id}`;
+  const nameId = `place-${card.id}`;
   const section = h("section", {
     class: "card place",
     id: "place-card",
-    "aria-labelledby": headingId,
+    "aria-labelledby": `place-heading ${nameId}`,
     tabindex: "-1",
   });
   const photo = card.photo;
+  const photoCreditEl = photo
+    ? h("span", { class: "place__photo-credit" }, ...photoCredit(photo))
+    : null;
+  let figure: HTMLElement | null = null;
   if (photo) {
     const img = photoImg(
-      { src: photo.small, srcset: `${photo.small} 320w, ${photo.large} 800w` },
-      "(min-width: 900px) 400px, 100vw",
+      { src: photo.small, srcset: `${photo.small} 330w, ${photo.large} 960w` },
+      "120px",
     );
     img.alt = placeAlt(card);
     img.className = "place__img";
@@ -175,10 +217,15 @@ export function placeCardElement(
       },
       img,
     );
-    const figure = h("figure", { class: "place__photo" }, open);
-    img.addEventListener("load", () => figure.classList.add("is-loaded"));
-    // no photo (offline, gone): the card goes on as text only
-    img.addEventListener("error", () => figure.remove());
+    const fig = h("figure", { class: "place__photo" }, open);
+    img.addEventListener("load", () => fig.classList.add("is-loaded"));
+    // no photo (offline, gone): the card goes on as text only, and the
+    // photo's credit goes with the photo
+    img.addEventListener("error", () => {
+      fig.remove();
+      photoCreditEl?.remove();
+      section.classList.add("place--text-only");
+    });
     open.addEventListener("click", () =>
       openPhotoViewer(
         card.name,
@@ -187,61 +234,63 @@ export function placeCardElement(
         () => (section.querySelector<HTMLElement>(".place__open") ?? section).focus(),
       ),
     );
-    section.append(figure);
-  }
+    figure = fig;
+  } else section.classList.add("place--text-only");
+  const outline = outlineCredit(card);
   const credits = [
-    ...(photo ? [h("span", {}, ...photoCredit(photo))] : []),
+    ...(photoCreditEl ? [photoCreditEl] : []),
     ...(card.text ? [h("span", {}, ...textCredit(card))] : []),
+    ...(outline.length ? [h("span", {}, ...outline)] : []),
   ];
-  section.append(
+  const parts: (HTMLElement | null)[] = [
+    h("h3", { id: "place-heading", class: "place__heading" }, "Om stedet"),
     h(
       "div",
-      { class: "place__body" },
+      { class: "place__head" },
+      figure,
       h(
-        "p",
-        { class: "place__kind" },
-        kindLabel(card.kind),
+        "div",
+        { class: "place__title" },
+        h("h4", { id: nameId, class: "place__name" }, card.name),
         h(
-          "span",
-          { class: "place__dist" },
-          ` · ${near.distanceM ? formatDistance(near.distanceM) : "ved nålen"}`,
+          "p",
+          { class: "place__kind" },
+          kindLabel(card.kind),
+          h(
+            "span",
+            { class: "place__dist" },
+            ` · ${near.distanceM ? formatDistance(near.distanceM) : "ved nålen"}`,
+          ),
         ),
       ),
-      h("h3", { id: headingId, class: "place__name" }, card.name),
-      card.text
-        ? h(
-            "p",
-            {
-              class: "place__text",
-              lang: card.article?.lang === "en" && card.text_source !== "wikidata" ? "en" : null,
-            },
-            card.text,
-          )
-        : null,
-      credits.length ? h("p", { class: "place__credit" }, ...credits) : null,
-      card.article?.url
-        ? h(
-            "p",
-            { class: "place__more" },
-            link(card.article.url, "Mere på Wikipedia", "Artiklen på Wikipedia (nyt vindue)"),
-          )
-        : null,
-      others.length
-        ? h(
-            "p",
-            { class: "place__others" },
-            others.length === 1 ? "+1 sted mere: " : `+${others.length} steder mere: `,
-            ...others.flatMap((o, i) => [
-              i ? ", " : "",
-              h(
-                "button",
-                { type: "button", class: "linkish", onclick: () => onPick(o.card.id) },
-                o.card.name,
-              ),
-            ]),
-          )
-        : null,
     ),
-  );
+    card.text
+      ? h(
+          "p",
+          {
+            class: "place__text",
+            lang: card.article?.lang === "en" && card.text_source !== "wikidata" ? "en" : null,
+          },
+          card.text,
+        )
+      : null,
+    credits.length ? h("p", { class: "place__credit" }, ...credits) : null,
+    others.length
+      ? h(
+          "p",
+          { class: "place__others" },
+          others.length === 1 ? "+1 sted mere: " : `+${others.length} steder mere: `,
+          ...others.flatMap((o, i) => [
+            i ? ", " : "",
+            h(
+              "button",
+              { type: "button", class: "linkish", onclick: () => onPick(o.card.id) },
+              o.card.name,
+            ),
+          ]),
+        )
+      : null,
+  ];
+  section.append(...parts.filter((el): el is HTMLElement => el !== null));
   return section;
 }
