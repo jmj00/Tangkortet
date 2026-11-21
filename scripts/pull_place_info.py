@@ -3,27 +3,35 @@
 A well-known Danish beach, harbour, marina, headland, spit, cliff, bay or islet
 gets a card when open sources say something about it and show it:
 
-- **Wikidata** (CC0): the places, their kind (P31/P279*), coordinates (P625),
-  photo (P18) and Danish Wikipedia article. One SPARQL query per class.
+- **Wikidata** (CC0): the places, their kind (the direct P31 first, then the
+  name, then P279*), coordinates (P625), photo (P18), Commons category (P373)
+  and Danish Wikipedia article. One SPARQL query per class, and one for the
+  details.
 - **Danish Wikipedia** (English only without a Danish article): the lead,
   trimmed to one or two sentences at a sentence boundary, run through the
-  safety filter (pipeline/placeinfo.py). Text licence CC BY-SA 4.0.
-- **Wikimedia Commons**: the photo (P18, else the article's free page image),
-  only under CC0, public domain, CC BY or CC BY-SA, read from ``extmetadata``;
-  thumbnails at about 320 and 800 px, hotlinked from upload.wikimedia.org.
+  safety filter (pipeline/placeinfo.py). Text licence CC BY-SA 4.0. A
+  sitelink that redirects to another article (a harbour to its town) gives
+  no Wikipedia text.
+- **Wikimedia Commons**: the photo (P18, else the article's free page image,
+  else one from the item's Commons category), only under CC0, public domain,
+  CC BY or CC BY-SA, read from ``extmetadata``; no maps, paintings, drawings,
+  pictures from before 1950 or crowds; thumbnails at 330 and 960 px,
+  hotlinked from upload.wikimedia.org.
 - **OpenStreetMap** via the Overpass API (ODbL): the features tagged
   ``wikidata=<item>`` (the match, the point and the outline), else a beach,
-  harbour, marina, cape ... of the same name within 1 km; and the committed
-  Danske Stednavne cells (web/public/data/names) for a name match inside the
-  dev sample. Only places that match one of the app's coast features are kept.
+  harbour, marina, cape ... of the same name and kind within 1 km; and the
+  committed Danske Stednavne cells (web/public/data/names) for a name match
+  inside the dev sample. Only places that match one of the app's coast
+  features are kept. The coastline gives a peninsula's or islet's shore.
+- **data/places_info/overrides.json**: the manual review, applied on every run.
 
     py -3.10 scripts/pull_place_info.py            # fetch (cached) and write
     py -3.10 scripts/pull_place_info.py --offline  # from the cache only
 
 Raw responses are cached under build/placeinfo/cache (git-ignored), so a
 re-run is fast and does not touch the APIs. Requests are throttled and carry a
-descriptive User-Agent. A content-authoring tool, not part of the pipeline:
-the build only reads the committed file. Records the owner has reviewed or
+generic User-Agent. A content-authoring tool, not part of the pipeline: the
+build only reads the committed file. Records the owner has reviewed or
 rejected are kept as they are on a re-run.
 """
 
@@ -36,6 +44,7 @@ import hashlib
 import json
 import math
 import pathlib
+import re
 import sys
 import time
 import urllib.error
@@ -49,37 +58,54 @@ from pipeline.geo import simplify  # noqa: E402
 from pipeline.placeinfo import (  # noqa: E402
     KIND_GROUP,
     KIND_LABEL,
+    SHORE_EXTENT_M,
+    SHORE_KINDS,
+    SHORE_RADIUS_M,
     STEDNAVNE_GROUP,
     WIKIDATA_CLASSES,
+    SegmentIndex,
     allowed_licence,
+    classify_kind,
+    clean_author,
     convex_hull,
     distance_m,
     is_station,
     lead_sentences,
     licence_url,
     match_by_name,
+    name_core,
+    non_public_class,
+    osm_groups,
     osm_kind,
     photo_file_ok,
-    pick_kind,
-    strip_html,
+    photo_meta_reason,
+    same_name,
+    shore_lines,
+    simplify_lines,
+    text_from_override,
     upload_url,
     wikidata_sentence,
 )
 
-USER_AGENT = "Tangkortet-data-script/1.0 (+https://github.com/jmj00/Tangkortet)"
+USER_AGENT = "open-data-place-cards/1.1 (non-commercial map project)"
 CACHE = REPO_ROOT / "build" / "placeinfo" / "cache"
 OUT = REPO_ROOT / "data" / "places_info" / "places_info.json"
+OVERRIDES = REPO_ROOT / "data" / "places_info" / "overrides.json"
 SPARQL = "https://query.wikidata.org/sparql"
 OVERPASS = "https://overpass-api.de/api/interpreter"
 COMMONS = "https://commons.wikimedia.org/w/api.php"
 THROTTLE_S = 1.0
-SMALL_W, LARGE_W = 320, 800
+#: Commons' standard thumbnail steps: the URLs come back as 330px- and
+#: 960px-, and the app's srcset says 330w and 960w.
+SMALL_W, LARGE_W = 330, 960
 #: An outline larger than this (its bounding box's diagonal) is dropped and
 #: the card keeps only its point: a pin anywhere in a big bay is not "at" it.
 MAX_OUTLINE_M = 12000
 #: Larger still (Kattegat, Jylland, Køge Bugt), the place gets no card at all.
 MAX_PLACE_M = 25000
 MAX_OUTLINE_POINTS = 60
+#: Two cards this close never show the same photo (Odense Fjord and Tornø).
+SAME_PHOTO_M = 30000
 
 OFFLINE = False
 TODAY = dt.date.today().isoformat()
@@ -148,6 +174,16 @@ SELECT ?item (SAMPLE(?coord) AS ?c) (SAMPLE(?img) AS ?image) (SAMPLE(?daL) AS ?d
 } GROUP BY ?item
 """
 
+#: The direct classes (P31, with English labels) and Commons category (P373).
+DETAILS = """
+SELECT ?item ?p31 ?p31L ?cat WHERE {
+  VALUES ?item { %s }
+  OPTIONAL { ?item wdt:P31 ?p31 .
+             OPTIONAL { ?p31 rdfs:label ?p31L FILTER(LANG(?p31L) = "en") } }
+  OPTIONAL { ?item wdt:P373 ?cat }
+}
+"""
+
 
 def parse_point(wkt: str) -> tuple[float, float] | None:
     if not wkt.startswith("Point("):
@@ -172,6 +208,27 @@ def wikidata_items() -> dict[str, dict[str, Any]]:
     return items
 
 
+def wikidata_details(ids: list[str]) -> dict[str, dict[str, Any]]:
+    """``{qid: {"p31": {qid}, "p31_labels": [..], "commons_category": str|None}}``."""
+    out: dict[str, dict[str, Any]] = {
+        i: {"p31": set(), "p31_labels": [], "commons_category": None} for i in ids
+    }
+    for i in range(0, len(ids), 200):
+        values = " ".join(f"wd:{q}" for q in ids[i : i + 200])
+        rows = fetch(SPARQL, data={"query": DETAILS % values, "format": "json"})
+        for row in rows["results"]["bindings"]:
+            v = {k: x["value"] for k, x in row.items()}
+            rec = out[v["item"].rsplit("/", 1)[-1]]
+            if v.get("p31"):
+                cls = v["p31"].rsplit("/", 1)[-1]
+                if cls not in rec["p31"]:
+                    rec["p31"].add(cls)
+                    rec["p31_labels"].append(v.get("p31L") or cls)
+            if v.get("cat"):
+                rec["commons_category"] = v["cat"]
+    return out
+
+
 # --- OpenStreetMap (Overpass) -----------------------------------------------
 
 BBOX = f"({DK_BBOX[1]},{DK_BBOX[0]},{DK_BBOX[3]},{DK_BBOX[2]})"
@@ -194,7 +251,7 @@ COAST_FEATURES = (
     'nwr[~"^(name|wikidata)$"~"."]["place"="islet"]{b};'
 )
 #: A beach or harbour item with no name match: the nearest beach or harbour
-#: mapped this close to its Wikidata point stands for it.
+#: of the same kind group mapped this close to its Wikidata point stands for it.
 NEARBY_M = 250
 
 
@@ -212,6 +269,7 @@ def osm_features() -> list[dict[str, Any]]:
                     "wikidata": tags.get("wikidata"),
                     "point": point,
                     "group": KIND_GROUP[kind],
+                    "groups": osm_groups(tags),
                     "kind": kind,
                     "osm": f"{el['type'][0]}{el['id']}",
                 }
@@ -243,21 +301,34 @@ def osm_point(el: dict[str, Any]) -> tuple[float, float] | None:
     return None
 
 
+def osm_edges(el: dict[str, Any]) -> list[list[tuple[float, float]]]:
+    """The edge of a way, or of a relation's outer members, as polylines."""
+    if el["type"] == "way" and el.get("geometry"):
+        return [[(g["lon"], g["lat"]) for g in el["geometry"]]]
+    if el["type"] == "relation":
+        return [
+            [(g["lon"], g["lat"]) for g in m["geometry"]]
+            for m in el.get("members", [])
+            if m.get("role") in ("outer", "") and m.get("geometry")
+        ]
+    return []
+
+
 def osm_geometry(el: dict[str, Any]) -> tuple[str, list[tuple[float, float]]] | None:
     """("ring" | "line", points) of a way or a relation's outer members."""
     if el["type"] == "way" and el.get("geometry"):
         pts = [(g["lon"], g["lat"]) for g in el["geometry"]]
         return ("ring" if pts[0] == pts[-1] and len(pts) >= 4 else "line"), pts
     if el["type"] == "relation":
-        pts = [
-            (g["lon"], g["lat"])
-            for m in el.get("members", [])
-            if m.get("role") in ("outer", "") and m.get("geometry")
-            for g in m["geometry"]
-        ]
+        pts = [p for line in osm_edges(el) for p in line]
         if len(pts) >= 3:
             return "ring", convex_hull(pts)
     return None
+
+
+def extent_m(pts: list[tuple[float, float]]) -> float:
+    lons, lats = [p[0] for p in pts], [p[1] for p in pts]
+    return distance_m((min(lons), min(lats)), (max(lons), max(lats)))
 
 
 def outline(geometry: tuple[str, list[tuple[float, float]]] | None) -> dict[str, Any] | None:
@@ -266,8 +337,7 @@ def outline(geometry: tuple[str, list[tuple[float, float]]] | None) -> dict[str,
     if geometry is None:
         return None
     kind, pts = geometry
-    lons, lats = [p[0] for p in pts], [p[1] for p in pts]
-    extent = distance_m((min(lons), min(lats)), (max(lons), max(lats)))
+    extent = extent_m(pts)
     if extent > MAX_PLACE_M:
         return {"type": "too_large"}
     if extent > MAX_OUTLINE_M:
@@ -292,63 +362,51 @@ COASTLINE_M = 1500
 COASTLINE_BAY_M = 6000
 
 
-def _segment_m(p: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:
-    kx = 111320 * math.cos(math.radians(p[1]))
-    ax, ay, bx, by = (
-        (a[0] - p[0]) * kx,
-        (a[1] - p[1]) * 110574,
-        (b[0] - p[0]) * kx,
-        (b[1] - p[1]) * 110574,
-    )
-    dx, dy = bx - ax, by - ay
-    t = max(0.0, min(1.0, -(ax * dx + ay * dy) / (dx * dx + dy * dy))) if dx or dy else 0.0
-    return math.hypot(ax + t * dx, ay + t * dy)
-
-
 def _coast_radius(r: dict[str, Any]) -> int:
     return COASTLINE_BAY_M if r["kind"] == "bay" else COASTLINE_M
 
 
 def _test_points(r: dict[str, Any]) -> list[tuple[float, float]]:
-    coords = (r.get("geom") or {}).get("coords") or []
-    step = max(1, len(coords) // 12)
-    return [(r["lon"], r["lat"]), *(tuple(c) for c in coords[::step])]
+    pts = [p for line in r.get("_edges") or [] for p in line]
+    step = max(1, len(pts) // 24)
+    return [(r["lon"], r["lat"]), *pts[::step]]
 
 
-def _query_radius(r: dict[str, Any]) -> int:
-    p = (r["lon"], r["lat"])
-    reach = max((distance_m(p, q) for q in _test_points(r)), default=0.0)
-    return round(_coast_radius(r) + reach)
+def _bbox(r: dict[str, Any]) -> tuple[float, float, float, float]:
+    """(south, west, north, east) of the place (point and outline), widened
+    by its coast radius."""
+    pts = [(r["lon"], r["lat"]), *(p for line in r.get("_edges") or [] for p in line)]
+    pad_m = _coast_radius(r)
+    dlat = pad_m / 110574
+    dlon = pad_m / (111320 * math.cos(math.radians(r["lat"])))
+    return (
+        round(min(p[1] for p in pts) - dlat, 4),
+        round(min(p[0] for p in pts) - dlon, 4),
+        round(max(p[1] for p in pts) + dlat, 4),
+        round(max(p[0] for p in pts) + dlon, 4),
+    )
 
 
-def near_coastline(records: list[dict[str, Any]]) -> set[str]:
-    """The ids of the records with OpenStreetMap's coastline within reach;
-    20 places per Overpass query, the distances measured here."""
-    ok: set[str] = set()
-    for i in range(0, len(records), 20):
-        batch = records[i : i + 20]
-        # around the point and the outline's corners (a peninsula's centre
-        # can lie far inland; its shore is the coast)
-        # (a polyline "around" of the corners lost results on Overpass, so
-        # the circle round the point is widened to take in the outline)
-        parts = "".join(
-            f'way(around:{_query_radius(r)},{r["lat"]},{r["lon"]})["natural"="coastline"];'
-            for r in batch
-        )
+def coastlines(records: list[dict[str, Any]]) -> dict[str, list[list[tuple[float, float]]]]:
+    """OpenStreetMap's coastline round each record (its box): one Overpass
+    query per 0.25° cell of the places' points, so that a re-run only asks
+    again for the cells whose places changed."""
+    out: dict[str, list[list[tuple[float, float]]]] = {}
+    cells: dict[tuple[int, int], list[dict[str, Any]]] = collections.defaultdict(list)
+    for r in sorted(records, key=lambda r: r["id"]):
+        cells[(math.floor(r["lon"] * 4), math.floor(r["lat"] * 4))].append(r)
+    for _cell, batch in sorted(cells.items()):
+        parts = "".join('way({},{},{},{})["natural"="coastline"];'.format(*_bbox(r)) for r in batch)
         lines = [
             [(g["lon"], g["lat"]) for g in el.get("geometry", [])]
             for el in overpass(f"({parts});out geom;")
         ]
         for r in batch:
-            radius = _coast_radius(r)
-            if any(
-                _segment_m(p, a, b) <= radius
-                for p in _test_points(r)
-                for line in lines
-                for a, b in zip(line, line[1:], strict=False)
-            ):
-                ok.add(r["id"])
-    return ok
+            s, w, n, e = _bbox(r)
+            out[r["id"]] = [
+                line for line in lines if any(w <= p[0] <= e and s <= p[1] <= n for p in line)
+            ]
+    return out
 
 
 # --- Danske Stednavne (the committed dev-sample cells) -------------------------
@@ -378,6 +436,8 @@ def stednavne_names() -> list[dict[str, Any]]:
 
 
 def extracts(lang: str, titles: list[str]) -> dict[str, str]:
+    """Leads by sitelink title; ``image:<title>`` the free page image and
+    ``redirect:<title>`` the article a redirecting sitelink lands on."""
     api = f"https://{lang}.wikipedia.org/w/api.php"
     out: dict[str, str] = {}
     for i in range(0, len(titles), 20):
@@ -399,15 +459,40 @@ def extracts(lang: str, titles: list[str]) -> dict[str, str]:
             },
         )
         q = res.get("query", {})
-        back = {r["to"]: r["from"] for r in q.get("redirects", []) + q.get("normalized", [])}
+        normalized = {n["to"]: n["from"] for n in q.get("normalized", [])}
+        redirects = {r["to"]: r["from"] for r in q.get("redirects", [])}
         for page in q.get("pages", []):
             title = page.get("title", "")
-            original = back.get(title, title)
-            original = back.get(original, original)
+            original = redirects.get(title, title)
+            redirected = original != title
+            original = normalized.get(original, original)
+            if redirected:
+                # the sitelink redirects: "Frederikshavn Havn" -> "Frederikshavn"
+                out[f"redirect:{original}"] = title
             out[original] = page.get("extract") or ""
             if page.get("pageimage"):
                 out[f"image:{original}"] = page["pageimage"]
     return out
+
+
+def _imageinfo_pages(res: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    q = res.get("query", {})
+    back = {n["to"]: n["from"] for n in q.get("normalized", [])}
+    out = []
+    for page in q.get("pages", []):
+        info = (page.get("imageinfo") or [None])[0]
+        if info:
+            out.append((back.get(page["title"], page["title"]).removeprefix("File:"), info))
+    return out
+
+
+def _size(info: dict[str, Any]) -> tuple[str, int, int]:
+    if info.get("thumburl"):
+        return info["thumburl"], info.get("thumbwidth"), info.get("thumbheight")
+    return info.get("url"), info.get("width"), info.get("height")
+
+
+IIPROP = "url|size|extmetadata|user"
 
 
 def commons_info(files: list[str]) -> dict[str, dict[str, Any]]:
@@ -421,27 +506,53 @@ def commons_info(files: list[str]) -> dict[str, dict[str, Any]]:
                 {
                     "action": "query",
                     "prop": "imageinfo",
-                    "iiprop": "url|size|extmetadata",
+                    "iiprop": IIPROP,
                     "iiurlwidth": width,
                     "titles": "|".join(f"File:{f}" for f in batch),
                     "format": "json",
                     "formatversion": 2,
                 },
             )
-            q = res.get("query", {})
-            back = {n["to"]: n["from"] for n in q.get("normalized", [])}
-            for page in q.get("pages", []):
-                info = (page.get("imageinfo") or [None])[0]
-                if not info:
-                    continue
-                name = back.get(page["title"], page["title"]).removeprefix("File:")
+            for name, info in _imageinfo_pages(res):
                 rec = out.setdefault(name, {"info": info})
-                if info.get("thumburl"):
-                    size = (info["thumburl"], info.get("thumbwidth"), info.get("thumbheight"))
-                else:
-                    size = (info.get("url"), info.get("width"), info.get("height"))
-                rec[width] = size
+                rec[width] = _size(info)
     return out
+
+
+def category_files(category: str) -> dict[str, dict[str, Any]]:
+    """imageinfo (960 px) of the files in a Commons category, the 330 px
+    thumbnail taken from the same path (a standard step)."""
+    res = fetch(
+        COMMONS,
+        {
+            "action": "query",
+            "generator": "categorymembers",
+            "gcmtitle": f"Category:{category}",
+            "gcmtype": "file",
+            "gcmlimit": 50,
+            "prop": "imageinfo",
+            "iiprop": IIPROP,
+            "iiurlwidth": LARGE_W,
+            "format": "json",
+            "formatversion": 2,
+        },
+    )
+    out: dict[str, dict[str, Any]] = {}
+    for name, info in _imageinfo_pages(res):
+        url, w, h = _size(info)
+        if not url or f"/{LARGE_W}px-" not in url:
+            continue  # smaller than 960 px: too small to choose
+        out[name] = {
+            "info": info,
+            LARGE_W: (url, w, h),
+            SMALL_W: (url.replace(f"/{LARGE_W}px-", f"/{SMALL_W}px-"), SMALL_W, None),
+        }
+    return out
+
+
+#: photo_record reasons after which a card may go on as text only (the
+#: picture is there but unfit), unlike a licence or a missing file.
+UNFIT = ("not a photo", "before ", "people ", "same photo")
 
 
 def photo_record(name: str, info: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
@@ -455,23 +566,55 @@ def photo_record(name: str, info: dict[str, Any]) -> tuple[dict[str, Any] | None
         return None, f"licence {m('LicenseShortName') or '?'}"
     if m("Restrictions").strip():
         return None, f"restrictions {m('Restrictions')}"
-    author = strip_html(m("Artist")) or strip_html(m("Credit")) or "ukendt"
-    if len(author) > 80:
-        author = author[:77].rsplit(" ", 1)[0] + " …"
+    reason = photo_meta_reason({k: m(k) for k in meta})
+    if reason:
+        return None, reason
     i = info["info"]
     if SMALL_W not in info or LARGE_W not in info:
         return None, "no thumbnail"
+    large, lw, lh = info[LARGE_W]
+    # the thumbnail's real width is in its URL ("960px-"); the height scales
+    px = re.search(r"/(\d+)px-[^/]*$", large or "")
+    if px and lw and lh:
+        lw, lh = int(px.group(1)), round(lh * int(px.group(1)) / lw)
     return {
         "file": f"File:{name}",
         "page": i.get("descriptionurl"),
         "small": upload_url(info[SMALL_W][0]),
-        "large": upload_url(info[LARGE_W][0]),
-        "width": info[LARGE_W][1],
-        "height": info[LARGE_W][2],
-        "author": author,
+        "large": upload_url(large),
+        "width": lw,
+        "height": lh,
+        "author": clean_author(m("Artist"), m("Credit"), i.get("user")),
         "license": licence,
         "license_url": licence_url(licence, m("LicenseUrl") or None),
     }, "ok"
+
+
+def landscape(info: dict[str, Any]) -> bool:
+    i = info["info"]
+    return bool(i.get("width") and i.get("height") and i["width"] >= 1.2 * i["height"])
+
+
+# --- overrides ----------------------------------------------------------------
+
+OVERRIDE_KEYS = {"name", "reason", "drop", "photo", "no_photo", "kind", "text"}
+
+
+def load_overrides() -> dict[str, dict[str, Any]]:
+    """data/places_info/overrides.json, checked: every entry has a reason,
+    known keys only, a known kind."""
+    if not OVERRIDES.exists():
+        return {}
+    doc = json.loads(OVERRIDES.read_text("utf-8"))
+    out = {}
+    for qid, o in doc["overrides"].items():
+        unknown = set(o) - OVERRIDE_KEYS
+        if unknown or not str(o.get("reason", "")).strip():
+            raise SystemExit(f"overrides.json {qid}: needs a reason; unknown keys {unknown}")
+        if o.get("kind") and o["kind"] not in KIND_LABEL:
+            raise SystemExit(f"overrides.json {qid}: unknown kind {o['kind']}")
+        out[qid] = o
+    return out
 
 
 # --- assembling -------------------------------------------------------------------
@@ -481,25 +624,42 @@ def in_denmark(p: tuple[float, float]) -> bool:
     return DK_BBOX[0] <= p[0] <= DK_BBOX[2] and DK_BBOX[1] <= p[1] <= DK_BBOX[3]
 
 
+def leave_out(left_out: list[dict[str, str]], r: dict[str, Any], name: str, why: str) -> None:
+    left_out.append({"id": r["id"], "name": name, "kind": r["kind"], "why": why})
+
+
 def main() -> None:
     global OFFLINE
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--offline", action="store_true", help="use the cache only")
     OFFLINE = parser.parse_args().offline
+    overrides = load_overrides()
 
     print("wikidata")
     items = wikidata_items()
+    details = wikidata_details(sorted(items))
     stats: collections.Counter[str] = collections.Counter()
+    left_out: list[dict[str, str]] = []
     candidates = []
     for rec in items.values():
-        rec["kind"] = pick_kind(rec["kinds"])
         label = rec.get("da_label") or rec.get("en_label") or ""
+        d = details[rec["id"]]
+        override = overrides.get(rec["id"], {})
+        rec["kind"] = override.get("kind") or classify_kind(d["p31"], rec["kinds"], label)
+        rec["commons_category"] = d["commons_category"]
+        closed = non_public_class(d["p31_labels"])
         if not in_denmark(rec["point"]):
             stats["outside Denmark"] += 1
         elif is_station(label):
             stats["bathing-water station"] += 1
         elif rec.get("ended"):
             stats["dissolved (P576)"] += 1
+        elif override.get("drop"):
+            stats["dropped by override"] += 1
+            leave_out(left_out, rec, label, f"override: {override['reason']}")
+        elif closed:
+            stats["non-public class"] += 1
+            leave_out(left_out, rec, label, f"class: {closed}")
         else:
             candidates.append(rec)
     print(f"  {len(items)} items, {len(candidates)} candidates")
@@ -511,7 +671,7 @@ def main() -> None:
         if f["wikidata"]:
             by_qid[f["wikidata"]].append(f)
     named = [f for f in osm if f["name"]]
-    places = [f for f in osm if f["group"] in ("beach", "harbour")]
+    places = [f for f in osm if f["groups"] & {"beach", "harbour", "marina"}]
     sted = stednavne_names()
     print(f"  {len(osm)} coast features, {len(by_qid)} items tagged, {len(sted)} stednavne")
 
@@ -525,55 +685,63 @@ def main() -> None:
     for r in candidates:
         if r.get("image"):
             files[r["id"]] = urllib.parse.unquote(r["image"].rsplit("/", 1)[-1]).replace("_", " ")
-    infos = commons_info(sorted(set(files.values())))
     # the article's free page image for items without (a usable) P18
     fallback: dict[str, str] = {}
     for r in candidates:
         lang = "da" if r.get("da_title") else "en"
         title = r.get(f"{lang}_title")
         image = leads[lang].get(f"image:{title}") if title else None
-        if image:
+        if image and not leads[lang].get(f"redirect:{title}"):
             fallback[r["id"]] = image.replace("_", " ")
-    infos.update(commons_info(sorted(set(fallback.values()) - set(infos))))
+    chosen = {
+        qid: o["photo"].removeprefix("File:") for qid, o in overrides.items() if o.get("photo")
+    }
+    wanted = set(files.values()) | set(fallback.values()) | set(chosen.values())
+    infos = commons_info(sorted(wanted))
 
     existing = {}
     if OUT.exists():
         existing = {r["id"]: r for r in json.loads(OUT.read_text("utf-8"))}
     records = []
     dropped_examples: list[dict[str, str]] = []
-    left_out: list[dict[str, str]] = []
     for r in sorted(candidates, key=lambda r: r["id"]):
         old = existing.get(r["id"])
+        override = overrides.get(r["id"], {})
         if old and (old.get("reviewed") or old.get("rejected")):
             records.append(old)
             stats["kept as reviewed"] += 1
             continue
         kind = r["kind"]
-        label = r.get("da_label") or r.get("da_title") or r.get("en_label") or r["id"]
-        # the match: an OSM feature tagged with the item, else the same name
-        # (OSM, then Danske Stednavne) within 1 km
+        group = KIND_GROUP[kind]
+        label = override.get("name") or (
+            r.get("da_label") or r.get("da_title") or r.get("en_label") or r["id"]
+        )
+        # the match: an OSM feature tagged with the item (of the same kind
+        # group, for a harbour or a marina), else one of the same name and
+        # kind group (OSM, then Danske Stednavne) within 1 km
         match: dict[str, Any] | None = None
         point = r["point"]
-        tagged = by_qid.get(r["id"], [])
+        tagged = [
+            f
+            for f in by_qid.get(r["id"], [])
+            if group not in ("harbour", "marina") or group in f["groups"]
+        ]
         if tagged:
             f = min(tagged, key=lambda f: distance_m(point, f["point"]))
             match = {
                 "by": "osm_wikidata",
                 "osm": f["osm"],
                 "osm_name": f["name"] or None,
+                "osm_kind": f["kind"],
                 "distance_m": round(distance_m(point, f["point"])),
             }
-            if f["name"] and not r.get("da_label"):
+            if f["name"] and not r.get("da_label") and not override.get("name"):
                 label = f["name"]
         else:
             names = [n for n in (r.get("da_label"), r.get("en_label"), r.get("da_title")) if n]
             for source, pool in (("osm_name", named), ("stednavne_name", sted)):
                 hit = next(
-                    (
-                        h
-                        for n in names
-                        if (h := match_by_name(n, point, KIND_GROUP[kind], pool)) is not None
-                    ),
+                    (h for n in names if (h := match_by_name(n, point, group, pool)) is not None),
                     None,
                 )
                 if hit:
@@ -581,71 +749,100 @@ def main() -> None:
                         "by": source,
                         **{k: hit[k] for k in ("osm", "stednavne") if k in hit},
                         "matched_name": hit["name"],
+                        "osm_kind": hit["kind"],
                         "distance_m": hit["distance_m"],
                     }
-                    if not r.get("da_label"):
+                    if not r.get("da_label") and not override.get("name"):
                         label = hit["name"]
                     break
-            if match is None and KIND_GROUP[kind] in ("beach", "harbour"):
+            if match is None and group in ("beach", "harbour", "marina"):
+                # unnamed, or of the item's name: never the bare town name
+                # ("Gedser") or the town's marina ("Nyborg Marina")
                 near = [
                     (distance_m(point, f["point"]), f)
                     for f in places
-                    if f["group"] == KIND_GROUP[kind]
+                    if group in f["groups"]
+                    and (not f["name"] or any(same_name(n, f["name"]) for n in names))
                 ]
                 d, f = min(near, key=lambda x: x[0], default=(1e9, None))
                 if f is not None and d <= NEARBY_M:
-                    match = {"by": "osm_nearby", "osm": f["osm"], "distance_m": round(d)}
+                    match = {
+                        "by": "osm_nearby",
+                        "osm": f["osm"],
+                        "osm_kind": f["kind"],
+                        "distance_m": round(d),
+                    }
+            if match is None and kind in ("headland", "spit"):
+                # a headland's or spit's own point (Blåvands Huk: OpenStreetMap
+                # maps no cape there); the coast check wants the coastline
+                # within 300 m of it
+                match = {"by": "wikidata_point", "distance_m": 0}
         if match is None:
             stats[f"no match: {kind}"] += 1
-            left_out.append({"id": r["id"], "name": label, "kind": kind, "why": "no match"})
+            leave_out(left_out, r, label, "no match")
             continue
         stats[f"matched {match['by']}"] += 1
 
-        # the text
+        # the text: the lead, unless the sitelink redirects to another article
         description, source, article, dropped = None, None, None, []
         lang = "da" if r.get("da_title") else ("en" if r.get("en_title") else None)
         if lang:
             title = r[f"{lang}_title"]
-            description, dropped = lead_sentences(leads[lang].get(title, ""))
-            article = {
-                "title": title,
-                "lang": lang,
-                "url": f"https://{lang}.wikipedia.org/wiki/"
-                + urllib.parse.quote(title.replace(" ", "_")),
-                "license": "CC BY-SA 4.0",
-            }
-            if description:
-                source = f"wikipedia_{lang}"
+            target = leads[lang].get(f"redirect:{title}")
+            if target:
+                stats["wikipedia redirect (no text)"] += 1
+                dropped.append({"sentence": f"(redirects to {target})", "reason": "redirect"})
+            else:
+                lead = leads[lang].get(title, "")
+                if override.get("text"):
+                    description = text_from_override(override["text"], lead)
+                    if description is None:
+                        raise SystemExit(f"overrides.json {r['id']}: text is not from the lead")
+                else:
+                    description, dropped = lead_sentences(lead)
+                article = {
+                    "title": title,
+                    "lang": lang,
+                    "url": f"https://{lang}.wikipedia.org/wiki/"
+                    + urllib.parse.quote(title.replace(" ", "_")),
+                    "license": "CC BY-SA 4.0",
+                }
+                if description:
+                    source = f"wikipedia_{lang}"
         for d in dropped:
             stats[f"dropped sentence: {d['reason']}"] += 1
             dropped_examples.append({"place": label, **d})
         if not description:
             description = wikidata_sentence(label, r.get("da_desc"))
             source = "wikidata" if description else None
-
-        # the photo
-        photo, why = None, "no photo"
-        for file in (files.get(r["id"]), fallback.get(r["id"])):
-            if not file:
-                continue
-            if not photo_file_ok(file):
-                why = "not a photo"
-                continue
-            if file not in infos:
-                why = "not on commons"
-                continue
-            photo, why = photo_record(file, infos[file])
-            if photo:
-                break
-        if photo is None:
-            stats[f"photo rejected: {why.split(' ')[0]}"] += 1
-
-        good_text = source and source.startswith("wikipedia")
-        if not photo or not (good_text or source == "wikidata"):
-            why = f"no photo ({why})" if not photo else "no text"
-            stats[f"skipped: {why.split(' (')[0]}"] += 1
-            left_out.append({"id": r["id"], "name": label, "kind": kind, "why": why})
+        if not source:
+            stats["skipped: no text"] += 1
+            leave_out(left_out, r, label, "no text")
             continue
+
+        # the photo: the override's, else P18, else the page image
+        photo, why, tried, unfit = None, "no photo", [], False
+        if override.get("no_photo"):
+            why = "no_photo override"
+        else:
+            options = [chosen[r["id"]]] if r["id"] in chosen else []
+            options += [files.get(r["id"]), fallback.get(r["id"])]
+            for file in options:
+                if not file or file in tried:
+                    continue
+                tried.append(file)
+                if not photo_file_ok(file):
+                    why, unfit = "not a photo (file name)", True
+                    continue
+                if file not in infos:
+                    why = "not on commons"
+                    continue
+                photo, why = photo_record(file, infos[file])
+                if photo:
+                    break
+                if r["id"] in chosen:
+                    raise SystemExit(f"overrides.json {r['id']}: photo rejected: {why}")
+                unfit = unfit or why.startswith(UNFIT)
         p = point
         if match["by"] == "osm_wikidata":
             p = min(tagged, key=lambda f: distance_m(point, f["point"]))["point"]
@@ -665,34 +862,52 @@ def main() -> None:
                 "wikidata": f"https://www.wikidata.org/wiki/{r['id']}",
                 "article": article,
                 "photo": photo,
+                "photo_rejected": None if photo else why,
+                "_tried": tried,
+                "_unfit": unfit,
+                "_category": r.get("commons_category"),
+                "_p18": files.get(r["id"]),
+                "_pinned_photo": r["id"] in chosen,
+                "_no_photo": bool(override.get("no_photo")),
                 "fetched": TODAY,
                 "reviewed": False,
             }
         )
+
+    fresh = [r for r in records if not r.get("reviewed")]
+    pick_alternative_photos(fresh, stats)
+
     # the outline of the matched OpenStreetMap way or relation
-    fresh = [r for r in records if not r.get("reviewed") and r["match"].get("osm")]
-    geoms = osm_geometries(sorted({r["match"]["osm"] for r in fresh}))
+    geoms = osm_geometries(sorted({r["match"]["osm"] for r in fresh if r["match"].get("osm")}))
     for r in fresh:
-        el = geoms.get(r["match"]["osm"])
+        el = geoms.get(r["match"].get("osm") or "")
+        r["_edges"] = osm_edges(el) if el else []
         r["geom"] = outline(osm_geometry(el)) if el else None
         if r["geom"] and r["geom"]["type"] == "too_large":
             r["geom"] = None
-            r["too_large"] = True
-    # by the sea, not a lake: OpenStreetMap's coastline near the place
+            r["_too_large"] = True
+
+    # by the sea, not a lake: OpenStreetMap's coastline near the place; a
+    # peninsula's or islet's card shows only near its shore
+    coast = coastlines([r for r in fresh if not r.get("_too_large")])
     kept = []
-    coastal = near_coastline([r for r in records if not r.get("reviewed")])
     for r in records:
-        if r.pop("too_large", False):
-            # Kattegat, Jylland, Køge Bugt: no single spot to be "at"
-            stats[f"too large (over {MAX_PLACE_M // 1000} km): {r['kind']}"] += 1
-            left_out.append(
-                {"id": r["id"], "name": r["name"], "kind": r["kind"], "why": "too large"}
-            )
-        elif r.get("reviewed") or r["id"] in coastal:
-            kept.append(r)
+        why = None
+        if r.get("reviewed"):
+            pass
+        elif r.get("_too_large"):
+            why = f"too large (over {MAX_PLACE_M // 1000} km)"
+        elif not r["photo"] and not (r["_unfit"] or r["_no_photo"]):
+            why = f"no photo ({r['photo_rejected']})"
         else:
-            stats[f"inland (no coastline near): {r['kind']}"] += 1
-            left_out.append({"id": r["id"], "name": r["name"], "kind": r["kind"], "why": "inland"})
+            why = coast_check(r, coast.get(r["id"], []))
+        if why:
+            stats[f"{why.split(' (')[0]}: {r['kind']}"] += 1
+            leave_out(left_out, r, r["name"], why)
+            continue
+        for k in [k for k in r if k.startswith("_")]:
+            r.pop(k)
+        kept.append(r)
     records = kept
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(records, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -700,12 +915,103 @@ def main() -> None:
     print(f"{len(records)} cards -> {OUT.relative_to(REPO_ROOT)}")
     for k, n in kinds.most_common():
         print(f"  {k:16} {n}")
+    print(f"  text only (no photo): {sum(1 for r in records if not r['photo'])}")
+    print(f"  with a shore: {sum(1 for r in records if r.get('shore'))}")
     for k, n in sorted(stats.items()):
-        print(f"  {k:32} {n}")
+        print(f"  {k:48} {n}")
     report = REPO_ROOT / "build" / "placeinfo" / "dropped_sentences.json"
     report.write_text(json.dumps(dropped_examples, indent=1, ensure_ascii=False), "utf-8")
     report = REPO_ROOT / "build" / "placeinfo" / "left_out.json"
     report.write_text(json.dumps(left_out, indent=1, ensure_ascii=False), "utf-8")
+
+
+def pick_alternative_photos(records: list[dict[str, Any]], stats: collections.Counter) -> None:
+    """A photo for the cards whose own were rejected (a map, a painting, a
+    crowd) or that share one with a card nearby (Odense Fjord and Tornø):
+    the first landscape photo in the item's Commons category that passes the
+    same checks; else the card goes on as text only."""
+
+    def used_nearby(r: dict[str, Any], file: str) -> bool:
+        return any(
+            o is not r
+            and o.get("photo")
+            and o["photo"]["file"] == f"File:{file}"
+            and distance_m((r["lon"], r["lat"]), (o["lon"], o["lat"])) < SAME_PHOTO_M
+            for o in records
+        )
+
+    # the same photo on two cards nearby: one keeps it, in this order: the
+    # card whose own P18 it is and whose name the file names ("Tornoe Odense
+    # Fjord.jpg" is Tornø's), then its own P18, then the rest
+    def keeps_first(r: dict[str, Any]) -> tuple[bool, bool, str]:
+        file = (r.get("photo") or {}).get("file", "")
+        own = file == f"File:{r.get('_p18')}"
+        core = name_core(r["name"])
+        named = bool(core) and core in name_core(file.removeprefix("File:").rsplit(".", 1)[0])
+        return (not own, not named, r["id"])
+
+    kept: list[dict[str, Any]] = []
+    for r in sorted(records, key=keeps_first):
+        photo = r.get("photo")
+        if not photo:
+            continue
+        nearby = [
+            o
+            for o in kept
+            if o["photo"]["file"] == photo["file"]
+            and distance_m((r["lon"], r["lat"]), (o["lon"], o["lat"])) < SAME_PHOTO_M
+        ]
+        if nearby and not r.get("_pinned_photo"):
+            file = photo["file"].removeprefix("File:")
+            r["photo"], r["photo_rejected"] = None, f"same photo as {nearby[0]['name']} ({file})"
+            r["_unfit"] = True
+            stats["photo: shared with a card nearby"] += 1
+        else:
+            kept.append(r)
+    for r in records:
+        if r.get("photo") or r.get("_no_photo") or not r["_tried"]:
+            continue
+        if r.get("_category"):
+            for name, info in sorted(category_files(r["_category"]).items()):
+                if name in r["_tried"] or not photo_file_ok(name) or not landscape(info):
+                    continue
+                if used_nearby(r, name):
+                    continue
+                photo, _why = photo_record(name, info)
+                if photo:
+                    r["photo"], r["photo_rejected"] = photo, None
+                    r["photo_from"] = f"Category:{r['_category']}"
+                    stats["photo: from the Commons category"] += 1
+                    break
+        if not r.get("photo"):
+            stats["photo: none fit (text only)"] += 1
+
+
+def coast_check(r: dict[str, Any], lines: list[list[tuple[float, float]]]) -> str | None:
+    """Why a record is not a coast place (None when it is). A peninsula or
+    islet gets its shore (``r["shore"]``) in place of its outline."""
+    p = (r["lon"], r["lat"])
+    edges = r.get("_edges") or []
+    pts = [q for line in edges for q in line]
+    big = r["kind"] in SHORE_KINDS or (
+        r["kind"] in ("headland", "spit", "cliff") and pts and extent_m(pts) > SHORE_EXTENT_M
+    )
+    if big and len(pts) >= 3:
+        shore = shore_lines(edges, lines)
+        if not shore:
+            return "inland (no coastline along the outline)"
+        r["shore"] = simplify_lines(shore)
+        r["geom"] = None
+        return None
+    index = SegmentIndex(lines, p[1]) if lines else None
+    reach = _coast_radius(r)
+    if index is None or not any(index.nearest_m(q, reach) <= reach for q in _test_points(r)):
+        return "inland (no coastline near)"
+    # a point only: it must lie at the coast, not 2 km inland on a peninsula
+    point_only = r["geom"] is None and r["kind"] != "bay"
+    if point_only and index.nearest_m(p, SHORE_RADIUS_M) > SHORE_RADIUS_M:
+        return f"point inland (over {SHORE_RADIUS_M} m from the coastline)"
+    return None
 
 
 if __name__ == "__main__":

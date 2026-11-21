@@ -19,6 +19,8 @@ import unicodedata
 from collections.abc import Iterable, Sequence
 from typing import Any
 
+from pipeline.geo import simplify
+
 Point = tuple[float, float]
 
 # --- kinds ---------------------------------------------------------------
@@ -66,6 +68,60 @@ def pick_kind(kinds: Iterable[str]) -> str | None:
     return next((k for k in KIND_ORDER if k in found), None)
 
 
+CLASS_KIND = dict(WIKIDATA_CLASSES)
+
+#: The last word of a name that says what the place is ("Gedser Odde",
+#: "Blåvands Huk", "Ordrup Næs"), folded as :func:`normalise_name` folds it.
+NAME_KIND_SUFFIX: tuple[tuple[str, str], ...] = (
+    ("odde", "spit"),
+    ("huk", "headland"),
+    ("pynt", "headland"),
+    ("naes", "headland"),
+)
+
+
+def name_kind(name: str) -> str | None:
+    """The kind a place's name gives (its last word, or the end of a compound:
+    "Enebærodde"), or None."""
+    words = normalise_name(name).split()
+    if not words:
+        return None
+    last = words[-1]
+    return next((kind for suffix, kind in NAME_KIND_SUFFIX if last.endswith(suffix)), None)
+
+
+def classify_kind(direct_p31: Iterable[str], inherited: Iterable[str], name: str) -> str | None:
+    """An item's kind: its direct P31 classes first (not the classes it only
+    inherits through P279*), then the name's words (odde, huk, pynt, næs), and
+    only then "beach", which Wikidata hands out to spits and headlands too
+    (Blåvands Huk, Gedser Odde, Hovens Odde)."""
+    direct = {CLASS_KIND[q] for q in direct_p31 if q in CLASS_KIND}
+    inherited_kinds = set(inherited)
+    if direct - {"beach"}:
+        return pick_kind(direct - {"beach"})
+    by_name = name_kind(name)
+    if by_name:
+        return by_name
+    if direct:
+        return pick_kind(direct)
+    return pick_kind(inherited_kinds - {"beach"}) or pick_kind(inherited_kinds)
+
+
+#: Wikidata classes (English labels of the direct P31) of places that are not
+#: open to the public or are not a shore at all: a naval base, a museum, a
+#: shipyard, a reserve. Matched on the label so a subclass is caught too.
+NON_PUBLIC_CLASS = re.compile(
+    r"naval|military|army|air base|museum|fortress|shipyard|prison|power station"
+    r"|bird (sanctuary|reserve)|wildlife (refuge|reserve)|nature reserve|restricted",
+    re.IGNORECASE,
+)
+
+
+def non_public_class(labels: Iterable[str]) -> str | None:
+    """The first P31 label that marks a non-public place, or None."""
+    return next((label for label in labels if NON_PUBLIC_CLASS.search(label)), None)
+
+
 #: OpenStreetMap tags -> kind, for the name matching and the polygon.
 def osm_kind(tags: dict[str, str]) -> str | None:
     natural = tags.get("natural")
@@ -94,10 +150,31 @@ def osm_kind(tags: dict[str, str]) -> str | None:
     return None
 
 
-#: Kinds that may stand for each other in a name match (a Wikidata "harbour"
-#: is often a marina in OpenStreetMap; a headland is a "pynt", "næs" or "odde").
+def osm_groups(tags: dict[str, str]) -> frozenset[str]:
+    """The kind groups an OpenStreetMap feature can match: its own kind's,
+    and "harbour" too for a marina that is also mapped as a harbour area
+    (``landuse=harbour`` + ``leisure=marina``) or is named one ("Hasle Havn",
+    a small harbour OpenStreetMap tags as a marina). A marina named
+    "Lystbådehavn" or "Marina" stays a marina only."""
+    kind = osm_kind(tags)
+    if kind is None:
+        return frozenset()
+    groups = {KIND_GROUP[kind]}
+    if kind == "marina" and (
+        tags.get("landuse") == "harbour"
+        or tags.get("harbour") == "yes"
+        or tags.get("industrial") == "port"
+        or generic_types(tags.get("name") or "") & {"havn", "fiskerihavn", "trafikhavn"}
+    ):
+        groups.add("harbour")
+    return frozenset(groups)
+
+
+#: Kinds that may stand for each other in a name match (a headland is a
+#: "pynt", "næs" or "odde"). A harbour and a marina never do: a town's
+#: commercial harbour is not its marina.
 KIND_GROUP = {
-    "marina": "harbour",
+    "marina": "marina",
     "fishing_harbour": "harbour",
     "ferry_harbour": "harbour",
     "harbour": "harbour",
@@ -114,7 +191,7 @@ KIND_GROUP = {
 STEDNAVNE_GROUP = {
     "strand": "beach",
     "havbad": "beach",
-    "lystbådehavn": "harbour",
+    "lystbådehavn": "marina",
     "fiskerihavn": "harbour",
     "trafikhavn": "harbour",
     "pynt": "land",
@@ -292,8 +369,10 @@ def clean_lead(text: str) -> str:
 
 #: A sentence matching any of these says or suggests the water, beach or
 #: seaweed is clean, safe, healthy or good for bathing, which Tangkortet must
-#: never say (CLAUDE.md). Deliberately broad: a dropped harmless sentence
-#: costs little; a kept claim of safety next to the risk verdict costs a lot.
+#: never say (CLAUDE.md), or praises the place (beautiful, popular, much
+#: visited, modern): a place card is background, never a recommendation or a
+#: quality stamp next to the risk verdict. Deliberately broad: a dropped
+#: harmless sentence costs little; a kept claim of safety costs a lot.
 UNSAFE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     (label, re.compile(pattern, re.IGNORECASE))
     for label, pattern in (
@@ -312,6 +391,28 @@ UNSAFE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         ("recommended", r"anbefal|recommend|ideel|ideal"),
         ("best", r"\bbedste\b|\bbest\b"),
         ("unpolluted", r"uforuren|forurening|pollut|contamina"),
+        # an implicit bathing-quality claim: "X er en badestrand", "havbadeanstalt"
+        (
+            "bathing place",
+            r"(?<![\wæøå])(bade\w*|havbad\w*|\w*badeanstalt\w*|søbad\w*|badning|bader)(?![\wæøå])"
+            r"|svømme|\bbathing|\bswimm|\bbeach resort",
+        ),
+        # beauty, charm and popularity
+        (
+            "praise",
+            r"attraktiv|smuk|skøn|idyl|populær|yndet|charmerende|hyggelig|malerisk|pragtfuld"
+            r"|storslå|betagende|imponerende|enestående|naturperle|iøjefaldende|særdeles"
+            r"|\bunik|\bperle\b|\bikon\b|seværdig|turistattraktion|beautiful|scenic|picturesque"
+            r"|popular|attractive|stunning",
+        ),
+        ("visited", r"besøg(es|t|te)\b|\bvisited\b|\bvisitors\b"),
+        ("fine", r"(?<![\wæøå])fin[et]?\s+\w"),
+        # marketing copy (Kolding Havn: "udviklingsorienteret og moderne")
+        (
+            "marketing",
+            r"udviklingsorienteret|\bmoderne\b|innovativ|dynamisk|førende|verdensklasse"
+            r"|oplevelse|eftertragt|\bmodern\b|world[\s-]*class",
+        ),
     )
 )
 
@@ -327,26 +428,85 @@ def unsafe_reason(sentence: str) -> str | None:
     return None
 
 
+#: The reason a protected place is protected ("fredet i 1941 på grund af sin
+#: landskabelige skønhed"): the fact stays, the praise goes.
+_JUSTIFICATION = re.compile(
+    r",?\s+(på grund af|pga\.|grundet|for sin|for dens|for dets|for at bevare|som følge af"
+    r"|takket være|because of|for its)(?![\wæøå])"
+)
+_PROTECTED = re.compile(r"\bfrede[dt]|\bfredning|\bprotected\b", re.IGNORECASE)
+
+
+def trimmed_protection(sentence: str) -> str | None:
+    """A sentence that says a place is protected ("fredet") and then why, in
+    words the filter drops, trimmed to the fact before the reason, when that
+    part reads as a sentence and passes the filter; else None. Trimming only,
+    never rewording."""
+    if not _PROTECTED.search(sentence):
+        return None
+    m = _JUSTIFICATION.search(sentence)
+    if not m:
+        return None
+    head = sentence[: m.start()].rstrip(" ,;:")
+    if len(head) < 25 or not _PROTECTED.search(head) or unsafe_reason(head):
+        return None
+    return head + "."
+
+
+_FINAL = re.compile(r"[.!?][\"'»”)]*$")
+
+#: A sentence that opens like this leans on the one before ("Den ligger ...",
+#: "Her ...", "It is ..."): after a dropped sentence it would not stand alone.
+_ANAPHORIC = re.compile(
+    r"^(den|det|de|denne|dette|disse|dens|dets|deres|her|der|han|hun|også|men|og|samtidig"
+    r"|desuden|derudover|heraf|herfra|dermed|derfor|dog|it|its|this|these|they|there|he|she"
+    r"|but|and|also)(?![\wæøå])",
+    re.IGNORECASE,
+)
+
+
+def ends_sentence(text: str) -> bool:
+    """Whether ``text`` ends on sentence-final punctuation (never cut off)."""
+    return bool(_FINAL.search(text.strip()))
+
+
 def lead_sentences(
     text: str, max_chars: int = 300, hard_max: int = 360
 ) -> tuple[str | None, list[dict[str, str]]]:
     """One or two sentences from a Wikipedia lead, trimmed at a sentence
-    boundary (never mid-sentence), with the sentences the safety filter
-    dropped (for the review). The second sentence only joins when the two
-    stay within ``max_chars``; a first sentence over ``hard_max`` gives no
-    text at all rather than a cut one."""
+    boundary (never mid-sentence: the text must end on ".", "!" or "?"), with
+    the sentences the safety filter dropped (for the review).
+
+    - The second sentence only joins when the two stay within ``max_chars``;
+      a first sentence over ``hard_max`` gives no text rather than a cut one.
+    - A dropped first sentence makes way for the next clean one, if that one
+      stands alone (it does not open with "Den", "Her", "It" ...). A dropped
+      sentence after a kept one ends the text: the card never joins two
+      sentences across a dropped one.
+    - A "fredet" sentence whose reason is praise keeps the fact
+      (:func:`trimmed_protection`).
+    """
     dropped: list[dict[str, str]] = []
     kept: list[str] = []
-    for sentence in split_sentences(clean_lead(text))[:4]:
+    for sentence in split_sentences(clean_lead(text))[:5]:
         reason = unsafe_reason(sentence)
         if reason:
+            trimmed = trimmed_protection(sentence)
             dropped.append({"sentence": sentence, "reason": reason})
-            # never skip over a dropped sentence: the next one leans on it
-            # ("It is located ...") and two around it would join badly
+            if not trimmed:
+                if kept:
+                    break
+                continue
+            sentence = trimmed
+        if not ends_sentence(sentence):
             break
         if not kept:
             if len(sentence) > hard_max or len(sentence) < 25:
+                if dropped:
+                    continue
                 break
+            if dropped and _ANAPHORIC.match(sentence):
+                continue
             kept.append(sentence)
             continue
         if len(sentence) >= 25 and len(kept[0]) + 1 + len(sentence) <= max_chars:
@@ -370,6 +530,89 @@ def wikidata_sentence(label: str, description: str | None) -> str | None:
     if len(words) < 3 or bare or unsafe_reason(d):
         return None
     return d[0].upper() + d[1:] + "."
+
+
+def text_from_override(text: str, lead: str) -> str | None:
+    """An override's ``text`` when it is one or more whole sentences of the
+    article's cleaned lead, in order, that pass the filter; else None. An
+    override picks source text, it never brings its own."""
+    sentences = split_sentences(clean_lead(lead))
+    wanted = split_sentences(text)
+    if not wanted:
+        return None
+    for i in range(len(sentences) - len(wanted) + 1):
+        if sentences[i : i + len(wanted)] == wanted:
+            break
+    else:
+        return None
+    if any(unsafe_reason(w) for w in wanted) or not ends_sentence(wanted[-1]):
+        return None
+    return " ".join(wanted)
+
+
+# --- photo credits ---------------------------------------------------------
+
+_NO_MACHINE = re.compile(
+    r"no machine-readable author provided\.?\s*(?P<who>.*?)\s+assumed\b.*$", re.IGNORECASE
+)
+_USER_PREFIX = re.compile(r"\b(user|bruger|benutzer|utilisateur)\s*:\s*", re.IGNORECASE)
+_CONTACT = re.compile(
+    r"\(\s*(mail|e-?mail|talk|diskussion|contribs?|bidrag)\s*\)"
+    r"|\s*@\s*(wikimedia commons|\w+\.wikipedia(\.org)?|commons)\b",
+    re.IGNORECASE,
+)
+_URL = re.compile(r"^(https?://|www\.)\S+$", re.IGNORECASE)
+_UNKNOWN = re.compile(r"^(ukendt|unknown|unknown author|anonymous|anonym|n/?a|\?)$", re.IGNORECASE)
+
+
+def balance_parentheses(text: str) -> str:
+    """Without stray ")" and without an unclosed "(" and what follows it."""
+    out: list[str] = []
+    opened: list[int] = []
+    for ch in text:
+        if ch == "(":
+            opened.append(len(out))
+        elif ch == ")":
+            if not opened:
+                continue
+            opened.pop()
+        out.append(ch)
+    if opened:
+        out = out[: opened[0]]
+    return "".join(out)
+
+
+def clean_author(artist: str | None, credit: str | None = None, user: str | None = None) -> str:
+    """The photographer as the card credits them: Commons' Artist (else
+    Credit) as plain text, without wiki noise ("user:", "( mail )", "Image:",
+    "© … / Wikipedia", "No machine-readable author provided"), duplicates or
+    a possessive "'s"; the uploader when the author is a URL, unknown or
+    missing; "ukendt" when there is neither."""
+    name = strip_html(artist) or strip_html(credit)
+    # a web address names no one; a part that is one is left out
+    name = re.sub(r"(https?://|www\.)\S+", "", name, flags=re.I)
+    m = _NO_MACHINE.match(name)
+    if m:
+        name = m.group("who")
+    name = _USER_PREFIX.sub("", name)
+    name = _CONTACT.sub("", name)
+    name = re.sub(r"^(image|foto|photo|fotograf|photographer)\s*:\s*", "", name, flags=re.I)
+    name = re.sub(r"©|\(c\)|copyright", "", name, flags=re.I)
+    name = re.sub(r"\s*/\s*(wikipedia|wikimedia commons|commons)\b.*$", "", name, flags=re.I)
+    name = re.sub(r"(?<=\w)['’]s\b", "", name)
+    name = balance_parentheses(name)
+    parts: list[str] = []
+    for part in re.split(r"\s*/\s*", name):
+        part = _SPACE.sub(" ", part).strip(" ,;:-")
+        if part and part.lower() not in (p.lower() for p in parts):
+            parts.append(part)
+    name = " / ".join(parts)
+    uploader = _USER_PREFIX.sub("", (user or "").strip())
+    if not name or _URL.match(name) or _UNKNOWN.match(name):
+        name = uploader or "ukendt"
+    if len(name) > 80:
+        name = name[:77].rsplit(" ", 1)[0] + " …"
+    return name
 
 
 # --- licences ------------------------------------------------------------
@@ -442,47 +685,129 @@ def photo_file_ok(name: str) -> bool:
     return ext in ("jpg", "jpeg", "tif", "tiff", "webp") and not _NOT_A_PHOTO.search(base)
 
 
+#: The oldest photo a card uses: older ones are archive pictures of how the
+#: place looked, not of how it looks.
+MIN_PHOTO_YEAR = 1950
+
+#: Commons categories and descriptions of pictures that are not a present-day
+#: photo of the place: maps, engravings, paintings, drawings, postcards.
+_NOT_A_PHOTO_META = re.compile(
+    r"\bmaps?\b|\bmap of|\bkort over|\bkort\b|\bengraving|\bkobberstik|\bpainting|\bmaleri"
+    r"|\bdrawing|\btegning|\blithograph|\blitografi|\billustration|\bpostcards?\b|\bpostkort"
+    r"|\bwatercolou?r|\bakvarel|\betching|\bradering|\bwoodcut|\bscans? of\b|\bpd[\s-]old\b"
+    r"|\bartworks?\b|\bsketch",
+    re.IGNORECASE,
+)
+
+#: Categories that put people, cars or crowds in the picture: a place card's
+#: photo shows the shore, not a bathing crowd or a number plate.
+_PEOPLE_META = re.compile(
+    r"\bpeople\b|\bcrowds?\b|\bbathers\b|\bbathing\b|\bsunbath|\bswimm(ers|ing)\b"
+    r"|\bbeachgoers\b|\btourists\b|\bnaturis|\bnudis|\bautomobiles\b|\bcars\b|\bvehicles\b"
+    r"|\blicen[cs]e plates\b|\bnumber plates\b|\bkitesurf|\bkite surf|\bchildren\b|\bwomen\b"
+    r"|\bmen\b|\bportraits?\b|\bfestival",
+    re.IGNORECASE,
+)
+
+#: "1900 in Denmark", "1930s photographs of Copenhagen": the picture's year.
+_YEAR_CATEGORY = re.compile(
+    r"(?<!\d)(1[0-8]\d\d|19[0-4]\d)s?\s+(in|photographs|photos|images|maps)\b"
+    r"|\b(photographs|photos|images) (taken )?in (1[0-8]\d\d|19[0-4]\d)\b"
+    r"|\b(1[0-9]|1[0-9]th)[\s-]century\b|\b19th\b|\b18th\b",
+    re.IGNORECASE,
+)
+
+
+def photo_year(date_original: str | None) -> int | None:
+    """The year in Commons' DateTimeOriginal ("2009-06-27 09:22:25",
+    "circa 1900<div ...>", "1870"), or None."""
+    if not date_original:
+        return None
+    m = re.search(r"(?<!\d)(1[5-9]\d\d|20\d\d)(?!\d)", strip_html(date_original))
+    return int(m.group(1)) if m else None
+
+
+def photo_meta_reason(meta: dict[str, str]) -> str | None:
+    """Why a Commons file is not a usable present-day photo of the place, from
+    its extmetadata (``Categories``, ``ImageDescription``, ``ObjectName``,
+    ``DateTimeOriginal``, ``Artist``), or None. Maps, engravings, paintings,
+    drawings; pictures from before :data:`MIN_PHOTO_YEAR`; people, cars and
+    crowds as the subject."""
+    cats = strip_html(meta.get("Categories")).replace("|", " | ")
+    desc = strip_html(meta.get("ImageDescription"))
+    name = strip_html(meta.get("ObjectName"))
+    for label, text in (("categories", cats), ("description", f"{desc} {name}")):
+        m = _NOT_A_PHOTO_META.search(text)
+        if m:
+            return f"not a photo ({label}: {m.group(0).strip()})"
+    year = photo_year(meta.get("DateTimeOriginal"))
+    if year is not None and year < MIN_PHOTO_YEAR:
+        return f"before {MIN_PHOTO_YEAR} ({year})"
+    m = _YEAR_CATEGORY.search(cats)
+    if m:
+        return f"before {MIN_PHOTO_YEAR} (categories: {m.group(0).strip()})"
+    # the painter's life years ("A. Thorenfeldt (1839-1907)")
+    m = re.search(r"\((1[5-9]\d\d)\s*[-–]\s*(1[5-9]\d\d)\)", strip_html(meta.get("Artist")))
+    if m and int(m.group(2)) < MIN_PHOTO_YEAR:
+        return f"before {MIN_PHOTO_YEAR} (artist {m.group(0)})"
+    m = _PEOPLE_META.search(cats)
+    if m:
+        return f"people as the subject ({m.group(0).strip()})"
+    return None
+
+
 # --- names and distances -------------------------------------------------
 
 _FOLD = {"æ": "ae", "ø": "oe", "å": "aa", "ä": "ae", "ö": "oe", "ü": "ue", "é": "e", "ß": "ss"}
 
-#: Generic words left out when comparing names ("Egå Marina" = "Egå Havn").
-GENERIC_WORDS = frozenset(
-    [
-        "strand",
-        "strande",
-        "stranden",
-        "badestrand",
-        "badestranden",
-        "badeanstalt",
-        "badeanstalten",
-        "havbad",
-        "havbadet",
-        "soebad",
-        "havn",
-        "havnen",
-        "lystbaadehavn",
-        "lystbaadehavnen",
-        "marina",
-        "fiskerihavn",
-        "faergehavn",
-        "trafikhavn",
-        "beach",
-        "harbour",
-        "harbor",
-        "port",
-        "of",
-        "the",
-        "bugt",
-        "vig",
-        "pynt",
-        "odde",
-        "naes",
-        "klint",
-        "holm",
-        "halvoe",
-    ]
-)
+#: Generic words left out when comparing names, each with its type: two names
+#: compare without them only when their types agree ("Egå Marina" =
+#: "Egå Lystbådehavn", but never "Fredericia Havn" = "Fredericia
+#: Lystbådehavn"). "of" and "the" have no type.
+GENERIC_WORDS: dict[str, str | None] = {
+    "strand": "strand",
+    "strande": "strand",
+    "stranden": "strand",
+    "beach": "strand",
+    "badestrand": "strand",
+    "badestranden": "strand",
+    "badeanstalt": "bad",
+    "badeanstalten": "bad",
+    "havbad": "bad",
+    "havbadet": "bad",
+    "soebad": "bad",
+    "havn": "havn",
+    "havnen": "havn",
+    "harbour": "havn",
+    "harbor": "havn",
+    "port": "havn",
+    "lystbaadehavn": "marina",
+    "lystbaadehavnen": "marina",
+    "baadehavn": "marina",
+    "baadehavnen": "marina",
+    "marina": "marina",
+    "fiskerihavn": "fiskerihavn",
+    "fiskerihavnen": "fiskerihavn",
+    "faergehavn": "faergehavn",
+    "faergehavnen": "faergehavn",
+    "faergeleje": "faergehavn",
+    "trafikhavn": "trafikhavn",
+    "trafikhavnen": "trafikhavn",
+    "of": None,
+    "the": None,
+    "bugt": "bugt",
+    "vig": "vig",
+    "pynt": "pynt",
+    "odde": "odde",
+    "naes": "naes",
+    "klint": "klint",
+    "holm": "holm",
+    "halvoe": "halvoe",
+}
+
+#: The generic types of a harbour: a name with one never matches a name
+#: without it (the bare town name "Nakskov" is not "Nakskov Havn").
+HARBOUR_TYPES = frozenset(["havn", "marina", "fiskerihavn", "faergehavn", "trafikhavn"])
 
 
 def normalise_name(name: str) -> str:
@@ -501,12 +826,25 @@ def name_core(name: str) -> str:
     return "".join(words)
 
 
+def generic_types(name: str) -> frozenset[str]:
+    """The types of a name's generic words ({"havn"} for "Vejle Havn")."""
+    return frozenset(
+        t for w in normalise_name(name).split() if (t := GENERIC_WORDS.get(w)) is not None
+    )
+
+
 def same_name(a: str, b: str) -> bool:
     """Whether two place names are the same, ignoring case, æøå spelling,
-    hyphens, spaces and generic words ("Egå Marina" ~ "Egaa Lystbådehavn")."""
+    hyphens, spaces and generic words ("Egå Marina" ~ "Egaa Lystbådehavn").
+    The generic words are only left out when they agree: "Havn",
+    "Lystbådehavn" and "Færgehavn" differ, and a harbour's name never matches
+    a name without a harbour word ("Nakskov Havn" is not "Nakskov")."""
     na, nb = normalise_name(a).replace(" ", ""), normalise_name(b).replace(" ", "")
     if na and na == nb:
         return True
+    ta, tb = generic_types(a), generic_types(b)
+    if ta != tb and (ta and tb or (ta | tb) & HARBOUR_TYPES):
+        return False
     ca, cb = name_core(a), name_core(b)
     return bool(ca) and len(ca) >= 3 and ca == cb
 
@@ -529,11 +867,12 @@ def match_by_name(
     candidates: Sequence[dict[str, Any]],
     radius_m: float = 1000.0,
 ) -> dict[str, Any] | None:
-    """The nearest candidate (``{"name", "point", "group", ...}``) with the same
-    name and kind group within ``radius_m``, or None."""
+    """The nearest candidate (``{"name", "point", "group" | "groups", ...}``)
+    with the same name and kind group within ``radius_m``, or None."""
     best: tuple[float, dict[str, Any]] | None = None
     for c in candidates:
-        if c.get("group") != group or not same_name(name, c["name"]):
+        groups = c.get("groups") or {c.get("group")}
+        if group not in groups or not same_name(name, c["name"]):
             continue
         d = distance_m(point, c["point"])
         if d <= radius_m and (best is None or d < best[0]):
@@ -566,6 +905,123 @@ def convex_hull(points: Iterable[Point]) -> list[Point]:
     return [*ring, ring[0]]
 
 
+# --- the shore of a large place ---------------------------------------------
+
+#: Kinds whose outline is land the pin can be far inside: the card shows
+#: only near their shore (the coastline along the outline), never for a pin
+#: inland on them (Løjt Kirkeby on Løjt Land, Hvidbjerg on Thyholm).
+SHORE_KINDS = frozenset(["peninsula", "islet"])
+#: A headland, spit or cliff this large (its outline's extent) is treated so too.
+SHORE_EXTENT_M = 1500
+#: How near the shore (or, without an outline, the coastline) the pin must be.
+SHORE_RADIUS_M = 300
+#: How near the outline's edge a stretch of coastline must lie to be its shore.
+SHORE_MATCH_M = 80
+
+
+def _xy(p: Point, lat0: float) -> tuple[float, float]:
+    return p[0] * 111320 * math.cos(math.radians(lat0)), p[1] * 110574
+
+
+def _seg_dist(p: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    len2 = dx * dx + dy * dy
+    t = 0.0 if not len2 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2))
+    return math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy)
+
+
+class SegmentIndex:
+    """The segments of some polylines in a metre grid, for "how far to the
+    nearest segment" from many points (pure Python, fast enough here)."""
+
+    def __init__(self, lines: Iterable[Sequence[Point]], lat0: float, cell_m: float = 500.0):
+        self.lat0, self.cell = lat0, cell_m
+        self.grid: dict[tuple[int, int], list[tuple[tuple[float, float], tuple[float, float]]]] = {}
+        for line in lines:
+            xy = [_xy(p, lat0) for p in line]
+            for a, b in zip(xy, xy[1:], strict=False):
+                x0, x1 = sorted((a[0], b[0]))
+                y0, y1 = sorted((a[1], b[1]))
+                for i in range(int(x0 // cell_m), int(x1 // cell_m) + 1):
+                    for j in range(int(y0 // cell_m), int(y1 // cell_m) + 1):
+                        self.grid.setdefault((i, j), []).append((a, b))
+
+    def nearest_m(self, p: Point, limit_m: float) -> float:
+        """Metres to the nearest segment, or ``math.inf`` beyond ``limit_m``."""
+        x, y = _xy(p, self.lat0)
+        reach = int(limit_m // self.cell) + 1
+        ci, cj = int(x // self.cell), int(y // self.cell)
+        best = math.inf
+        for i in range(ci - reach, ci + reach + 1):
+            for j in range(cj - reach, cj + reach + 1):
+                for a, b in self.grid.get((i, j), ()):
+                    best = min(best, _seg_dist((x, y), a, b))
+        return best if best <= limit_m else math.inf
+
+
+def shore_lines(
+    outline: Sequence[Sequence[Point]],
+    coastline: Sequence[Sequence[Point]],
+    match_m: float = SHORE_MATCH_M,
+) -> list[list[Point]]:
+    """The stretches of coastline that run along a place's outline (within
+    ``match_m`` of its edge): a peninsula's or islet's shore, without the
+    inland edge where it joins the mainland. Consecutive coastline vertices
+    near the edge make one stretch."""
+    pts = [p for line in outline for p in line]
+    if not pts:
+        return []
+    lat0 = sum(p[1] for p in pts) / len(pts)
+    edge = SegmentIndex(outline, lat0)
+    lons, lats = [p[0] for p in pts], [p[1] for p in pts]
+    pad = 0.01
+    box = (min(lons) - pad, min(lats) - pad, max(lons) + pad, max(lats) + pad)
+    out: list[list[Point]] = []
+    for line in coastline:
+        run: list[Point] = []
+        for p in line:
+            inside_box = box[0] <= p[0] <= box[2] and box[1] <= p[1] <= box[3]
+            if inside_box and edge.nearest_m(p, match_m) <= match_m:
+                run.append(p)
+                continue
+            if len(run) >= 2:
+                out.append(run)
+            run = []
+        if len(run) >= 2:
+            out.append(run)
+    return out
+
+
+def simplify_lines(
+    lines: Sequence[Sequence[Point]], max_points: int = 200, tolerance_m: float = 25.0
+) -> list[list[list[float]]]:
+    """Douglas-Peucker in metres, the tolerance raised until all the lines
+    together have at most ``max_points``; coordinates rounded to 5 decimals."""
+    if not lines:
+        return []
+    lat0 = lines[0][0][1]
+    kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
+    metres = [[(x * kx, y * ky) for x, y in line] for line in lines]
+    tol = tolerance_m
+    while True:
+        kept = [simplify(m, tol) for m in metres]
+        if sum(len(k) for k in kept) <= max_points or tol > 2000:
+            break
+        tol *= 1.4
+    return [[[round(x / kx, 5), round(y / ky, 5)] for x, y in k] for k in kept if len(k) >= 2]
+
+
+def lines_distance_m(lines: Sequence[Sequence[Point]], p: Point) -> float:
+    """Metres from ``p`` to the nearest of some polylines (``math.inf`` without any)."""
+    best = math.inf
+    xy = _xy(p, p[1])
+    for line in lines:
+        pts = [_xy(q, p[1]) for q in line]
+        for a, b in zip(pts, pts[1:], strict=False):
+            best = min(best, _seg_dist(xy, a, b))
+    return best
+
+
 # --- the published form --------------------------------------------------
 
 
@@ -575,7 +1031,7 @@ PHOTO_FIELDS = ("small", "large", "width", "height", "author", "license", "licen
 def published_card(rec: dict[str, Any]) -> dict[str, Any] | None:
     """A record of ``data/places_info/places_info.json`` as the app reads it
     (web/src/placecard.ts), or None for a rejected one."""
-    if rec.get("rejected"):
+    if rec.get("rejected") or rec.get("dropped"):
         return None
     card: dict[str, Any] = {
         "id": rec["id"],
@@ -586,6 +1042,8 @@ def published_card(rec: dict[str, Any]) -> dict[str, Any] | None:
     }
     if rec.get("geom"):
         card["geom"] = rec["geom"]
+    if rec.get("shore"):
+        card["shore"] = rec["shore"]
     if rec.get("description"):
         card["text"] = rec["description"]
         card["text_source"] = rec["description_source"]

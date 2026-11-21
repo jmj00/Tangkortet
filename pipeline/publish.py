@@ -57,9 +57,11 @@ ATTRIBUTION = {
     "names": "Stednavne ved kysten (strande, havne, pynter, øer, farvande): Indeholder data"
     " fra Klimadatastyrelsen, Danske Stednavne (CC BY 4.0)",
     # The place cards: Wikipedia's text is CC BY-SA 4.0 (share-alike), each
-    # Commons photo has its own open licence, credited on the card.
-    "places": "Stedkort (strande, havne, pynter): tekst fra Wikipedia (CC BY-SA 4.0) og"
-    " Wikidata (CC0); fotos fra Wikimedia Commons, licens og fotograf på det enkelte foto",
+    # Commons photo has its own open licence, credited on the card; the
+    # outlines and shores are derived from OpenStreetMap (ODbL).
+    "places": "Om stedet (strande, havne, pynter): tekst: uddrag fra Wikipedia (forkortet),"
+    " CC BY-SA 4.0, og Wikidata (CC0); fotos fra Wikimedia Commons, licens og fotograf på"
+    " det enkelte foto; afgrænsning: © OpenStreetMap-bidragydere (ODbL)",
 }
 
 

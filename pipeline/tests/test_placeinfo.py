@@ -21,6 +21,9 @@ from pipeline.placeinfo import (
     upload_url,
     wikidata_sentence,
 )
+
+# More tests for round 2 (softening, kinds, credits, photos, shores) live in
+# test_placeinfo_review.py.
 from pipeline.publish import publish_place_info
 
 # --- sentence trimming ---
@@ -104,7 +107,7 @@ def test_unsafe_sentences_are_caught(sentence):
 @pytest.mark.parametrize(
     "sentence",
     [
-        "Den Permanente er en badeanstalt i Aarhus fra 1932.",
+        "Den Permanente blev bygget i Aarhus i 1932.",
         "Havnen ligger ved Guldborg Sund.",
         "Øresund skiller Sjælland fra Skåne.",
         "Grenen er Danmarks nordligste punkt.",
@@ -222,7 +225,7 @@ def test_normalise_name_folds_danish_letters_and_hyphens():
         ("Egå Marina", "Egaa Lystbådehavn"),
         ("Bellevue Strand", "Bellevue Beach"),
         ("Rømø-Lakolk", "Rømø Lakolk"),
-        ("Ebeltoft Havn", "Ebeltoft Lystbådehavn"),
+        ("Ebeltoft Lystbådehavn", "Ebeltoft Marina"),
         ("GRENEN", "Grenen"),
     ],
 )
@@ -240,14 +243,16 @@ def test_different_names(a, b):
 
 def test_match_by_name_wants_the_kind_group_and_1_km():
     pool = [
-        {"name": "Egå Lystbådehavn", "point": (10.2610, 56.2205), "group": "harbour", "osm": "w1"},
+        {"name": "Egå Lystbådehavn", "point": (10.2610, 56.2205), "group": "marina", "osm": "w1"},
         {"name": "Egå Strand", "point": (10.2610, 56.2205), "group": "beach", "osm": "w2"},
-        {"name": "Egå Marina", "point": (10.40, 56.22), "group": "harbour", "osm": "w3"},  # 9 km
+        {"name": "Egå Marina", "point": (10.40, 56.22), "group": "marina", "osm": "w3"},  # 9 km
     ]
-    hit = match_by_name("Egå Marina", (10.2620, 56.2210), "harbour", pool)
+    hit = match_by_name("Egå Marina", (10.2620, 56.2210), "marina", pool)
     assert hit is not None and hit["osm"] == "w1" and hit["distance_m"] < 100
     assert match_by_name("Egå Marina", (10.2620, 56.2210), "land", pool) is None
-    assert match_by_name("Egå Marina", (10.30, 56.22), "harbour", pool) is None
+    # a harbour item never matches a marina feature
+    assert match_by_name("Egå Marina", (10.2620, 56.2210), "harbour", pool) is None
+    assert match_by_name("Egå Marina", (10.30, 56.22), "marina", pool) is None
 
 
 def test_pick_kind_prefers_the_specific_one():
