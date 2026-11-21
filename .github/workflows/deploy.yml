@@ -145,9 +145,13 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages project create tangkortet --production-branch=main
 
+      # Only main reaches production. Run from any other branch
+      # (`gh workflow run deploy.yml --ref <branch>`), this makes a Cloudflare
+      # preview deployment at preview-<run number>.tangkortet.pages.dev, e.g.
+      # for a phone test of a draft PR.
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy web/dist --project-name=tangkortet --branch=main
+          command: pages deploy web/dist --project-name=tangkortet --branch=${{ github.ref_name == 'main' && 'main' || format('preview-{0}', github.run_number) }}

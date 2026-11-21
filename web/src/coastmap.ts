@@ -12,7 +12,7 @@ import type maplibregl from "maplibre-gl";
 import { cellFeatures, type CoastFeature } from "./coast";
 import { loadCoastCell } from "./data";
 import { cellKeys } from "./geo";
-import { prefersDark } from "./layers";
+import { onPhoto, prefersDark } from "./layers";
 import { legendFor, type LegendCoastItem } from "./maplegend";
 import type { CoastIndex, CoastKind } from "./types";
 
@@ -30,7 +30,7 @@ const LINES = "coast-lines";
 const CLIFF = "coast-cliff";
 export const COAST_LAYERS = [FILL, EDGE, HARBOUR, LINES, CLIFF] as const;
 /** The app's own layers, which the coast stays under (layers.ts). */
-const ABOVE = ["observations", "risk-radius", "risk"];
+const ABOVE = ["observations", "risk-radius-casing", "risk-radius", "risk"];
 
 interface Palette {
   sand: string;
@@ -92,9 +92,23 @@ function fillColor(p: Palette): Expr {
   ] as Expr;
 }
 
-function fillOpacity(p: Palette): Expr {
-  return ["match", ["get", "k"], ["saltmarsh", "tidalflat"], p.wetOpacity, p.sandOpacity] as Expr;
+/** On the aerial photo the sand and the marsh show for themselves: the
+ * fills drop to a tint and the edges carry the outline. */
+const PHOTO_FILL = 0.35;
+
+function fillOpacity(p: Palette, photo = onPhoto()): Expr {
+  const k = photo ? PHOTO_FILL : 1;
+  return [
+    "match",
+    ["get", "k"],
+    ["saltmarsh", "tidalflat"],
+    p.wetOpacity * k,
+    p.sandOpacity * k,
+  ] as Expr;
 }
+
+const edgeWidth = (photo = onPhoto()): number => (photo ? 1.4 : 0.8);
+const edgeOpacity = (photo = onPhoto()): number => (photo ? 1 : 0.75);
 
 function edgeColor(p: Palette): Expr {
   return [
@@ -219,7 +233,7 @@ function addLayers(map: maplibregl.Map): void {
       ["==", ["geometry-type"], "Polygon"],
       ["in", ["get", "k"], ["literal", ["beach", "sand", "saltmarsh", "tidalflat"]]],
     ],
-    paint: { "line-color": edgeColor(p), "line-width": 0.8, "line-opacity": 0.75 },
+    paint: { "line-color": edgeColor(p), "line-width": edgeWidth(), "line-opacity": edgeOpacity() },
   });
   add({
     id: HARBOUR,
@@ -268,12 +282,16 @@ function addLayers(map: maplibregl.Map): void {
   });
 }
 
-function repaint(map: maplibregl.Map): void {
+/** Repaint for the current theme and basemap (also called by map.ts when the
+ * aerial photo is switched on or off). */
+export function repaintCoast(map: maplibregl.Map): void {
   if (!map.getLayer(FILL)) return;
   const p = palette();
   map.setPaintProperty(FILL, "fill-color", fillColor(p));
   map.setPaintProperty(FILL, "fill-opacity", fillOpacity(p));
   map.setPaintProperty(EDGE, "line-color", edgeColor(p));
+  map.setPaintProperty(EDGE, "line-width", edgeWidth());
+  map.setPaintProperty(EDGE, "line-opacity", edgeOpacity());
   map.setPaintProperty(HARBOUR, "line-color", p.harbour);
   map.setPaintProperty(LINES, "line-color", lineColor(p));
   map.setPaintProperty(CLIFF, "line-color", p.cliff);
@@ -389,7 +407,7 @@ export function initCoastMap(map: maplibregl.Map, index: CoastIndex | null | und
   void update();
 
   globalThis.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
-    repaint(map);
+    repaintCoast(map);
     pushLegend();
   });
 }
